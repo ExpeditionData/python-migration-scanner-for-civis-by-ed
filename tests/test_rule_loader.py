@@ -49,7 +49,7 @@ def test_pending_share_renames_are_not_included():
 def test_every_shipped_rule_has_fix_and_source():
     for rule in load_rules():
         assert rule.fix and rule.source.startswith("https://")
-        assert "—" not in rule.fix + rule.title  # no em dashes
+        assert chr(0x2014) not in rule.fix + rule.title  # no em dashes
 
 
 def test_log_confidence_by_family():

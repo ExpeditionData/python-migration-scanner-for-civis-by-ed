@@ -30,7 +30,7 @@ def test_object_url_requires_integer_id():
 def test_disclaimer_says_the_essentials():
     assert "not a complete audit" in DISCLAIMER
     assert "Test every job before February 2027" in DISCLAIMER
-    assert "—" not in DISCLAIMER  # no em dashes
+    assert chr(0x2014) not in DISCLAIMER  # no em dashes
 
 
 def test_version_is_semver():
