@@ -71,8 +71,13 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   from the tables. Checklist status is append-only.
 - **Data storage.** Five tables in the user's schema: `scan_runs`, `objects`,
   `findings`, `coverage`, `checklist_status`. Every row carries a run ID.
-- **Rules.** YAML files in `common/rules/` (`civis_v3.yaml`, `python315.yaml`).
-  Findings carry file, line number, and rule ID only.
+- **Rules.** YAML files in `common/rules/` (`civis_v3.yaml`, `python315.yaml`),
+  loaded and validated by `common/rule_loader.py`. Matcher kinds are
+  implemented in `scanner/engine.py`. Findings carry file, line number, and
+  rule ID only.
+- **Status.** Phase 2 (scanner core: rules, engine, inventory) is done.
+  Phase 3 (code retrieval and log scan) is next. Implementation choices not in
+  the approved plan are listed in docs/PLAN.md section 10.
 
 Constraints to keep in mind when writing code:
 
@@ -85,27 +90,41 @@ Constraints to keep in mind when writing code:
 - Every value in a SQL insert is validated and escaped, including request headers.
 - Unit tests use synthetic fixtures only. Never record fixtures from a real Civis
   instance, and never commit real object names, user names, or code.
+- On Windows, PowerShell 5.1 mangles double quotes in `git commit -m`. Write
+  multi-line commit messages to a temp file and use `git commit -F <file>`.
 
 ## Setup commands
 
-_To be filled in._
+Local development uses Python 3.14 (the scanner image's version). Run from the
+repo root:
 
 ```
-# Example placeholders
-# python -m venv .venv
-# .venv\Scripts\activate
-# pip install -r requirements.txt
-# copy .env.example .env
+py -3.14 -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+copy .env.example .env
 ```
+
+`requirements-dev.txt` installs the scanner's pinned packages plus Flask and
+pytest. The Service's civis 2.7.1 limit is checked by a test, not by a second
+install.
+
+To rebuild the civis 2.7.1 API list used by that test (only if the Service
+image changes), download the civis wheel to a temp folder, unzip it, and run
+`tools/build_civis_api_fixture.py <unzipped>/civis tests/fixtures/civis_2_7_1_api.json`.
 
 ## Testing commands
 
-_To be filled in._
+```
+.venv\Scripts\python.exe -m pytest
+```
 
-```
-# Example placeholder
-# pytest
-```
+- Unit tests make no Civis or network calls. Inventory tests use
+  `tests/fake_civis.py` with synthetic responses in `tests/fixtures/civis_api/`.
+- Every rule needs a positive and a negative fixture in `tests/test_rules.py`.
+  A test fails if a rule has none.
+- `tests/test_self_scan.py` runs the tool's own rules over this repo.
+- `tests/test_civis_271_compat.py` fails if `app/` or `common/` calls a civis
+  method missing from civis 2.7.1.
 
 ## Keeping docs current
 

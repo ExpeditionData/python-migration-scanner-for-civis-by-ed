@@ -113,7 +113,8 @@ civis-python-version-search/
   scanner/                  Container script entry point: python -m scanner
     __main__.py             Reads job parameters, runs the scan
     inventory/              One module per object type (python3, containers, custom,
-                            notebooks, services, workflows, users)
+                            notebooks, services, workflows, users), plus base.py
+                            for shared helpers and __init__.py for build_inventory()
     retrieval/              Inline code, notebook download, GitHub fetch, template fallback
     logs.py                 Log scan (most recent run only)
     engine.py               Runs AST and regex rules over code and log text
@@ -132,14 +133,19 @@ civis-python-version-search/
     rules/
       civis_v3.yaml
       python315.yaml
-    rules.py                Loads and validates the YAML rule files
+    rule_loader.py          Loads and validates the YAML rule files. (Not rules.py,
+                            which would clash with the rules/ folder.)
+    sql.py                  Validated, escaped SQL literals and identifiers
     models.py               Object, Finding, CoverageItem, ChecklistEntry
     schema.py               Table definitions and column names
     urls.py                 Civis URL builders
     disclaimer.py           The one disclaimer string used everywhere
     version.py
+  tools/
+    build_civis_api_fixture.py  Builds the civis 2.7.1 API list from the civis wheel
   tests/
-    fixtures/               Sample code, notebooks, workflow YAML, API responses
+    fake_civis.py           Fake civis client serving synthetic API responses
+    fixtures/               Synthetic API responses and the civis 2.7.1 API list
     test_rules_civis_v3.py
     test_rules_python315.py
     test_inventory.py, test_engine.py, test_app.py, ...
@@ -390,3 +396,28 @@ How each object runs:
 - Re-check `CV3-RUN-TEMPLATE-DEFAULT`.
 - Decide whether to add the 37 pending `list_*_shares` and `search.list` renames.
 - Run the scanner's unit tests and a live scan against the release candidate.
+
+---
+
+## 10. Implementation notes (Phase 2)
+
+**Conclusion: Phase 2 needed these choices that the approved plan did not cover. None changes an approved decision. Questions about them are listed with the Phase 2 report.**
+
+| # | Choice | Why |
+|---|---|---|
+| 10.1 | The rule loader is `common/rule_loader.py`, not `common/rules.py`. | A module and a folder named `rules` in the same package clash on import. |
+| 10.2 | The civis 2.7.1 check is static. `tools/build_civis_api_fixture.py` reads the civis 2.7.1 wheel's typed stub (`client.pyi`) and the `civis.io` and `civis.utils` source, without running them, into `tests/fixtures/civis_2_7_1_api.json`. | Keeps one local environment. The test checks endpoint methods, `civis.io` and `civis.utils` functions, and keyword arguments. |
+| 10.3 | SQL string values reject backslashes and control characters instead of escaping them. Single quotes are doubled. | Redshift treats a backslash in a literal as an escape character and PostgreSQL does not, so no single escape is safe on both. Civis user names do not normally contain backslashes. |
+| 10.4 | `scripts.get_python3_git` is called for every Python script. | The Python script detail response has no field that says whether it is git-backed. This adds about one call per Python script to the section 5 estimate. |
+| 10.5 | Objects that cannot run Python are left out of the inventory and counted in a new `not_python_count` coverage column: R notebooks; custom scripts backed by SQL, R, JavaScript, or dbt templates; and Services on Civis's Shiny image, including Services with no image set (Shiny is Civis's default for Services). | Keeps the inventory to Python-based objects, as the brief asks, while the counts stay visible. |
+| 10.6 | Only workflows with inline Python or container tasks appear as objects. Workflows that only run other jobs are counted, parsed for job references, and not listed. A workflow's impact comes from its inline tasks' images. | A workflow that only runs other jobs has no code of its own. Its jobs carry its ID in `workflow_ids`. |
+| 10.7 | For the archived-job exception, the job type from `jobs.get` is matched by keyword ("python", "container", "custom", or a template ID). | Civis does not document the `JobTypes::` values. To confirm in Phase 7. |
+| 10.8 | civis-python log warnings map to the specific rule they describe (for example the `list_me` warning reports `CV3-RENAME-USERS-LIST-ME`). The catch-all log rules fire only for lines no specific rule in the same family explains. Each rule is reported once per log, at its first line. | Gives the specific fix instead of "see the log," and avoids one finding per repeated warning line. |
+| 10.9 | Notebook findings use the label `<notebook> [cell N]` with the line inside the cell, and `<notebook> [cell N output]` for saved outputs. Imports are shared across cells. `!` and `%` lines and `%%bash`-style cells are checked as shell. | Notebooks have no single line numbering, and imports usually sit in the first cell. |
+| 10.10 | Files that do not parse as Python, or are larger than 2 million characters, use regex fallback at one lower confidence. The object is marked "partial." | Bounded memory and a visible coverage gap instead of a silent skip. |
+| 10.11 | `CV3-UNPINNED-INSTALL` does not flag `civis==3.x` or `civis>=3`, because those ask for v3 on purpose. `civis!=2.9.0` alone is flagged. | Only unbounded installs pick up v3 by surprise. |
+| 10.12 | `PY315-PINNED-PACKAGE-INSTALL` treats `==`, `===`, `<`, `<=`, `~=`, and Poetry `^`, `~`, and exact versions as pins or upper bounds. | Each of these can block a Python 3.15-compatible release. |
+| 10.13 | Severity per rule: removed civis features and Python removals that raise errors are high; `run_template` default, unpinned civis, `argparse` dest, and the `ByteString` star import are medium; negative rlimits and pinned packages are low. | The plan gave confidence but not severity. |
+| 10.14 | Civis object URLs use `/spa/#/scripts/python3/<id>`, `/scripts/containers/<id>`, `/scripts/custom/<id>`, `/notebooks/<id>`, `/services/<id>`, and `/workflows/<id>`, on a base URL that `CIVIS_PLATFORM_URL` can change. | Civis does not document these paths. To confirm in Phase 7. |
+| 10.15 | Inline custom-script tasks in workflows (`civis.scripts.custom`) are recorded, but their template code is not read. | The template's backing script is scanned through the custom scripts that use it. Revisit in Phase 3 if needed. |
+| 10.16 | A `.gitattributes` file forces LF line endings for `.sh` files and Dockerfiles. | `start_service.sh` must run in Linux even when committed from Windows. |
