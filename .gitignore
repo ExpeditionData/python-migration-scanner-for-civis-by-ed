@@ -1,0 +1,113 @@
+# ---------------------------------------------------------------------------
+# Private working material. Never commit.
+# ---------------------------------------------------------------------------
+Context/
+
+# ---------------------------------------------------------------------------
+# Secrets and local environment files. Only .env.example is tracked.
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Packaging and builds
+build/
+dist/
+develop-eggs/
+eggs/
+.eggs/
+sdist/
+wheels/
+downloads/
+lib/
+lib64/
+parts/
+var/
+share/python-wheels/
+*.egg-info/
+*.egg
+.installed.cfg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Testing and coverage
+.pytest_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+.hypothesis/
+nosetests.xml
+
+# Type checkers and linters
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Flask
+instance/
+.webassets-cache
+
+# Logs and local databases
+*.log
+*.sqlite3
+*.db
+
+# ---------------------------------------------------------------------------
+# VS Code (keep shared settings only if added deliberately)
+# ---------------------------------------------------------------------------
+.vscode/*
+!.vscode/extensions.json
+*.code-workspace
+.history/
+
+# ---------------------------------------------------------------------------
+# Windows
+# ---------------------------------------------------------------------------
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# ---------------------------------------------------------------------------
+# macOS
+# ---------------------------------------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.TemporaryItems
+.DocumentRevisions-V100
+.AppleDB
+.AppleDesktop
