@@ -1,6 +1,6 @@
 # Build Plan: Civis Python Version Search
 
-Status: draft for review. Written October 9, 2026, after checking the build brief against current documentation. No app code exists yet.
+Status: **approved October 9, 2026.** Written the same day, after checking the build brief against current documentation. The decisions on every open question are recorded in section 9. Where this plan and the build brief differ, this plan wins.
 
 Sources checked (all read October 9, 2026):
 
@@ -20,18 +20,18 @@ Facts marked "unverified" could not be confirmed from documentation and need a l
 
 | # | Brief says | Docs say | Proposed fix |
 |---|---|---|---|
-| 1.1 | Deploy the Service with Civis's Flask Service image. | The image exists (`civisanalytics/civis-services-flask`), but it is stale. The newest tag, `0.1.0` (August 6, 2025), ships Python 3.12.11, Flask 3.1.1, gunicorn 22.0.0, and civis 2.7.1. The image does not install `requirements.txt` itself. Our repo must provide an executable `start_service.sh`, and the example script runs `pip install -r requirements.txt`, which downloads from PyPI on every start. | Use `civis-services-flask:0.1.0` with **no pip install at start**. The web app uses only what the image already has: Flask, gunicorn, and civis 2.7.1. This keeps the network rule intact (no PyPI calls). See section 8 and question 1. |
+| 1.1 | Deploy the Service with Civis's Flask Service image. | The image exists (`civisanalytics/civis-services-flask`), but it is stale. The newest tag, `0.1.0` (August 6, 2025), ships Python 3.12.11, Flask 3.1.1, gunicorn 22.0.0, and civis 2.7.1. The image does not install `requirements.txt` itself. Our repo must provide an executable `start_service.sh`, and the example script runs `pip install -r requirements.txt`, which downloads from PyPI on every start. | Use `civis-services-flask:0.1.0` with **no pip install at start**. The web app uses only what the image already has: Flask, gunicorn, and civis 2.7.1. This keeps the network rule intact (no PyPI calls). See section 8 and decision 1. |
 | 1.2 | Network calls are limited to the Civis API, Civis file links, and GitHub. | The standard Flask Service pattern installs packages from PyPI at every start. | Same fix as 1.1. The scanner image already has every package we need, so the scanner makes no PyPI calls either. |
-| 1.3 | Services are in scope as "affected." | Civis's February 2027 notice covers container scripts, Python scripts, Python notebooks, and **Streamlit**. It does not mention Flask, Shiny, or other Service images. Also, a new Service defaults to the Shiny image, not to a Python image. | Mark a Service as "affected" only when it uses `civis-services-streamlit` with a blank or `latest` tag. Mark all other Services "advisory." See question 12. |
+| 1.3 | Services are in scope as "affected." | Civis's February 2027 notice covers container scripts, Python scripts, Python notebooks, and **Streamlit**. It does not mention Flask, Shiny, or other Service images. Also, a new Service defaults to the Shiny image, not to a Python image. | Mark a Service as "affected" only when it uses `civis-services-streamlit` with a blank or `latest` tag. Mark all other Services "advisory." See decision 12. |
 | 1.4 | The default-image rule is "blank or `latest` tag on a known Civis image." | Each object type stores its image differently. Python scripts have a `docker_image_tag` but **no image name field** (they always use `datascience-python`). Notebooks use `civis-jupyter-python3` and keep their tag until someone changes it. Custom scripts have no image fields; they use their template's backing script. | Known default images: `civisanalytics/datascience-python`, `civisanalytics/civis-jupyter-python3`, `civisanalytics/civis-services-streamlit`. For Python scripts, the image name is implied. For custom scripts, read the image from the backing script. If the backing script is unreadable, mark impact "unknown." |
 | 1.5 | The `feature_flags` fix is `client.users.list_me()["feature_flags"]` (from context.md). | `list_me` is itself removed in v3. The client's own warning says `client.users.get_me()["feature_flags"]`. | Use `get_me` in the fix guidance. |
-| 1.6 | Seed rules with every removal in the changelog. | The changelog misses one breaking change. In v3, the default for `civis.utils.run_template(..., return_as=...)` changes from `"files"` to `"future"`. This is stated in the source (`utils/_jobs.py`), not in the changelog, and no warning is emitted for it. | Add rule `CV3-RUN-TEMPLATE-DEFAULT` at medium confidence. See question 7. |
-| 1.7 | The log scan is medium confidence because the changelog gives no exact warning text. | civis-python's source defines exact warning strings. All v3 deprecations raise `FutureWarning`, which Python shows by default. Since civis 2.9.3, every message contains "civis-python v3.0.0." | civis log matches can be **high** confidence evidence that the job used a removed feature on its last run. Python 3.15 log matches stay medium, because Python hides `DeprecationWarning` by default outside the main script. See question 6. |
+| 1.6 | Seed rules with every removal in the changelog. | The changelog misses one breaking change. In v3, the default for `civis.utils.run_template(..., return_as=...)` changes from `"files"` to `"future"`. This is stated in the source (`utils/_jobs.py`), not in the changelog, and no warning is emitted for it. | Add rule `CV3-RUN-TEMPLATE-DEFAULT` at medium confidence. See decision 7. |
+| 1.7 | The log scan is medium confidence because the changelog gives no exact warning text. | civis-python's source defines exact warning strings. All v3 deprecations raise `FutureWarning`, which Python shows by default. Since civis 2.9.3, every message contains "civis-python v3.0.0." | civis log matches can be **high** confidence evidence that the job used a removed feature on its last run. Python 3.15 log matches stay medium, because Python hides `DeprecationWarning` by default outside the main script. See decision 6. |
 | 1.8 | The scanner job parameters include a schema name and a database credential. | Writing tables also needs a database. Civis has a "Database" parameter type that supplies the database name and credential together (`<NAME>_NAME`, `<NAME>_CREDENTIAL_ID`, and so on). | Replace "database credential" with one Database parameter, plus the schema name. |
 | 1.9 | The `/` route must return quickly. | Confirmed. Platform checks for HTTP 200 on `/`, and the path can be changed with the `CIVIS_SERVICE_HEALTH_PATH` environment variable. | Add a `/healthz` route and set `CIVIS_SERVICE_HEALTH_PATH=/healthz`. `/` returns the page shell right away, and the scan summary loads in the browser afterward. |
 | 1.10 | The Service sleeps after about one hour without traffic. | Confirmed for the "On Demand" plan. The idle time is not configurable. "Always On" Services are redeployed weekly with a new API key. A Service that does not start within one hour is terminated. | No change to the design. Never cache an API client for longer than one request cycle. The key changes on wake and on redeploy. |
-| 1.11 | Workflows are scanned only to map which jobs they run. | Workflow YAML can define jobs inline (for example a `civis.scripts.python3` task with a `source` field). That code exists nowhere else. | Also scan inline code in workflow definitions. See question 10. |
-| 1.12 | No mention of hidden objects. | Workflow-created job copies and `read_civis` query jobs are "hidden" and only appear when listed with `hidden=True`. | Skip hidden objects, but count them in coverage. See question 11. |
+| 1.11 | Workflows are scanned only to map which jobs they run. | Workflow YAML can define jobs inline (for example a `civis.scripts.python3` task with a `source` field). That code exists nowhere else. | Also scan inline code in workflow definitions. See decision 10. |
+| 1.12 | No mention of hidden objects. | Workflow-created job copies and `read_civis` query jobs are "hidden" and only appear when listed with `hidden=True`. | Skip hidden objects, but count them in coverage. See decision 11. |
 
 Facts from the brief that the docs confirm:
 
@@ -57,7 +57,7 @@ New facts the brief did not cover:
 - Civis documents no scope limit on the key injected into a Service. The key is the owner's, so it should have the owner's permissions.
 - API key scopes do exist, but only for keys a user creates by hand.
 - Proposed design: the admin creates the scanner container script once, following the README. The Service gets its job ID through a `SCANNER_JOB_ID` environment variable.
-- The app then calls only `post_containers_runs` (start), `get_containers_runs` and `list_containers_runs` (status), log reads, and run output reads. It never creates or edits scripts. See question 2.
+- The app then calls only `post_containers_runs` (start), `get_containers_runs` and `list_containers_runs` (status), log reads, and run output reads. It never creates or edits scripts. See decision 2.
 - TESTING.md will include a one-time check that the deployed Service can start the scanner job.
 
 ---
@@ -85,7 +85,7 @@ All list calls use `iterator=True`, `limit=50` (the maximum for most list endpoi
 | Python script | `scripts.list(type="python3")` | `scripts.get_python3(id)` | `source` field. If git-backed, `scripts.get_python3_git(id)` gives the repo, ref, and path, and we fetch from GitHub. | `docker_image_tag` only; the image name is always `datascience-python` | `scripts.list_python3_runs_logs(id, last_run.id)` |
 | Container script | `scripts.list(type="containers")` | `scripts.get_containers(id)` | `docker_command` text. If `repo_http_uri` is set, fetch from GitHub at `repo_ref` and scan every `.py` file up to a file cap. | `docker_image_name`, `docker_image_tag`, `repo_http_uri`, `repo_ref`, `git_credential_id` | `scripts.list_containers_runs_logs(id, last_run.id)` |
 | Custom script | `scripts.list_custom()` | `scripts.get_custom(id)` | `from_template_id`, then `templates.get_scripts(template_id)` to get the backing `script_id`, then fetch that script as above (cached per template). If the backing script is unreadable, use `code_preview`. | Taken from the backing script | `scripts.list_custom_runs_logs(id, last_run.id)` |
-| Notebook | `notebooks.list()` | `notebooks.get(id)` | Download the `.ipynb` from `notebook_url` (a time-limited Civis file link) and scan the code cells. If git-backed, use `git_repo_url`, `git_ref`, and `git_path`. | `docker_image_name`, `docker_image_tag` | No log scan. Scan saved cell outputs for warning text instead (see question 13). |
+| Notebook | `notebooks.list()` | `notebooks.get(id)` | Download the `.ipynb` from `notebook_url` (a time-limited Civis file link) and scan the code cells. If git-backed, use `git_repo_url`, `git_ref`, and `git_path`. | `docker_image_name`, `docker_image_tag` | No log scan. Scan saved cell outputs for warning text instead (see decision 13). |
 | Service (including Streamlit) | `services.list()` | `services.get(id)` | Services have no inline code. Fetch from GitHub with `git_repo_url`, `git_repo_ref`, and `git_path_dir`. | `docker_image_name`, `docker_image_tag`; `current_deployment` | `services.list_deployments_logs(id, current_deployment.deployment_id)` |
 | Workflow | `workflows.list()` | `workflows.get(id)` | Parse the `definition` YAML. `civis.run_job` tasks reference `input.job_id`. `civis.workflows.execute` references `input.workflow_id`. Inline script tasks (`civis.scripts.python3`, `civis.scripts.container`, `civis.scripts.custom`) carry code in `input`. | None on the workflow itself | None. Referenced jobs are scanned as jobs. |
 | Archived job in an active workflow | Found through workflow references | `jobs.get(id)`, then the type-specific `get_*` | Same as its type | Same as its type | Same as its type |
@@ -98,7 +98,8 @@ Notes:
 - **Rows from scan context.** Owner name, deactivated flag, and Civis URL come from the users list and the object ID.
 - **To confirm in phase 2:** which field marks a Python script as git-backed (so we can skip `get_python3_git` for inline scripts), and whether `hidden=True` returns hidden items only or all items.
 - **Unparseable code.** The scanner parses code with Python 3.14's `ast` module. Files that do not parse fall back to regex rules and are recorded in coverage as "partial."
-- **GitHub.** We use the REST API: one tarball or tree request per repo and ref, cached for the whole scan. Non-GitHub hosts are marked "not scanned, review manually" (see question 14).
+- **GitHub.** We use the REST API: one tarball or tree request per repo and ref, cached for the whole scan. Non-GitHub hosts are marked "not scanned, review manually" (see decision 14).
+- **Fetched code stays in memory.** Code from GitHub and notebooks is held in memory, or in a temporary directory deleted when the run ends. It is never written to run outputs, tables, or logs.
 - **Writing results.** We use `civis.io.dataframe_to_civis` for tables, and `civis.io.file_to_civis` plus `scripts.post_containers_runs_outputs(..., "File", file_id)` for the CSV.
 
 ---
@@ -125,7 +126,7 @@ civis-python-version-search/
                             history, CSV download, /healthz, /api/scan-status
     data.py                 Reads result tables (cached per run ID)
     templates/
-    static/
+    static/                 Vendored JS, CSS, and fonts. No CDN links.
   common/                   Shared by both. Must stay compatible with Python 3.12
                             (Service image) and 3.14 (scanner image).
     rules/
@@ -142,6 +143,7 @@ civis-python-version-search/
     test_rules_civis_v3.py
     test_rules_python315.py
     test_inventory.py, test_engine.py, test_app.py, ...
+    test_civis_271_compat.py  Fails if app/ or common/ calls a civis method missing from 2.7.1
   docker/
     scanner.Dockerfile      FROM the pinned scanner image. Local testing only.
     service.Dockerfile      FROM the pinned Flask image. Local testing only.
@@ -167,9 +169,9 @@ civis-python-version-search/
 | **Show progress** | The scanner writes a short structured log line about every 30 seconds, for example `PROGRESS phase=code objects_done=420 objects_total=2000`. The browser polls `/api/scan-status` every 15 seconds. The app reads the run state (`get_containers_runs`) and the newest log lines (`list_containers_runs_logs`) and caches the answer for 10 seconds. These are cheap read calls, and they create no query runs. |
 | **Read results** | After a run succeeds, the app loads that run's rows from `scan_runs`, `objects`, `findings`, and `coverage` with `civis.io.read_civis_sql(..., return_as="list")`. It caches them in memory by run ID; a finished run never changes. Filtering and search happen in Python, not in SQL. |
 | **Download CSV** | Links to the CSV run output file (`list_containers_runs_outputs`, then `files.get` for a download URL). This needs no query. |
-| **Write checklist status** | `checklist_status` is **append-only**. Each change inserts a row: object ID, rule ID, status, changed by (from the `Civis-Username` header), and changed at. The current status is the newest row per object and rule. Users change several items, then click "Save"; one save runs one `civis.io.query_civis` insert. The scanner only inserts "open" rows for object and rule pairs that have no row yet. Neither side ever updates or deletes. |
+| **Write checklist status** | `checklist_status` is **append-only**. Each change inserts a row: object ID, rule ID, status, changed by (from the `Civis-Username` header), and changed at. The current status is the newest row per object and rule. Users change several items, then click "Save"; one save runs one `civis.io.query_civis` insert. The scanner only inserts "open" rows for object and rule pairs that have no row yet. Neither side ever updates or deletes. **Every value in an insert is validated and escaped, including values from Civis request headers** (see section 9, additional requirements). |
 | **Health and sleep** | `/healthz` returns 200 without calling Civis. If the Service sleeps during a long scan, nothing is lost, because all state lives in the run and the tables. |
-| **Who can see what** | Every viewer sees what the Robot user can see. That includes the names, owners, and links of private objects. Access to the app is controlled by Civis sharing on the Service. See question 4. |
+| **Who can see what** | Every viewer sees what the Robot user can see. That includes the names, owners, and links of private objects. Access to the app is controlled by Civis sharing on the Service. **Share it with Civis admins only.** The README and a short note on the landing page say so. See decision 4. |
 
 Each `read_civis_sql` and `query_civis` call starts a query run, and Civis limits those separately (see section 5). That is why reads are cached per run ID and checklist writes are batched.
 
@@ -219,11 +221,11 @@ These times include about 5 to 20 minutes of fixed overhead: listing, the user l
 
 ---
 
-## 6. Proposed Python 3.15 rules
+## 6. Python 3.15 rules (approved)
 
 **Conclusion:**
 
-- **Ship 24 rules: 23 source rules plus one log rule.** The source rules are high or medium confidence, with low false-positive risk.
+- **Ship 25 rules: 24 source rules plus one log rule.** The original 23 source rules are high or medium confidence, with low false-positive risk. `PY315-PINNED-PACKAGE-INSTALL` was added at approval as a low-confidence advisory.
 - **Leave out 7 changes.** They are too noisy, test-only, or warnings rather than breakage.
 - **Do not flag two things that look deprecated but are not:** `locale.getdefaultlocale` (no longer deprecated in 3.15) and `re.match` (soft-deprecated only, with no removal planned).
 
@@ -256,6 +258,7 @@ Most of these changes have warned since 3.13 or 3.14. But Python hides `Deprecat
 | PY315-BYTESTRING-STAR-IMPORT | `ByteString` dropped from `__all__` of `collections.abc` and `typing` | AST: `from collections.abc import *` or `from typing import *`, together with use of `ByteString` | High | Low | Yes |
 | PY315-WAVE-MARKERS | `getmark`, `setmark`, `getmarkers` removed from `wave` | AST: those method calls in a file that imports `wave` | Medium | Low | Yes |
 | PY315-RLIMIT-NEGATIVE | `resource.RLIM_INFINITY` is always positive. Passing a negative limit is deprecated. | AST: `setrlimit` or `prlimit` with a negative literal, or `RLIM_INFINITY` compared to a negative number | Medium | Low | Yes (low severity) |
+| PY315-PINNED-PACKAGE-INSTALL | Runtime installs with exact pins (`==`) or upper bounds often have no Python 3.15 wheel and fail to install. Added at approval. | Regex on container commands, notebook `!pip` and `%pip` cells, and `requirements.txt`, `pyproject.toml`, and `Dockerfile` in git repos. Fires only on objects that run on a Civis default image. Always advisory, low severity. Fix: confirm each pinned version supports Python 3.15, or loosen the pin. | Low | Medium | Yes |
 | PY315-LOG-DEPRECATION | Any of the above, seen as a warning in a run log | Regex on log text for warnings that say "removed in Python 3.15", "slated for removal in Python 3.15", "will become an error in Python 3.15", "keyword-only ... in Python 3.15", or the `strptime` leap-day message. `locale.getdefaultlocale` is excluded. | Medium | Low | Yes |
 | (none) | AST node constructors reject missing or unknown arguments | AST: compare `ast.<Node>(...)` arguments with `_fields` | Medium | Medium | No. Rare in data code; the log rule covers it. |
 | (none) | `mmap.resize` removed on some platforms | AST: `.resize(` (receiver type unknown) | Low | Medium | No |
@@ -267,7 +270,7 @@ Most of these changes have warned since 3.13 or 3.14. But Python hides `Deprecat
 
 ---
 
-## 7. Proposed civis-python v3 rules
+## 7. civis-python v3 rules (approved)
 
 **Conclusion: ship 33 rules.**
 
@@ -296,7 +299,7 @@ The 19 renames match the changelog exactly. I also rebuilt the list from the cli
 | CV3-RUN-TEMPLATE-JSONVALUE | `JSONValue` parameter of `civis.utils.run_template` removed | AST: `run_template` with `JSONValue=` or a third positional argument | High (keyword), Medium (positional) | Use `return_as="JSONValue"`. |
 | CV3-RUN-TEMPLATE-DEFAULT | Default `return_as` of `run_template` changes from `"files"` to `"future"`. Not in the changelog; stated in the civis-python source. | AST: `run_template` with neither `return_as=` nor `JSONValue` | Medium | Pass `return_as="files"` to keep current behavior. |
 | CV3-UNPINNED-INSTALL | Code that installs civis at run time without an upper bound gets v3 in February, **even on a custom or pinned image** | Regex on container commands, notebook `!pip`/`%pip` cells, and `requirements.txt` and `pyproject.toml` in git repos: `civis` with no version or with no `<3` bound | Medium | Pin `civis>=2.8,<3` until the code is updated. |
-| CV3-LOG-FUTUREWARNING | Any removed feature used on the last run | Regex on log text: `FutureWarning: .*civis-python v3\.0\.0`. The method name is parsed from ``The method name ``<client>.X.Y`` is deprecated``. The unrelated `tables/:id/refresh` warning is excluded. | High (see question 6) | Shown per matched feature |
+| CV3-LOG-FUTUREWARNING | Any removed feature used on the last run | Regex on log text: `FutureWarning: .*civis-python v3\.0\.0`. The method name is parsed from ``The method name ``<client>.X.Y`` is deprecated``. The unrelated `tables/:id/refresh` warning is excluded. | High (see decision 6) | Shown per matched feature |
 
 ### Full `list_*` to `get_*` rename list (one rule each, ID `CV3-RENAME-<ENDPOINT>-<METHOD>`)
 
@@ -326,7 +329,9 @@ Detection is AST: a call to `<anything>.<endpoint>.<old_name>(`. All are high co
 
 ### Pending renames (not active yet)
 
-civis-python already contains code to rename 37 more methods, all `list_*_shares` methods plus `search.list`. The renames only switch on when Civis changes its API so those endpoints return a single object instead of a list. They are not in the v3 changelog, and calling them today raises no warning. See question 9.
+civis-python already contains code to rename 37 more methods, all `list_*_shares` methods plus `search.list`. The renames only switch on when Civis changes its API so those endpoints return a single object instead of a list. They are not in the v3 changelog, and calling them today raises no warning.
+
+**Decision: left out for now (decision 9). Revisit when a civis 3.0 release candidate is published.** At the same time, re-check `CV3-RUN-TEMPLATE-DEFAULT` against that release candidate (decision 7).
 
 ---
 
@@ -350,32 +355,38 @@ How each object runs:
 
 ---
 
-## 9. Risks and open questions
+## 9. Decisions and additional requirements
 
-Answer each by number. The recommended option is listed first.
+**Conclusion: all 16 open questions were answered on October 9, 2026. The plan is approved with the choices below, one added rule, and four added requirements.**
 
-1. **Service image.** Which approach for the web app image?
-   - A: `civis-services-flask:0.1.0` as is, no package installs at start (recommended).
-   - B: Same image, but `start_service.sh` installs pinned packages from PyPI on every start. This adds PyPI to the allowed network calls.
-   - C: Build and publish our own image to Docker Hub.
-2. **App permissions.** Should the app only *run* a scanner job that the admin creates once (job ID set as a Service environment variable), and never create or edit container scripts? (Yes recommended.)
-3. **Scan settings in the app.** Should "Run scan" always use the parameters saved on the scanner job (yes, recommended)? Or should the app let users change lookback days and concurrency before each run? That would require the app to edit the job.
-4. **App audience.** The app shows names, owners, and links for every object the Robot user can see, including private ones. Who should it be shared with?
-   - A: Civis admins only, with the README saying so (recommended).
-   - B: Anyone the admin chooses, with a warning in the README and on the landing page.
-5. **Request budget.** Add a scanner parameter for a request budget, defaulting to 500 requests per 5 minutes (half the published limit), with default max concurrency of 4? (Yes recommended.)
-6. **civis log confidence.** Raise civis-python log matches from medium to high confidence, since the warning text is exact in the client source? Python 3.15 log matches stay medium. (Yes recommended.)
-7. **Undocumented v3 change.** Ship `CV3-RUN-TEMPLATE-DEFAULT` (the `run_template` default changes from "files" to "future") even though it is only in the source, not the changelog? (Yes recommended.)
-8. **Unpinned installs.** Ship `CV3-UNPINNED-INSTALL`, and read `requirements.txt`, `pyproject.toml`, and `Dockerfile` from git repos in addition to `.py` files? (Yes recommended.)
-9. **Pending renames.** How should we handle the 37 `list_*_shares` and `search.list` renames that are coded but not active?
-   - A: Leave them out until a civis 3.0 release candidate confirms them (recommended).
-   - B: Include them now as low-severity advisories.
-10. **Workflow inline code.** Scan inline script code inside workflow YAML definitions? (Yes recommended.)
-11. **Hidden objects.** Skip hidden jobs (workflow-created copies and `read_civis` query jobs), but count them in coverage? (Yes recommended.)
-12. **Service impact.** Mark only Streamlit Services on a blank or `latest` tag as "affected," and every other Service as "advisory"? (Yes recommended.)
-13. **Notebook logs.** Skip the notebook deployment log scan, and instead check saved cell outputs in the `.ipynb` file for warning text? (Yes recommended.)
-14. **Non-GitHub repos.** Mark git-backed objects hosted outside GitHub (for example GitLab or Bitbucket) "not scanned, review manually"? (Yes recommended.)
-15. **"Active workflow."** For the archived-job exception, which workflows count as active?
-    - A: Any workflow that is not archived (recommended; misses nothing).
-    - B: A workflow that is not archived and is scheduled or ran inside the lookback window.
-16. **Python 3.15 rules.** Approve the section 6 ship list as written: 23 source rules plus the log rule, with the 7 "No" items left out? (Yes, or name the rules to change.)
+| # | Question | Decision |
+|---|---|---|
+| 1 | Service image | `civis-services-flask:0.1.0` as is. No package installs at start. |
+| 2 | App permissions | The app only runs the scanner job the admin creates. It never creates or edits container scripts. |
+| 3 | Scan settings in the app | "Run scan" uses the parameters saved on the scanner job. |
+| 4 | App audience | Civis admins only. The README and a short note on the landing page say so. |
+| 5 | Request budget | Scanner parameter, default 500 requests per 5 minutes. Default max concurrency 4. |
+| 6 | civis log confidence | civis-python log matches are high confidence. Python 3.15 log matches stay medium. |
+| 7 | Undocumented v3 change | Ship `CV3-RUN-TEMPLATE-DEFAULT` at medium confidence. Re-check it against the first civis 3.0 release candidate. |
+| 8 | Unpinned installs | Ship `CV3-UNPINNED-INSTALL`. Read `requirements.txt`, `pyproject.toml`, and `Dockerfile` from git repos. |
+| 9 | Pending renames | Leave the 37 pending renames out. Revisit when a civis 3.0 release candidate is published. |
+| 10 | Workflow inline code | Scan it. |
+| 11 | Hidden objects | Skip them, but count them in coverage. |
+| 12 | Service impact | Only Streamlit Services on a blank or `latest` tag are "affected." All other Services are "advisory." |
+| 13 | Notebook logs | No deployment log scan. Check saved cell outputs in the `.ipynb` file instead. |
+| 14 | Non-GitHub repos | Mark them "not scanned, review manually." |
+| 15 | Active workflow | Any workflow that is not archived. |
+| 16 | Python 3.15 rules | Section 6 ship list approved, plus the new rule `PY315-PINNED-PACKAGE-INSTALL`. |
+
+### Additional requirements
+
+1. **civis 2.7.1 compatibility.** The app runs on civis 2.7.1, and the `get_*` method names exist only from civis 2.8.0. Code in `app/` and `common/` may only call civis methods and arguments that exist in 2.7.1. A unit test fails if `app/` or `common/` calls a civis method missing from 2.7.1. The scanner runs on civis 2.10.0 and uses the `get_*` names, so it can run on v3 later.
+2. **No CDN links.** Every front-end library (JavaScript, CSS, fonts) is vendored into `app/static/`. Viewers on locked-down networks must still get a working app.
+3. **Safe checklist inserts.** Every value in a checklist insert is validated and escaped, including values from Civis request headers. `civis.io.query_civis` sends plain SQL text and does not support bound parameters, so values are validated against strict patterns (numeric IDs, known rule IDs, the three status values) and string values are escaped as SQL literals.
+4. **Code never leaves memory.** Code fetched from GitHub or from notebooks stays in memory, or in a temporary directory that is deleted when the run ends. It is never written to run outputs, tables, or logs.
+
+### To revisit when a civis 3.0 release candidate is published
+
+- Re-check `CV3-RUN-TEMPLATE-DEFAULT`.
+- Decide whether to add the 37 pending `list_*_shares` and `search.list` renames.
+- Run the scanner's unit tests and a live scan against the release candidate.

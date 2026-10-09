@@ -48,14 +48,43 @@ be made public at any time.
 
 ## Architecture
 
-_To be filled in as the app is built._ The proposed design (endpoints, repo
-layout, image pins, rule lists) is in [docs/PLAN.md](docs/PLAN.md) and is still
-awaiting approval.
+The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
+2026). Where the plan and older notes differ, the plan wins. Summary:
 
-- Flask web app: TBD
-- Scanner job: TBD
-- Data storage: TBD
-- Deployment in Civis Platform: TBD
+- **Three packages, one repo.** `scanner/` (container script, `python -m scanner`),
+  `app/` (Flask Service, `gunicorn "app:create_app()"`), and `common/` (shared
+  rules, models, table schemas, URL builders, disclaimer). Civis clones the repo
+  to `/app` for both objects.
+- **Scanner job.** Runs on `civisanalytics/datascience-python:9.1.1` (Python
+  3.14.6, civis 2.10.0). Installs nothing at run time. Inventories Python scripts,
+  container scripts, custom scripts, notebooks, Services, and workflows; reads
+  code (inline, notebook file, GitHub); runs AST rules with regex fallback; reads
+  the most recent run log; writes results to the user's schema plus a CSV run
+  output. Uses the `get_*` civis method names so it also runs on civis v3.
+- **Web app.** Runs on `civisanalytics/civis-services-flask:0.1.0` (Python
+  3.12.11, Flask 3.1.1, gunicorn 22.0.0, civis 2.7.1) with no installs at start.
+  It only runs the scanner job the admin created (`SCANNER_JOB_ID`), using the
+  job's saved parameters. It never creates or edits scripts. Shared with Civis
+  admins only.
+- **Connection.** No direct link between app and scanner. The app starts runs and
+  reads status and `PROGRESS` log lines through the Civis API, and reads results
+  from the tables. Checklist status is append-only.
+- **Data storage.** Five tables in the user's schema: `scan_runs`, `objects`,
+  `findings`, `coverage`, `checklist_status`. Every row carries a run ID.
+- **Rules.** YAML files in `common/rules/` (`civis_v3.yaml`, `python315.yaml`).
+  Findings carry file, line number, and rule ID only.
+
+Constraints to keep in mind when writing code:
+
+- `app/` and `common/` may only call civis methods that exist in civis 2.7.1. A
+  unit test enforces this.
+- `common/` must run on Python 3.12 and 3.14.
+- Never store, log, or output code snippets. Fetched code stays in memory or a
+  temp directory deleted at the end of the run.
+- Front-end libraries are vendored into `app/static/`. No CDN links.
+- Every value in a SQL insert is validated and escaped, including request headers.
+- Unit tests use synthetic fixtures only. Never record fixtures from a real Civis
+  instance, and never commit real object names, user names, or code.
 
 ## Setup commands
 
