@@ -1,0 +1,341 @@
+# Python 3.15 rules.
+#
+# Source: "What's New in Python 3.15" (Porting to Python 3.15, Removed, and
+# module sections), read October 9, 2026. Log patterns are the warning texts
+# that Python 3.13 and 3.14 print for these changes.
+#
+# Approved in docs/PLAN.md section 6. Left out by decision: AST node
+# constructor checks, mmap.resize, iterparse ResourceWarning, base64 padding,
+# assertWarns, UTF-8 default encoding, and ContextDecorator on generators.
+# Never flag locale.getdefaultlocale (no longer deprecated in 3.15) or re.match
+# (soft-deprecated only).
+
+family: python315
+id_prefix: PY315
+log_confidence: medium
+
+rules:
+  - id: PY315-STRPTIME-NO-YEAR
+    title: strptime raises ValueError when the format has %d but no year
+    severity: high
+    confidence: high
+    ast:
+      - match: strptime_no_year
+    python_regex: 'strptime\s*\(.*?([''"])(?:(?!%[YyG])[^''"\n])*%d(?:(?!%[YyG])[^''"\n])*\1'
+    log:
+      patterns: ['Parsing dates involving a day of month without a year specified is ambiguous']
+    fix: Add a year to the format and the input (for example "%Y-%m-%d"), or parse the date with a fixed year added, then replace the year.
+    source: https://docs.python.org/3.15/whatsnew/3.15.html#datetime
+
+  - id: PY315-LOAD-MODULE
+    title: Loader.load_module() is removed
+    severity: high
+    confidence: high
+    ast:
+      - match: call
+        names: [load_module]
+        exclude_receiver_call_qualnames: [zipimport.zipimporter]
+      - match: loader_subclass_load_module
+    python_regex: '\.load_module\s*\('
+    log:
+      patterns: ['the load_module\(\) method is deprecated']
+    fix: Use importlib.util.spec_from_file_location() with importlib.util.module_from_spec() and loader.exec_module() instead.
+    source: https://docs.python.org/3.15/whatsnew/3.15.html#importlib
+
+  - id: PY315-ZIPIMPORT-LOAD-MODULE
+    title: zipimporter.load_module() is removed
+    severity: high
+    confidence: high
+    ast:
+      - match: call
+        names: [load_module]
+        receiver_call_qualnames: [zipimport.zipimporter]
+    python_regex: 'zipimporter\s*\(.*\)\.load_module\s*\('
+    log:
+      patterns: ['''zipimport\.zipimporter\.load_module'' is deprecated']
+    fix: Use zipimporter.exec_module() instead.
+    source: https://docs.python.org/3.15/whatsnew/3.15.html#zipimport
+
+  - id: PY315-SQLITE-CONNECT-POSITIONAL
+    title: sqlite3.connect accepts only the database argument by position
+    severity: high
+    confidence: high
+    ast:
+      - match: call
+        qualnames: [sqlite3.connect, sqlite3.dbapi2.connect]
+        min_positional: 2
+    python_regex: 'sqlite3\.connect\s*\([^=()]*,[^=()]*\)'
+    log:
+      patterns: ['Passing more than 1 positional argument to sqlite3\.connect\(\) is deprecated']
+    fix: Pass every argument after the database by keyword, for example sqlite3.connect(path, timeout=10).
+    source: https://docs.python.org/3.15/whatsnew/3.15.html#porting-to-python-3-15
+
+  - id: PY315-SQLITE-METHOD-KEYWORDS
+    title: Leading sqlite3 Connection method arguments are now positional-only
+    severity: high
+    confidence: medium
+    ast:
+      - match: call
+        names: [create_function, create_aggregate, set_authorizer, set_progress_handler, set_trace_callback]
+        keywords_any: [name, narg, func, n_arg, aggregate_class, authorizer_callback, progress_handler, trace_callback]
+    python_regex: '\.(create_function|create_aggregate|set_authorizer|set_progress_handler|set_trace_callback)\s*\([^)]*\b(name|narg|func|n_arg|aggregate_class|authorizer_callback|progress_handler|trace_callback)\s*='
+    log:
+      patterns: ['will become positional-only in Python 3\.15']
+    fix: Pass these arguments by position instead of by keyword.
+    source: https://docs.python.org/3.15/whatsnew/3.15.html#porting-to-python-3-15
+
+  - id: PY315-ARGPARSE-DEST
+    title: argparse now names the destination after a single-dash long option
+    severity: medium
+    confidence: high
+    ast:
+      - match: argparse_dest
+    python_regex: 'add_argument\s*\(\s*([''"])-[^-''"]\1\s*,\s*([''"])-[^-''"][^''"]+\2'
+    fix: Add dest= to add_argument to keep the old attribute name. Without it, add_argument('-f', '-foo') stores the value as args.foo instead of args.f.
+    source: https://docs.python.org/3.15/whatsnew/3.15.html#porting-to-python-3-15
+
+  - id: PY315-SRE-MODULES
+    title: The sre_compile, sre_constants, and sre_parse modules are removed
+    severity: high
+    confidence: high
+    ast:
+      - match: reference
+        qualnames: [sre_compile, sre_constants, sre_parse]
+    python_regex: '^\s*(import|from)\s+sre_(compile|constants|parse)\b'
+    log:
+      patterns: ['module ''sre_(compile|constants|parse)'' is deprecated']
+    fix: Use the re module. If a third-party package imports these modules, upgrade that package.
+    source: https://docs.python.org/3.15/whatsnew/3.15.html#sre
+
+  - id: PY315-GLOB-GLOB0-GLOB1
+    title: glob.glob0 and glob.glob1 are removed
+    severity: high
+    confidence: high
+    ast:
+      - match: reference
+        qualnames: [glob.glob0, glob.glob1]
+    python_regex: '\bglob\.glob[01]\s*\('
+    log:
+      patterns: ['glob\.glob[01] is deprecated']
+    fix: Use glob.glob() and pass the directory as root_dir.
+    source: https://docs.python.org/3.15/whatsnew/3.15.html#glob
+
+  - id: PY315-CGI-HANDLER
+    title: http.server CGIHTTPRequestHandler and the --cgi option are removed
+    severity: high
+    confidence: high
+    ast:
+      - match: reference
+        qualnames: [http.server.CGIHTTPRequestHandler]
+    python_regex: '\bCGIHTTPRequestHandler\b'
+    shell_regex: '\bhttp\.server\b.*\s--cgi\b'
+    log:
+      patterns: ['CGIHTTPRequestHandler'' is deprecated']
+    fix: Serve the scripts with a WSGI app (for example Flask) instead of CGI.
+    source: https://docs.python.org/3.15/whatsnew/3.15.html#id3
+
+  - id: PY315-RESOURCES-FILES-PACKAGE
+    title: The package argument of importlib.resources.files() is removed
+    severity: high
+    confidence: high
+    ast:
+      - match: call
+        qualnames: [importlib.resources.files]
+        keywords_any: [package]
+    python_regex: '\bfiles\s*\(\s*package\s*='
+    log:
+      patterns: ['First parameter to files is renamed to ''anchor''']
+    fix: Pass the package by position, or use anchor= instead of package=.
+    source: https://docs.python.org/3.15/whatsnew/3.15.html#importlib-resources
+
+  - id: PY315-PATH-IS-RESERVED
+    title: PurePath.is_reserved() is removed
+    severity: high
+    confidence: high
+    ast:
+      - match: call
+        names: [is_reserved]
+        max_positional: 0
+    python_regex: '\.is_reserved\s*\(\s*\)'
+    log:
+      patterns: ['is_reserved\(\) is deprecated']
+    fix: Use os.path.isreserved() instead.
+    source: https://docs.python.org/3.15/whatsnew/3.15.html#id4
+
+  - id: PY315-PLATFORM-JAVA-VER
+    title: platform.java_ver() is removed
+    severity: high
+    confidence: high
+    ast:
+      - match: reference
+        qualnames: [platform.java_ver]
+    python_regex: '\bjava_ver\s*\('
+    log:
+      patterns: ['''java_ver'' is deprecated']
+    fix: Remove the call. There is no replacement.
+    source: https://docs.python.org/3.15/whatsnew/3.15.html#platform
+
+  - id: PY315-CTYPES-SETPOINTERTYPE
+    title: ctypes.SetPointerType is removed
+    severity: high
+    confidence: high
+    ast:
+      - match: reference
+        qualnames: [ctypes.SetPointerType]
+    python_regex: '\bSetPointerType\b'
+    log:
+      patterns: ['''ctypes\.SetPointerType'' is deprecated']
+    fix: Define the pointer type after the target type is complete, or set _type_ on the pointer class directly.
+    source: https://docs.python.org/3.15/whatsnew/3.15.html#id2
+
+  - id: PY315-SYSCONFIG-CHECK-HOME
+    title: The check_home argument of sysconfig.is_python_build() is removed
+    severity: high
+    confidence: high
+    ast:
+      - match: call
+        qualnames: [sysconfig.is_python_build]
+        keywords_any: [check_home]
+        or_min_positional: 1
+    python_regex: 'is_python_build\s*\(\s*[^)\s]'
+    log:
+      patterns: ['The check_home argument of sysconfig\.is_python_build is deprecated']
+    fix: Call sysconfig.is_python_build() with no arguments.
+    source: https://docs.python.org/3.15/whatsnew/3.15.html#sysconfig
+
+  - id: PY315-RLOCK-ARGS
+    title: threading.RLock() no longer accepts arguments
+    severity: high
+    confidence: high
+    ast:
+      - match: call
+        qualnames: [threading.RLock, _thread.RLock]
+        min_args: 1
+    python_regex: '\bRLock\s*\(\s*[^)\s]'
+    log:
+      patterns: ['Passing arguments to RLock is deprecated']
+    fix: Call RLock() with no arguments.
+    source: https://docs.python.org/3.15/whatsnew/3.15.html#id5
+
+  - id: PY315-CO-LNOTAB
+    title: The co_lnotab attribute of code objects is removed
+    severity: high
+    confidence: high
+    ast:
+      - match: attribute
+        names: [co_lnotab]
+    python_regex: '\.co_lnotab\b'
+    log:
+      patterns: ['co_lnotab is deprecated']
+    fix: Use the co_lines() method of the code object instead.
+    source: https://docs.python.org/3.15/whatsnew/3.15.html#id6
+
+  - id: PY315-MODULE-CACHED
+    title: Modules no longer set __cached__
+    severity: high
+    confidence: high
+    ast:
+      - match: attribute
+        names: [__cached__]
+        include_bare_names: true
+    python_regex: '\b__cached__\b'
+    fix: Use __spec__.cached instead.
+    source: https://docs.python.org/3.15/whatsnew/3.15.html#other-language-changes
+
+  - id: PY315-TYPING-NAMEDTUPLE-KWARGS
+    title: NamedTuple("Name", field=type) keyword syntax is removed
+    severity: high
+    confidence: high
+    ast:
+      - match: namedtuple_kwargs
+    python_regex: '\bNamedTuple\s*\(\s*([''"])[^''"]+\1\s*,\s*[A-Za-z_]\w*\s*='
+    log:
+      patterns: ['Creating NamedTuple classes using keyword arguments is deprecated']
+    fix: Use the class syntax, or pass a list of (name, type) pairs.
+    source: https://docs.python.org/3.15/whatsnew/3.15.html#id7
+
+  - id: PY315-TYPING-TYPEDDICT-NO-FIELDS
+    title: TypedDict("Name") and TypedDict("Name", None) are removed
+    severity: high
+    confidence: high
+    ast:
+      - match: typeddict_no_fields
+    python_regex: '\bTypedDict\s*\(\s*([''"])[^''"]+\1\s*(,\s*None\s*)?\)'
+    log:
+      patterns: ['Failing to pass a value for the ''fields'' parameter is deprecated', 'Passing ''None'' as the ''fields'' parameter is deprecated']
+    fix: 'Pass an empty dict: TypedDict("Name", {}).'
+    source: https://docs.python.org/3.15/whatsnew/3.15.html#id7
+
+  - id: PY315-TYPING-NO-TYPE-CHECK-DECORATOR
+    title: typing.no_type_check_decorator is removed
+    severity: high
+    confidence: high
+    ast:
+      - match: reference
+        qualnames: [typing.no_type_check_decorator]
+    python_regex: '\bno_type_check_decorator\b'
+    log:
+      patterns: ['''typing\.no_type_check_decorator'' is deprecated']
+    fix: Remove the decorator. Use typing.no_type_check directly where needed.
+    source: https://docs.python.org/3.15/whatsnew/3.15.html#id7
+
+  - id: PY315-BYTESTRING-STAR-IMPORT
+    title: ByteString is no longer included in star imports from collections.abc or typing
+    severity: medium
+    confidence: high
+    ast:
+      - match: star_import_name
+        modules: [collections.abc, typing]
+        names: [ByteString]
+    fix: Use bytes, or collections.abc.Buffer, instead of ByteString. ByteString itself is removed in Python 3.17.
+    source: https://docs.python.org/3.15/whatsnew/3.15.html#collections-abc
+
+  - id: PY315-WAVE-MARKERS
+    title: wave getmark(), setmark(), and getmarkers() are removed
+    severity: high
+    confidence: medium
+    ast:
+      - match: call
+        names: [getmark, setmark, getmarkers]
+        requires_import: [wave]
+    log:
+      patterns: ['''Wave_(read|write)\.(getmark|setmark|getmarkers)'' is deprecated']
+    fix: Remove these calls. They always returned empty values.
+    source: https://docs.python.org/3.15/whatsnew/3.15.html#id8
+
+  - id: PY315-RLIMIT-NEGATIVE
+    title: resource.RLIM_INFINITY is always positive, and negative limits are deprecated
+    severity: low
+    confidence: medium
+    ast:
+      - match: rlimit_negative
+    fix: Use resource.RLIM_INFINITY instead of -1, and do not compare RLIM_INFINITY with a negative number.
+    source: https://docs.python.org/3.15/whatsnew/3.15.html#porting-to-python-3-15
+
+  - id: PY315-PINNED-PACKAGE-INSTALL
+    title: A package is installed at run time with an exact pin or upper bound
+    severity: low
+    confidence: low
+    impact: advisory
+    default_image_only: true
+    install:
+      - match: pinned_or_upper_bound
+    fix: Confirm each pinned version supports Python 3.15 (has a 3.15 wheel or installs from source), or loosen the pin. Old pinned versions often fail to install on a new Python version.
+    source: https://docs.python.org/3.15/whatsnew/3.15.html
+
+  - id: PY315-LOG-DEPRECATION
+    title: The last run printed a warning about a change in Python 3.15
+    severity: medium
+    confidence: medium
+    log:
+      patterns:
+        - 'slated for removal in Python 3\.15'
+        - 'will be removed in (Python )?3\.15'
+        - 'will become an error in Python 3\.15'
+        - 'will be disallowed in Python 3\.15'
+        - '(keyword|positional)-only (parameters? )?in Python 3\.15'
+      exclude:
+        - 'getdefaultlocale'
+      fallback: true
+    fix: Open the run log, find the warning that mentions Python 3.15, and update the code it points to.
+    source: https://docs.python.org/3.15/whatsnew/3.15.html#removed

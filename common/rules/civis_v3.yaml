@@ -1,0 +1,231 @@
+# civis-python v3 rules.
+#
+# Source: civis-python v3 changelog (v3-changelog branch) and the civis-python
+# source on main, both read October 9, 2026. Log patterns are the exact
+# FutureWarning messages that civis-python 2.9.3 and later print.
+#
+# Approved in docs/PLAN.md section 7. Not included yet, by decision: the 37
+# pending list_*_shares and search.list renames. Revisit them, and re-check
+# CV3-RUN-TEMPLATE-DEFAULT, when a civis 3.0 release candidate is published.
+
+family: civis_v3
+id_prefix: CV3
+log_confidence: high
+
+rules:
+  - id: CV3-USE-PANDAS
+    title: The use_pandas argument of civis.io.read_civis and read_civis_sql is removed
+    severity: high
+    confidence: high
+    ast:
+      - match: call
+        qualnames: [civis.io.read_civis, civis.io.read_civis_sql]
+        names: [read_civis, read_civis_sql]
+        keywords_any: [use_pandas]
+    python_regex: '\buse_pandas\s*='
+    log:
+      patterns: ['keyword argument ''use_pandas'' is deprecated']
+    fix: Replace use_pandas=True with return_as="pandas". Remove use_pandas=False, or use return_as="list".
+    source: https://github.com/civisanalytics/civis-python/blob/v3-changelog/CHANGELOG.md
+
+  - id: CV3-DEFAULT-CREDENTIAL
+    title: APIClient.default_credential is removed
+    severity: high
+    confidence: high
+    ast:
+      - match: attribute
+        names: [default_credential]
+    python_regex: '\.default_credential\b'
+    log:
+      patterns: ['The property `default_credential` is deprecated']
+    fix: Use client.default_database_credential_id instead.
+    source: https://github.com/civisanalytics/civis-python/blob/v3-changelog/CHANGELOG.md
+
+  - id: CV3-GET-DATABASE-CREDENTIAL-ID
+    title: APIClient.get_database_credential_id is removed, with no replacement
+    severity: high
+    confidence: high
+    ast:
+      - match: call
+        names: [get_database_credential_id]
+    python_regex: '\.get_database_credential_id\s*\('
+    log:
+      patterns: ['The method `get_database_credential_id` is deprecated']
+    fix: Use client.default_database_credential_id, or look up the credential ID once and pass it to the script as a parameter.
+    source: https://github.com/civisanalytics/civis-python/blob/v3-changelog/CHANGELOG.md
+
+  - id: CV3-FEATURE-FLAGS
+    title: APIClient.feature_flags is removed
+    severity: high
+    confidence: medium
+    ast:
+      - match: attribute
+        names: [feature_flags]
+        exclude_receiver_calls: [get_me, list_me]
+    python_regex: '\.feature_flags\b'
+    log:
+      patterns: ['The property `feature_flags` is deprecated']
+    fix: Use client.users.get_me()["feature_flags"] instead.
+    source: https://github.com/civisanalytics/civis-python/blob/v3-changelog/CHANGELOG.md
+
+  - id: CV3-PARALLEL
+    title: The civis.parallel module is removed
+    severity: high
+    confidence: high
+    ast:
+      - match: reference
+        qualnames: [civis.parallel]
+    python_regex: '\bcivis\.parallel\b|^\s*from\s+civis\s+import\s+.*\bparallel\b'
+    log:
+      patterns: ['`civis\.parallel` is deprecated']
+    fix: Move parallel work to civis.futures.CivisFuture, or pin civis>=2.8,<3 for this job.
+    source: https://github.com/civisanalytics/civis-python/blob/v3-changelog/CHANGELOG.md
+
+  - id: CV3-ML
+    title: The civis.ml module is removed
+    severity: high
+    confidence: high
+    ast:
+      - match: reference
+        qualnames: [civis.ml]
+    python_regex: '\bcivis\.ml\b|^\s*from\s+civis\s+import\s+.*\bml\b'
+    log:
+      patterns: ['`civis\.ml` is deprecated']
+    fix: Pin civis>=2.8,<3 for this job to keep using civis.ml. CivisML templates in Civis Platform are not affected.
+    source: https://github.com/civisanalytics/civis-python/blob/v3-changelog/CHANGELOG.md
+
+  - id: CV3-CONTAINERFUTURE
+    title: The ContainerFuture class is removed
+    severity: high
+    confidence: high
+    ast:
+      - match: reference
+        qualnames: [civis.futures.ContainerFuture, civis.ContainerFuture]
+        bare_names: [ContainerFuture]
+    python_regex: '\bContainerFuture\b'
+    log:
+      patterns: ['The ContainerFuture class is deprecated']
+    fix: Use civis.futures.CivisFuture. It now supports .cancel() and the max_retries parameter.
+    source: https://github.com/civisanalytics/civis-python/blob/v3-changelog/CHANGELOG.md
+
+  - id: CV3-SERVICECLIENT
+    title: The ServiceClient class is removed, with no replacement
+    severity: high
+    confidence: high
+    ast:
+      - match: reference
+        qualnames: [civis.service_client.ServiceClient, civis.ServiceClient]
+        bare_names: [ServiceClient]
+    python_regex: '\bcivis\.service_client\b|\bfrom\s+civis\.service_client\s+import\b'
+    log:
+      patterns: ['The ServiceClient class is deprecated']
+    fix: Call the Service over HTTP directly, for example with the requests library.
+    source: https://github.com/civisanalytics/civis-python/blob/v3-changelog/CHANGELOG.md
+
+  - id: CV3-POLLABLERESULT
+    title: The PollableResult class becomes private
+    severity: high
+    confidence: high
+    ast:
+      - match: reference
+        qualnames: [civis.polling.PollableResult, civis.PollableResult]
+        bare_names: [PollableResult]
+    python_regex: '\bPollableResult\b'
+    log:
+      patterns: ['The PollableResult class is deprecated']
+    fix: Use civis.futures.CivisFuture instead.
+    source: https://github.com/civisanalytics/civis-python/blob/v3-changelog/CHANGELOG.md
+
+  - id: CV3-CIVISASYNCRESULTBASE
+    title: The CivisAsyncResultBase class becomes private
+    severity: high
+    confidence: high
+    ast:
+      - match: reference
+        qualnames: [civis.base.CivisAsyncResultBase, civis.CivisAsyncResultBase]
+        bare_names: [CivisAsyncResultBase]
+    python_regex: '\bCivisAsyncResultBase\b'
+    log:
+      patterns: ['The CivisAsyncResultBase class is deprecated']
+    fix: Use civis.futures.CivisFuture instead.
+    source: https://github.com/civisanalytics/civis-python/blob/v3-changelog/CHANGELOG.md
+
+  - id: CV3-RUN-TEMPLATE-JSONVALUE
+    title: The JSONValue argument of civis.utils.run_template is removed
+    severity: high
+    confidence: high
+    ast:
+      - match: call
+        qualnames: [civis.utils.run_template]
+        keywords_any: [JSONValue]
+        or_min_positional: 3
+    python_regex: 'run_template\s*\(.*\bJSONValue\s*='
+    log:
+      patterns: ['''JSONValue'' is deprecated and will be removed']
+    fix: Replace JSONValue=True with return_as="JSONValue". Replace JSONValue=False with return_as="files".
+    source: https://github.com/civisanalytics/civis-python/blob/v3-changelog/CHANGELOG.md
+
+  - id: CV3-RUN-TEMPLATE-DEFAULT
+    title: The default return value of civis.utils.run_template changes in v3
+    severity: medium
+    confidence: medium
+    ast:
+      - match: call
+        qualnames: [civis.utils.run_template]
+        keywords_absent: [return_as, JSONValue]
+        max_positional: 2
+    fix: Pass return_as="files" to keep the current behavior. In v3 the default changes from "files" to "future". This change is stated in the civis-python source, not in the changelog.
+    source: https://github.com/civisanalytics/civis-python/blob/main/src/civis/utils/_jobs.py
+
+  - id: CV3-UNPINNED-INSTALL
+    title: civis is installed at run time without an upper bound, so it will get v3
+    severity: medium
+    confidence: medium
+    impact: affected
+    install:
+      - match: unbounded_major
+        package: civis
+        below_major: 3
+    fix: Pin civis to v2 until the code is updated, for example civis>=2.8,<3. This applies even on custom or pinned images, because the install pulls the newest civis from PyPI.
+    source: https://github.com/civisanalytics/civis-python/blob/v3-changelog/CHANGELOG.md
+
+  - id: CV3-LOG-FUTUREWARNING
+    title: The last run printed a civis-python v3 deprecation warning
+    severity: high
+    confidence: high
+    log:
+      patterns: ['civis-python v3\.0\.0']
+      fallback: true
+    fix: Open the run log, find the FutureWarning from civis-python, and follow its instructions.
+    source: https://github.com/civisanalytics/civis-python/blob/v3-changelog/CHANGELOG.md
+
+# list_* methods renamed to get_* in v3. One rule is generated per row, with ID
+# CV3-RENAME-<ENDPOINT>-<OLD-NAME>. This is the full list from the changelog,
+# checked against civis-python's LEGACY_PATHS_WITH_LIST_NAME and API spec.
+renames:
+  severity: high
+  confidence: high
+  # ".list(" is a common method name, so these two are less certain.
+  medium_confidence: [endpoints.list, notifications.list]
+  fix: Rename {old} to {new}. The arguments are unchanged. The new name works in civis 2.8.0 and later.
+  source: https://github.com/civisanalytics/civis-python/blob/v3-changelog/CHANGELOG.md
+  items:
+    - [clusters, list_kubernetes_instance_configs_historical_graphs, get_kubernetes_instance_configs_historical_graphs]
+    - [clusters, list_kubernetes_instance_configs_historical_metrics, get_kubernetes_instance_configs_historical_metrics]
+    - [databases, list_advanced_settings, get_advanced_settings]
+    - [endpoints, list, get]
+    - [git_repos, list_refs, get_refs]
+    - [groups, list_child_groups, get_child_groups]
+    - [models, list_schedules, get_schedules]
+    - [notebooks, list_update_links, get_update_links]
+    - [notebooks, list_git, get_git]
+    - [notifications, list, get]
+    - [predictions, list_schedules, get_schedules]
+    - [reports, list_git, get_git]
+    - [scripts, list_sql_git, get_sql_git]
+    - [scripts, list_javascript_git, get_javascript_git]
+    - [scripts, list_python3_git, get_python3_git]
+    - [scripts, list_r_git, get_r_git]
+    - [usage, list_llm_organization_summary, get_llm_organization_summary]
+    - [users, list_me, get_me]
+    - [workflows, list_git, get_git]

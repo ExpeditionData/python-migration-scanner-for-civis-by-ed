@@ -5,3 +5,5 @@
 civis==2.7.1
 flask==3.1.1
 gunicorn==22.0.0
+# pyyaml: present in the image as a civis dependency (civis requires PyYAML>=3.0).
+# Its exact version in the image is not confirmed. common/ uses only yaml.safe_load.
