@@ -1,0 +1,6 @@
+# Local development and tests only. Never installed in Civis.
+# Uses the scanner versions of shared packages. The app's civis 2.7.1 limit is
+# enforced by tests/test_civis_271_compat.py instead of a second install.
+-r requirements-scanner.txt
+flask==3.1.1
+pytest==9.1.1

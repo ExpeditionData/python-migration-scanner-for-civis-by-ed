@@ -1,0 +1,7 @@
+# Packages the web app uses, at the exact versions inside the pinned Service
+# image: civisanalytics/civis-services-flask:0.1.0 (Python 3.12.11).
+# The Service installs nothing at start. Code in app/ and common/ may only use
+# these packages and the Python standard library.
+civis==2.7.1
+flask==3.1.1
+gunicorn==22.0.0

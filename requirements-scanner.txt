@@ -1,0 +1,8 @@
+# Packages the scanner uses, at the exact versions inside the pinned scanner
+# image: civisanalytics/datascience-python:9.1.1 (Python 3.14.6).
+# The scanner installs nothing at run time. This file records what the image
+# provides so local tests run against the same versions.
+civis==2.10.0
+pandas==3.0.5
+pyyaml==6.0.3
+requests==2.34.2

@@ -1,0 +1,6 @@
+# Normalize line endings in the repo. Shell scripts and Dockerfiles run in
+# Linux containers, so they must always use LF, even on a Windows checkout.
+* text=auto
+*.sh text eol=lf
+Dockerfile* text eol=lf
+*.Dockerfile text eol=lf
