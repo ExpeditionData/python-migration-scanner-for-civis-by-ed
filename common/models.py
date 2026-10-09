@@ -132,3 +132,4 @@ class CoverageCounts:
     scanned: int = 0
     hidden_skipped: int = 0
     archived_included: int = 0
+    not_python: int = 0  # Left out because they cannot run Python (for example R Shiny Services).

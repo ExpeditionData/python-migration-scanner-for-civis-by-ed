@@ -117,6 +117,7 @@ COVERAGE = Table(
         Column("scanned_count", "INTEGER", "Objects fully scanned, on summary rows only."),
         Column("hidden_skipped_count", "INTEGER", "Hidden objects skipped, on summary rows only."),
         Column("archived_included_count", "INTEGER", "Archived jobs included because an active workflow runs them."),
+        Column("not_python_count", "INTEGER", "Objects left out because they cannot run Python."),
         Column("reason", "VARCHAR(1024)", "Why the object was not fully scanned, on object rows."),
     ),
 )
