@@ -4,11 +4,16 @@ Guidance for Claude Code when working in this repository.
 
 ## Project summary
 
-Civis Python Version Search is a Flask web app plus a scanner job, both of which
-run inside Civis Platform. The scanner job collects information about the Python
-versions used across Civis Platform objects, and the web app lets users search
-and review those results. The code is licensed under Apache 2.0 by Expedition
-Data LLC and is written so the repository could be made public at any time.
+Civis Python Version Search is a free, open-source tool that Civis Platform
+customers run inside their own Civis environment. It finds scripts, notebooks,
+workflows, Services, and container scripts affected by the February 2027 Civis
+default image update (Python 3.14 to 3.15, civis-python v2 to v3). A scanner
+job (a Civis container script) inventories objects, reads their code and recent
+logs, and writes findings to a schema the user chooses. A Flask web app (a Civis
+Service) launches scans, shows progress and results, and lets the team track a
+fix checklist. The tool is read-only on every Civis object. The code is licensed
+under Apache 2.0 by Expedition Data LLC and is written so the repository could
+be made public at any time.
 
 ## Hard rules
 
@@ -43,7 +48,9 @@ Data LLC and is written so the repository could be made public at any time.
 
 ## Architecture
 
-_To be filled in as the app is built._
+_To be filled in as the app is built._ The proposed design (endpoints, repo
+layout, image pins, rule lists) is in [docs/PLAN.md](docs/PLAN.md) and is still
+awaiting approval.
 
 - Flask web app: TBD
 - Scanner job: TBD
