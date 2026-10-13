@@ -1,0 +1,12 @@
+{#- Shared template pieces. Values from Civis (object names, user names, file
+    paths) are user-controlled. Autoescaping is on for every .html template,
+    so never mark them |safe. Links go through safe_href, which allows only
+    http and https. -#}
+
+{% macro object_link(obj) -%}
+<a href="{{ obj.url | safe_href }}" target="_blank" rel="noopener noreferrer">{{ obj.name }}</a>
+{%- endmacro %}
+
+{% macro csrf_field() -%}
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}

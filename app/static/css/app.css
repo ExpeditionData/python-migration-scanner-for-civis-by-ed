@@ -1,0 +1,42 @@
+/* Served from the app itself. No CDN links and no inline styles (see the CSP). */
+:root {
+  --text: #1f2933;
+  --muted: #52606d;
+  --border: #d9e2ec;
+  --accent: #1f5f8b;
+  --notice-bg: #fff8e1;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.site-header,
+.site-footer,
+.page {
+  padding: 1rem 1.5rem;
+}
+
+.site-header {
+  border-bottom: 1px solid var(--border);
+}
+
+.site-title {
+  margin: 0;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.notice {
+  background: var(--notice-bg);
+  border: 1px solid var(--border);
+  padding: 0.75rem 1rem;
+}
+
+.disclaimer {
+  color: var(--muted);
+  font-size: 0.875rem;
+}

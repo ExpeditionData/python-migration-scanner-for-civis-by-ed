@@ -1,0 +1,441 @@
+"""Tests for the security and privacy requirements in SECURITY.md.
+
+All secrets, emails, and names below are fake and made up for these tests.
+"""
+
+from __future__ import annotations
+
+import csv
+import io
+import json
+import logging
+import os
+import re
+import stat
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import pytest
+from flask import render_template_string
+
+from app import create_app
+from app.security import csrf_token_is_valid, frame_ancestors, generate_csrf_token, safe_href
+from common import retention, schema, sql
+from common.models import CivisObject, Impact, ObjectType, WorkflowRef
+from common.redact import REDACTED, RedactingFilter, redact, safe_error
+from scanner import scan_log
+from scanner.engine import Engine
+from scanner.retrieval.tempdir import private_tempdir
+
+ROOT = Path(__file__).resolve().parent.parent
+
+FAKE_PASSWORD = "Tr0ub4dor-fake-pw-9431"  # pragma: allowlist secret  gitleaks:allow
+FAKE_EMAIL = "pat.donor@example.org"
+FAKE_API_KEY = "fakecivisapikey0123456789abcdef"  # pragma: allowlist secret  gitleaks:allow
+FAKE_GITHUB_TOKEN = "ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"  # gitleaks:allow
+SECRETS = (FAKE_PASSWORD, FAKE_EMAIL, FAKE_API_KEY, FAKE_GITHUB_TOKEN)
+
+
+def _every_output(findings, log_text: str) -> str:
+    """Everything the scanner could write: table rows, CSV rows, JSON, and its own log."""
+    rows = [f.to_row() for f in findings]
+    buffer = io.StringIO()
+    if rows:
+        writer = csv.DictWriter(buffer, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+    return "\n".join([buffer.getvalue(), json.dumps(rows), repr(findings), log_text])
+
+
+@pytest.fixture
+def scanner_log():
+    stream = io.StringIO()
+    logger = scan_log.configure(stream)
+    previous = logger.handlers[0].stream
+    logger.handlers[0].setStream(stream)
+    yield stream
+    logger.handlers[0].setStream(previous)
+
+
+def _obj():
+    return CivisObject(
+        101, ObjectType.PYTHON_SCRIPT, "Example job", "https://example.test/101",
+        uses_default_image=True, impact=Impact.AFFECTED, workflows=[WorkflowRef(601, "Example pipeline")],
+    )
+
+
+# --- 1. Sensitive content from Civis -----------------------------------------
+
+
+def test_log_with_password_and_email_leaves_no_trace(scanner_log):
+    run_log = "\n".join(
+        [
+            f"Connecting as etl_user with password={FAKE_PASSWORD}",
+            f"Loaded member record for {FAKE_EMAIL}",
+            "/app/job.py:4: FutureWarning: The method name ``<client>.users.list_me`` is deprecated "
+            "and will be removed at civis-python v3.0.0 (scheduled for February 2027).",
+            f"DeprecationWarning: Parsing dates involving a day of month without a year specified is ambiguous ({FAKE_EMAIL})",
+        ]
+    )
+    engine = Engine()
+    findings = engine.to_findings(_obj(), engine.scan_log(run_log, "run log"))
+    assert {f.rule_id for f in findings} == {"CV3-RENAME-USERS-LIST-ME", "PY315-STRPTIME-NO-YEAR"}
+    for finding in findings:
+        scan_log.findings_count(finding.rule_id, 1)
+    output = _every_output(findings, scanner_log.getvalue())
+    for secret in (FAKE_PASSWORD, FAKE_EMAIL):
+        assert secret not in output
+
+
+def test_code_and_notebook_output_text_never_reach_findings(scanner_log):
+    code = f"import civis\nPASSWORD = '{FAKE_PASSWORD}'\nflags = civis.APIClient().feature_flags  # {FAKE_EMAIL}\n"
+    notebook = {
+        "cells": [
+            {
+                "cell_type": "code",
+                "source": [f"email = '{FAKE_EMAIL}'\n"],
+                "outputs": [{"output_type": "stream", "name": "stdout", "text": [f"{FAKE_EMAIL} {FAKE_PASSWORD}\n"]}],
+            }
+        ]
+    }
+    engine = Engine()
+    matches = engine.scan_python(code, "jobs/load.py").matches
+    matches += engine.scan_notebook(json.dumps(notebook), "analysis.ipynb").matches
+    output = _every_output(engine.to_findings(_obj(), matches), scanner_log.getvalue())
+    for secret in (FAKE_PASSWORD, FAKE_EMAIL):
+        assert secret not in output
+
+
+def test_parse_failures_log_object_id_and_error_type_only(scanner_log):
+    broken = f"print 'old style' {FAKE_PASSWORD} {FAKE_EMAIL}\n"
+    result = Engine().scan_python(broken, "jobs/legacy.py")
+    assert not result.fully_parsed
+    try:
+        compile(broken, "jobs/legacy.py", "exec")
+    except SyntaxError as exc:
+        scan_log.parse_error(ObjectType.PYTHON_SCRIPT, 107, exc)
+    try:
+        json.loads(f"{{not json {FAKE_EMAIL}")
+    except ValueError as exc:
+        scan_log.parse_error(ObjectType.NOTEBOOK, 401, exc)
+    logged = scanner_log.getvalue()
+    assert "PARSE_ERROR object_type=python_script object_id=107 error=SyntaxError" in logged
+    assert "PARSE_ERROR object_type=notebook object_id=401 error=JSONDecodeError" in logged
+    for secret in (FAKE_PASSWORD, FAKE_EMAIL):
+        assert secret not in logged and secret not in " ".join(result.notes)
+
+
+# --- 2. The scanner's own log --------------------------------------------------
+
+
+def test_scanner_log_lines_are_structured(scanner_log):
+    class FakeAPIError(Exception):
+        status_code = 403
+
+    scan_log.progress("code", 420, 2000)
+    scan_log.phase("inventory", "done")
+    scan_log.object_error(ObjectType.CONTAINER_SCRIPT, 201, FakeAPIError(f"denied for {FAKE_EMAIL} key {FAKE_API_KEY}"))
+    lines = scanner_log.getvalue().splitlines()
+    assert lines == [
+        "PROGRESS phase=code objects_done=420 objects_total=2000",
+        "PHASE name=inventory state=done",
+        "OBJECT_ERROR object_type=container_script object_id=201 error=FakeAPIError status=403",
+    ]
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda: scan_log.progress(f"code {FAKE_PASSWORD}", 1, 2),
+        lambda: scan_log.progress("code", "1", 2),
+        lambda: scan_log.findings_count(f"CV3-X {FAKE_EMAIL}", 1),
+        lambda: scan_log.object_error("not_a_type", 1, ValueError()),
+        lambda: scan_log.object_error(ObjectType.NOTEBOOK, f"{FAKE_EMAIL}", ValueError()),
+    ],
+)
+def test_scanner_log_rejects_free_text(call):
+    with pytest.raises((ValueError, TypeError)):
+        call()
+
+
+# --- 3. Temp directories --------------------------------------------------------
+
+
+def test_private_tempdir_is_owner_only_and_removed_on_failure():
+    created = None
+    with pytest.raises(RuntimeError):
+        with private_tempdir() as path:
+            created = path
+            if os.name != "nt":
+                assert stat.S_IMODE(path.stat().st_mode) == 0o700
+            locked = path / "pack" / "objects.pack"
+            locked.parent.mkdir()
+            locked.write_text("synthetic")
+            locked.chmod(stat.S_IREAD)  # git marks object files read-only
+            raise RuntimeError("scan failed")
+    assert created is not None and not created.exists()
+
+
+# --- 4. SQL identifiers and values ----------------------------------------------
+
+MALICIOUS_SCHEMAS = [
+    "results; DROP TABLE users; --",
+    'results"; DROP TABLE users; --',
+    "results--",
+    "public.results",
+    "results schema",
+    "",
+    "1results",
+]
+
+
+@pytest.mark.parametrize("bad_schema", MALICIOUS_SCHEMAS)
+def test_malicious_schema_name_is_rejected_everywhere(bad_schema):
+    for build in (
+        lambda: schema.FINDINGS.create_sql(bad_schema),
+        lambda: sql.qualified_table(bad_schema, "findings"),
+        lambda: schema.checklist_insert_sql(bad_schema, "run1", [(1, "CV3-ML", "open")], "user", datetime(2026, 10, 13)),
+        lambda: retention.delete_runs_sql(bad_schema, ["run1"]),
+    ):
+        with pytest.raises(sql.UnsafeValueError):
+            build()
+
+
+def test_malicious_table_and_run_ids_are_rejected():
+    with pytest.raises(sql.UnsafeValueError):
+        sql.qualified_table("results", "findings; DROP TABLE x")
+    with pytest.raises(sql.UnsafeValueError):
+        retention.delete_runs_sql("results", ["run1', 'x'); DROP TABLE x; --"])
+
+
+# --- 5. Credentials -------------------------------------------------------------------
+
+
+def test_fake_key_in_exception_is_redacted(monkeypatch):
+    monkeypatch.setenv("CIVIS_API_KEY", FAKE_API_KEY)
+    monkeypatch.setenv("GITHUB_TOKEN_PASSWORD", FAKE_GITHUB_TOKEN)
+    stream = io.StringIO()
+    logger = logging.getLogger("test.redaction")
+    logger.propagate = False
+    handler = logging.StreamHandler(stream)
+    handler.addFilter(RedactingFilter())
+    logger.addHandler(handler)
+    try:
+        try:
+            raise RuntimeError(
+                f"GET https://api.example.test/users failed: Authorization: Bearer {FAKE_API_KEY} "
+                f"token={FAKE_GITHUB_TOKEN} url=https://user:{FAKE_PASSWORD}@github.com/org/repo.git"
+            )
+        except RuntimeError:
+            logger.exception("Request failed with key %s", FAKE_API_KEY)
+    finally:
+        logger.removeHandler(handler)
+    output = stream.getvalue()
+    assert "Request failed" in output and "Traceback" in output
+    for secret in (FAKE_API_KEY, FAKE_GITHUB_TOKEN, FAKE_PASSWORD):
+        assert secret not in output
+    assert REDACTED in output
+
+
+@pytest.mark.parametrize(
+    "text, secret",
+    [
+        (f"db password: {FAKE_PASSWORD}", FAKE_PASSWORD),
+        (f"https://files.example.test/x.ipynb?X-Amz-Signature={FAKE_API_KEY}&a=1", FAKE_API_KEY),
+        (f"clone https://x-access-token:{FAKE_GITHUB_TOKEN}@github.com/o/r", FAKE_GITHUB_TOKEN),
+        (f"using {FAKE_GITHUB_TOKEN}", FAKE_GITHUB_TOKEN),
+        (f'{{"api_key": "{FAKE_API_KEY}"}}', FAKE_API_KEY),
+    ],
+)
+def test_redact_patterns(text, secret):
+    assert secret not in redact(text, env={})
+
+
+def test_redact_uses_attached_credential_env_values():
+    env = {"DATABASE_CREDENTIAL_PASSWORD": FAKE_PASSWORD, "SCHEMA_NAME": "results"}
+    assert redact(f"failed with {FAKE_PASSWORD} on results", env=env) == f"failed with {REDACTED} on results"
+
+
+def test_safe_error_never_includes_the_message():
+    class FakeAPIError(Exception):
+        status_code = 401
+
+    assert safe_error(FakeAPIError(FAKE_API_KEY)) == "FakeAPIError (HTTP 401)"
+    assert safe_error(ValueError(FAKE_PASSWORD)) == "ValueError"
+
+
+# --- 7. The GitHub token belongs to the scanner job only --------------------------------
+
+
+def test_app_never_reads_a_github_token():
+    pattern = re.compile(r"GITHUB|GH_TOKEN|REPO_HTTP_TOKEN|github_token", re.IGNORECASE)
+    offenders = [
+        p.relative_to(ROOT).as_posix()
+        for p in (ROOT / "app").rglob("*")
+        if p.is_file() and p.suffix in (".py", ".html", ".js") and pattern.search(p.read_text(encoding="utf-8"))
+    ]
+    assert offenders == []
+
+
+# --- 8. The scanner never grants access -------------------------------------------------
+
+
+def test_no_code_runs_grant_statements():
+    pattern = re.compile(r"\b(GRANT|REVOKE)\s", re.IGNORECASE)
+    offenders = []
+    for package in ("scanner", "common", "app"):
+        for path in (ROOT / package).rglob("*.py"):
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+                if pattern.search(line) and not line.lstrip().startswith("#") and "grants or changes" not in line:
+                    offenders.append(f"{path.relative_to(ROOT).as_posix()}:{number}")
+    assert offenders == []
+
+
+# --- 9. Retention ------------------------------------------------------------------------
+
+
+def test_retention_keeps_everything_by_default_and_never_the_newest_run():
+    now = datetime(2026, 10, 13)
+    runs = [("run-a", now - timedelta(days=400)), ("run-b", now - timedelta(days=100)), ("run-c", now - timedelta(days=500))]
+    assert retention.expired_run_ids(runs, None, now) == []
+    assert retention.expired_run_ids(runs, 0, now) == []
+    assert retention.expired_run_ids(runs, 365, now) == ["run-a", "run-c"]
+    assert retention.expired_run_ids([("only", now - timedelta(days=900))], 30, now) == []
+
+
+def test_retention_deletes_from_all_five_tables_and_keeps_current_checklist_status():
+    statements = retention.delete_runs_sql("results", ["run-1", "run-2"])
+    tables = [re.search(r"DELETE FROM results\.(\w+)", s).group(1) for s in statements]
+    assert sorted(tables) == sorted(t.name for t in schema.TABLES)
+    assert tables[-1] == "scan_runs"
+    checklist = next(s for s in statements if "checklist_status" in s)
+    assert "newer.changed_at > results.checklist_status.changed_at" in checklist
+    assert all("'run-1', 'run-2'" in s for s in statements)
+
+
+# --- 10, 11, 12. Web app ----------------------------------------------------------------------
+
+
+@pytest.fixture
+def app(monkeypatch):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    application = create_app({"SECRET_KEY": "test-secret-key-that-is-long-enough-123", "TESTING": True})
+
+    @application.post("/test-post")
+    def _test_post():
+        return "saved"
+
+    return application
+
+
+SCRIPT_NAME = "<script>alert('owned')</script><img src=x onerror=alert(1)>"
+
+
+def test_object_named_with_script_tag_renders_as_text(app):
+    with app.test_request_context("/"):
+        html = render_template_string(
+            "{% from 'macros.html' import object_link %}{{ object_link(o) }}",
+            o={"name": SCRIPT_NAME, "url": "javascript:alert(1)"},
+        )
+    assert "<script>" not in html and "<img" not in html
+    assert "&lt;script&gt;alert(&#39;owned&#39;)&lt;/script&gt;" in html
+    assert 'href="#"' in html
+
+
+def test_values_from_civis_are_escaped_in_json(app):
+    with app.app_context():
+        body = app.json.dumps({"name": SCRIPT_NAME, "owner": "a & b"})
+        response = app.json.response({"name": SCRIPT_NAME})
+    assert "<" not in body and ">" not in body and "&" not in body and "'" not in body
+    assert json.loads(body)["name"] == SCRIPT_NAME
+    assert b"<script>" not in response.get_data()
+
+
+@pytest.mark.parametrize(
+    "url, expected",
+    [
+        ("https://platform.civisanalytics.com/spa/#/scripts/containers/1", "https://platform.civisanalytics.com/spa/#/scripts/containers/1"),
+        ("javascript:alert(1)", "#"),
+        ("JaVaScRiPt:alert(1)", "#"),
+        ("data:text/html,<script>", "#"),
+        ("", "#"),
+    ],
+)
+def test_safe_href(url, expected):
+    assert safe_href(url) == expected
+
+
+def test_security_headers(app):
+    response = app.test_client().get("/")
+    assert response.status_code == 200
+    csp = response.headers["Content-Security-Policy"]
+    assert "default-src 'self'" in csp and "script-src 'self'" in csp and "style-src 'self'" in csp
+    assert "unsafe-inline" not in csp and "unsafe-eval" not in csp
+    assert "frame-ancestors 'self' https://platform.civisanalytics.com" in csp
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert "X-Frame-Options" not in response.headers
+    assert response.headers["Cache-Control"] == "no-store"
+    assert "Set-Cookie" not in response.headers
+    assert "For Civis admins only" in response.get_data(as_text=True)
+
+
+def test_frame_ancestors_setting_rejects_unsafe_values():
+    assert frame_ancestors("https://platform.civisanalytics.com https://*.civisanalytics.com").startswith("'self' ")
+    for bad in ("*", "http://example.test", "https://x.test; script-src *", "'unsafe-inline'"):
+        with pytest.raises(ValueError):
+            frame_ancestors(bad)
+
+
+def test_csrf_is_required_on_every_post(app):
+    client = app.test_client()
+    viewer = {"Civis-User-Id": "5"}
+    assert client.post("/test-post", headers=viewer).status_code == 400
+    with app.test_request_context("/", headers=viewer):
+        token = generate_csrf_token(app)
+    assert client.post("/test-post", data={"csrf_token": token}, headers=viewer).status_code == 200
+    assert client.post("/test-post", headers={**viewer, "X-CSRF-Token": token}).status_code == 200
+    # A token issued to one viewer does not work for another.
+    assert client.post("/test-post", data={"csrf_token": token}, headers={"Civis-User-Id": "6"}).status_code == 400
+    # A cross-site Origin is refused even with a valid token.
+    cross = {**viewer, "Origin": "https://attacker.example.test"}
+    assert client.post("/test-post", data={"csrf_token": token}, headers=cross).status_code == 403
+
+
+def test_csrf_tokens_expire(app):
+    with app.test_request_context("/", headers={"Civis-User-Id": "5"}):
+        old = generate_csrf_token(app, now=1_000_000)
+        assert csrf_token_is_valid(app, old, now=1_000_000 + 60)
+        assert not csrf_token_is_valid(app, old, now=1_000_000 + 9 * 3600)
+        assert not csrf_token_is_valid(app, "garbage", now=1_000_000)
+
+
+def test_debug_mode_is_always_off(monkeypatch):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    app = create_app({"SECRET_KEY": "x" * 40, "DEBUG": True})
+    assert app.debug is False
+    monkeypatch.setenv("FLASK_DEBUG", "1")
+    with pytest.raises(RuntimeError, match="debug mode is not allowed"):
+        create_app({"SECRET_KEY": "x" * 40})
+
+
+def test_secret_key_is_derived_from_the_service_api_key(monkeypatch):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    monkeypatch.delenv("FLASK_SECRET_KEY", raising=False)
+    monkeypatch.setenv("CIVIS_API_KEY", FAKE_API_KEY)
+    app = create_app()
+    assert app.config["SECRET_KEY"] and FAKE_API_KEY not in app.config["SECRET_KEY"]
+    monkeypatch.delenv("CIVIS_API_KEY")
+    with pytest.raises(RuntimeError, match="No secret key"):
+        create_app()
+
+
+def test_templates_and_static_files_have_no_inline_code_or_cdn_links():
+    offenders = []
+    for path in list((ROOT / "app" / "templates").rglob("*.html")) + list((ROOT / "app" / "static").rglob("*")):
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for pattern in (r"<script(?![^>]*\bsrc=)", r"<style", r"\sstyle=", r"\son[a-z]+=", r"https?://", r"//cdn"):
+            if re.search(pattern, text, re.IGNORECASE):
+                offenders.append(f"{path.relative_to(ROOT).as_posix()}: {pattern}")
+    assert offenders == []

@@ -1,0 +1,4 @@
+# Local test environment that mirrors the Service image (Python 3.12, civis 2.7.1).
+# Used to run the test suite on Python 3.12. Never installed in Civis.
+-r requirements-service.txt
+pytest==9.1.1
