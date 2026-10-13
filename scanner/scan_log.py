@@ -14,6 +14,9 @@ Line formats (parsed by the web app to show progress):
     PARSE_ERROR object_type=notebook object_id=401 error=JSONDecodeError
     FINDINGS rule_id=CV3-USE-PANDAS count=12
     PHASE name=inventory state=done
+    CHECKPOINT objects_written=500
+    TABLE_WRITE_FAILED table=findings error=CivisAPIError status=403
+    RUN run_id=run-20261013T120000Z-a1b2c3 status=succeeded
 """
 
 from __future__ import annotations
@@ -28,6 +31,9 @@ from common.redact import install_redaction
 LOGGER_NAME = "scanner"
 PHASES = frozenset({"inventory", "code", "logs", "output", "retention"})
 PHASE_STATES = frozenset({"start", "done", "failed"})
+TABLE_NAMES = frozenset({"scan_runs", "objects", "findings", "coverage", "checklist_status"})
+RUN_STATUSES = frozenset({"running", "succeeded", "tables_failed", "failed"})
+_RUN_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _RULE_ID = re.compile(r"^[A-Z0-9]+(-[A-Z0-9]+)+$")
 _ERROR_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,99}$")
 
@@ -95,6 +101,33 @@ def parse_error(object_type: ObjectType | str, object_id: int, error_type: type[
         "PARSE_ERROR object_type=%s object_id=%d error=%s",
         _object_type(object_type), _count(object_id, "object_id"), name,
     )
+
+
+def parse_error_named(object_type: ObjectType | str, object_id: int, error_name: str) -> None:
+    """Same as parse_error, for callers that have only the exception's type name."""
+    name = error_name if isinstance(error_name, str) and _ERROR_NAME.match(error_name) else "Exception"
+    _logger.warning(
+        "PARSE_ERROR object_type=%s object_id=%d error=%s",
+        _object_type(object_type), _count(object_id, "object_id"), name,
+    )
+
+
+def table_write_failed(table: str, exc: BaseException) -> None:
+    if table not in TABLE_NAMES:
+        raise ValueError("unknown table")
+    status = getattr(exc, "status_code", None)
+    suffix = f" status={status}" if isinstance(status, int) and not isinstance(status, bool) else ""
+    _logger.error("TABLE_WRITE_FAILED table=%s error=%s%s", table, _error_name(exc), suffix)
+
+
+def run_status(run_id: str, status: str) -> None:
+    if status not in RUN_STATUSES or not isinstance(run_id, str) or not _RUN_ID.match(run_id):
+        raise ValueError("invalid run status line")
+    _logger.info("RUN run_id=%s status=%s", run_id, status)
+
+
+def checkpoint(objects_written: int) -> None:
+    _logger.info("CHECKPOINT objects_written=%d", _count(objects_written, "objects_written"))
 
 
 def findings_count(rule_id: str, count: int) -> None:

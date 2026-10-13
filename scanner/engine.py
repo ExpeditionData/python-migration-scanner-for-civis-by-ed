@@ -46,11 +46,14 @@ class ScanResult:
     # at least one unit, so the object's coverage is "partial".
     fully_parsed: bool = True
     notes: list[str] = field(default_factory=list)
+    # Exception type names for parse failures, for the scanner log. Never messages.
+    parse_errors: list[str] = field(default_factory=list)
 
     def extend(self, other: "ScanResult") -> None:
         self.matches.extend(other.matches)
         self.fully_parsed = self.fully_parsed and other.fully_parsed
         self.notes.extend(other.notes)
+        self.parse_errors.extend(other.parse_errors)
 
 
 def kind_for_path(path: str) -> str | None:
@@ -542,15 +545,17 @@ class Engine:
 
     def scan_python(self, text: str, label: str, extra_aliases: dict[str, str] | None = None) -> ScanResult:
         if len(text) > MAX_PYTHON_CHARS:
-            return ScanResult(self._python_regex(text, label), False, [f"{label}: too large to parse"])
+            return ScanResult(self._python_regex(text, label), False, [f"{label}: too large to parse"], ["FileTooLarge"])
         try:
             tree = ast.parse(text)
-        except (SyntaxError, ValueError, RecursionError, MemoryError):
-            return ScanResult(self._python_regex(text, label), False, [f"{label}: could not be parsed"])
+        except (SyntaxError, ValueError, RecursionError, MemoryError) as exc:
+            return ScanResult(
+                self._python_regex(text, label), False, [f"{label}: could not be parsed"], [type(exc).__name__]
+            )
         try:
             matches = self._python_ast(tree, label, extra_aliases)
         except RecursionError:
-            return ScanResult(self._python_regex(text, label), False, [f"{label}: too deeply nested"])
+            return ScanResult(self._python_regex(text, label), False, [f"{label}: too deeply nested"], ["RecursionError"])
         return ScanResult(matches, True)
 
     def _python_ast(self, tree: ast.AST, label: str, extra_aliases: dict[str, str] | None) -> list[Match]:
@@ -654,8 +659,8 @@ class Engine:
         try:
             notebook = json.loads(text)
             cells = notebook.get("cells") or []
-        except (ValueError, AttributeError):
-            return ScanResult([], False, [f"{label}: notebook file could not be read"])
+        except (ValueError, AttributeError) as exc:
+            return ScanResult([], False, [f"{label}: notebook file could not be read"], [type(exc).__name__])
 
         prepared = []
         aliases: dict[str, str] = {}

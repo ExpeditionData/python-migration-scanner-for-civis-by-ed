@@ -38,7 +38,7 @@ def test_inventoried_ids_by_type(built):
         ids.setdefault(it.obj.object_type, set()).add(it.obj.object_id)
     assert ids == {
         ObjectType.PYTHON_SCRIPT: {101, 102, 105, 106, 107},
-        ObjectType.CONTAINER_SCRIPT: {201, 202, 203, 204},
+        ObjectType.CONTAINER_SCRIPT: {201, 202, 203, 204, 205, 206},
         ObjectType.CUSTOM_SCRIPT: {301, 302, 304, 306},
         ObjectType.NOTEBOOK: {401, 403},
         ObjectType.SERVICE: {501, 502, 503},
@@ -193,7 +193,7 @@ def test_custom_script_fallback_to_code_preview(built):
 def test_code_is_kept_in_memory_only(built):
     assert "list_me" in item(built, 101).code["source"]
     assert item(built, 201).code["docker_command"].startswith("pip install civis")
-    assert item(built, 401).code["notebook_url"].startswith("https://files.example.test/")
+    assert item(built, 401).code["notebook_url"].startswith("https://example-notebooks.s3.amazonaws.com/")
     assert item(built, 501).code["deployment_id"] == 7001
     inline = item(built, 601).code["inline_tasks"]
     assert [t.action for t in inline] == ["civis.scripts.python3"]
@@ -201,7 +201,7 @@ def test_code_is_kept_in_memory_only(built):
         row = it.obj.to_row()
         assert not set(row) & {"code", "source", "docker_command", "code_preview", "notebook_url", "definition"}
         assert "list_me" not in repr(row)
-        assert "signature=" not in repr(row)
+        assert "Signature=" not in repr(row)
 
 
 def test_api_usage(built):
