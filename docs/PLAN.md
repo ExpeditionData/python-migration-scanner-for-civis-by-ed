@@ -439,3 +439,45 @@ How each object runs:
 | 11.7 | JSON responses escape `<`, `>`, `&`, and `'`. Templates rely on Jinja autoescaping. Links pass through a filter that allows only http and https. | Requirement 10. |
 | 11.8 | Secret scanning runs in `.githooks/pre-commit`: gitleaks when installed, plus detect-secrets 1.5.0 from `.venv`. The baseline is empty; fake secrets in tests carry inline allow comments. | Requirement 13. |
 | 11.9 | The full test suite runs on Python 3.14 (`.venv`, scanner packages) and Python 3.12 (`.venv312`, the Service image's packages, including civis 2.7.1). | Phase 2 answer 1. |
+
+---
+
+## 12. Implementation notes (Phases 3 and 4, October 13, 2026)
+
+**Conclusion: Phases 3 and 4 are built and tested on synthetic data only. These choices were not covered by the plan.**
+
+### Scanner job parameters
+
+| Parameter | Civis type | Environment variables read | Default and limits |
+|---|---|---|---|
+| RESULTS_DB | Database | `RESULTS_DB_NAME` (or `RESULTS_DB_ID`), `RESULTS_DB_CREDENTIAL_ID` | Required |
+| RESULTS_SCHEMA | String | `RESULTS_SCHEMA` | Required. Must be a plain SQL identifier. |
+| GITHUB | Custom credential, optional | `GITHUB_PASSWORD` (the token) | None |
+| LOOKBACK_DAYS | Integer | `LOOKBACK_DAYS` | 200 (1 to 3,650) |
+| MAX_CONCURRENCY | Integer | `MAX_CONCURRENCY` | 4 (1 to 16) |
+| REQUEST_BUDGET | Integer, requests per 5 minutes | `REQUEST_BUDGET` | 500 (10 to 1,000) |
+| RETENTION_DAYS | Integer | `RETENTION_DAYS` | Blank or 0 keeps every run |
+| RUN_ID | String, optional | `RUN_ID` | Blank starts a new run; a value resumes that run |
+
+`DATABASE` is a reserved name in Civis, so the Database parameter is `RESULTS_DB`.
+
+### Choices
+
+| # | Choice | Why |
+|---|---|---|
+| 12.1 | Inventory runs in one thread. `MAX_CONCURRENCY` applies to the code and log phase, where most time goes. A resumed run repeats the inventory (about one call per object), then skips finished objects. | The request budget, not thread count, sets the speed (section 5). Inventory must be complete to know what is left. |
+| 12.2 | Git-backed Python scripts are scanned from the repository only, never from their saved source. Notebooks are scanned from the Civis notebook file, not from git. | Phase 2 answer 2: saved source can be out of date. The notebook file is what Civis runs. |
+| 12.3 | A Service with no git repository is "not scanned, review manually." | Its code is inside its Docker image, which the scanner cannot read. |
+| 12.4 | Notebook links are downloaded only from `*.civisanalytics.com`, `*.civis.io`, and `*.amazonaws.com`, over https. A link on any other host is refused and reported. | Requirement 18. The host Civis uses for file links is not documented. Confirm in Phase 7. |
+| 12.5 | GitHub tarballs (up to 200 MB) are streamed into the private temp folder, the needed files (up to 2 MB each, 100 MB per repo) are read into memory without extracting, and the tarball is deleted at once. Links and special files are skipped. After a rate limit, no GitHub requests are sent until GitHub's reset time. Dependency files are read from the object's folder and the repo root. | Requirement 3 and safe archive handling. |
+| 12.6 | Job logs are read in pages of 10,000 lines with `last_id`, up to 200,000 lines. Service deployment logs are read in one call of up to 10,000 lines. Longer logs make the object "partial." | Bounded memory and API calls. |
+| 12.7 | `scan_runs` gets two rows per run (start and end) and a new `recorded_at` column. The current status is the newest row, preferring a final status over "running" on a tie. Statuses: `running`, `succeeded`, `tables_failed`, `failed`. | Append-only by run ID. |
+| 12.8 | If the tables cannot be written, the scan continues, saves the CSV report, records `tables_failed` where it can, and exits with code 3, so the Civis run shows as failed with the CSV attached. Exit codes: 0 succeeded, 3 tables failed, 2 configuration problem, 1 other failure. | "Record the failure in the run status." |
+| 12.9 | The results schema is never created. A missing schema means the table writes fail (see 12.8). | Creating schemas is the admin's decision, like granting access. |
+| 12.10 | If a run stops between writing an object's findings and its object row, the rerun writes those findings again. The CSV report and readers drop exact duplicate finding rows. | Losing findings would be worse than a duplicate. |
+| 12.11 | The CSV report has one row per finding, plus one row for every object with no findings, so every inventoried object appears. Cells starting with `=`, `+`, `-`, `@`, tab, or carriage return get a leading `'`. UTF-8 with a byte order mark, so Excel reads accents correctly. | Object names and paths are user-controlled (spreadsheet formula injection). |
+| 12.12 | New "open" checklist rows use `changed_by = scanner`. | Shows they came from a scan, not a person. |
+| 12.13 | Table writes and the CSV upload use civis-python's own helpers with the unwrapped client, so they are not charged to the request budget. They are a few calls per checkpoint. | civis.io helpers make their own internal calls. |
+| 12.14 | `python -m scanner` refuses a live scan unless Civis has set `CIVIS_JOB_ID` and `CIVIS_RUN_ID`. `--dry-run` uses the synthetic instance, a local SQLite file, and a local CSV. | Requirement 16. |
+| 12.15 | The synthetic client, synthetic HTTP session, and synthetic instance moved to `scanner/synthetic/`, so dry runs work from the scanner package. They contain made-up data only. | Dry runs need them outside the test folder. |
+| 12.16 | The SQLite sink runs the retention cleanup with an `EXISTS` subquery, because SQLite has no `DELETE ... USING`. The Redshift form is still to be confirmed in Phase 7 (11.2). | Same behavior on both. |

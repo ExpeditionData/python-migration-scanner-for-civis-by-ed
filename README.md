@@ -70,6 +70,9 @@ The digests were read from Docker Hub on October 13, 2026.
 - **Setup and test commands:** see [CLAUDE.md](CLAUDE.md).
 - **Design and decisions:** see [docs/PLAN.md](docs/PLAN.md).
 - **Unit tests** use synthetic data only and make no Civis or network calls.
+- **Dry run.** `python -m scanner --dry-run --out dry_run_output` runs the whole
+  scanner on made-up data and writes a local SQLite file and CSV report. It
+  never contacts Civis or GitHub.
 - **Secret scanning.** Turn on the secret-scanning hook in each clone:
   `git config core.hooksPath .githooks`.
 

@@ -95,11 +95,17 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   loaded and validated by `common/rule_loader.py`. Matcher kinds are
   implemented in `scanner/engine.py`. Findings carry file, line number, and
   rule ID only.
-- **Status.** Phase 2 (scanner core: rules, engine, inventory) is done, plus
-  the security foundation from SECURITY.md (redaction, safe scanner log, private
-  temp dirs, retention SQL, and the app's headers, CSRF, and escaping).
-  Phase 3 (code retrieval and log scan) is next. Implementation choices not in
-  the approved plan are in docs/PLAN.md sections 10 and 11.
+- **Status.** Phases 2 to 4 are done: rules, engine, inventory, code
+  retrieval (inline, notebooks, GitHub), log scan, request budget, output to
+  the five tables and a CSV run output, checkpoints, resume, and dry runs.
+  The security foundation from SECURITY.md is in place. Phase 5 (the Flask
+  app) is next. Implementation choices not in the approved plan are in
+  docs/PLAN.md sections 10 to 12.
+- **Scanner flow.** `scanner/__main__.py` -> `runner.run_scan` -> inventory ->
+  `process.process_item` per object (retrieval, engine, logs) ->
+  `checkpoint.Checkpointer` -> `output` sinks. Every Civis API call goes
+  through `ratelimit.BudgetedClient`; every other HTTP call goes through
+  `retrieval/http.SafeHttp` and its host allow list.
 
 Constraints to keep in mind when writing code:
 
@@ -139,6 +145,21 @@ copy .env.example .env
 To rebuild the civis 2.7.1 API list used by that test (only if the Service
 image changes), download the civis wheel to a temp folder, unzip it, and run
 `tools/build_civis_api_fixture.py <unzipped>/civis tests/fixtures/civis_2_7_1_api.json`.
+
+## Dry run
+
+Runs the whole scanner pipeline on the synthetic instance in
+`scanner/synthetic/`, with no network calls, and writes `results.sqlite` and
+the CSV report to a local folder (ignored by git):
+
+```
+.venv\Scripts\python.exe -m scanner --dry-run --out dry_run_output
+.venv\Scripts\python.exe -m scanner --dry-run --out dry_run_output --stop-after 10
+.venv\Scripts\python.exe -m scanner --dry-run --out dry_run_output --run-id <run id from the log>
+```
+
+The last two commands stop a run partway and then resume it. A live scan
+(`python -m scanner` with no flags) refuses to run outside Civis.
 
 ## Testing commands
 
