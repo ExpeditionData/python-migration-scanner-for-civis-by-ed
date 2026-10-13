@@ -27,6 +27,22 @@ be made public at any time.
 - **Secrets live only in `.env`.** `.env` and `.env.*` are ignored by git. The
   only tracked env file is `.env.example`, and it holds placeholder values only.
   When a new setting is added, add a placeholder for it to `.env.example`.
+- **Client data never leaves the client's Civis environment unless Rob explicitly approves it in this session for a specific purpose. Client data includes object names, user names, code, run logs, notebook outputs, scan results, and table contents.**
+- **No live client instances from this machine.** Never run the scanner or the
+  app locally against a real Civis instance, and never call a client's Civis API
+  from this machine. Local runs use synthetic fixtures only. Live testing happens
+  only by running the scanner job and the Service inside the client's Civis.
+- **Never read client data in a session.** Never read, print, or summarize real
+  scan results, run logs, or code from a client instance. Rob shares only
+  aggregate counts, or error messages with client details removed. If something
+  pasted into the session looks like client data, stop and say so instead of
+  using it.
+- **Security and privacy requirements** are in [SECURITY.md](SECURITY.md). Code
+  must follow them: Civis content (code, logs, notebook outputs) stays in
+  memory and only object ID, rule ID, file, and line number are stored; the
+  scanner logs only through `scanner/scan_log.py`; credentials are never
+  printed, logged, or stored; every SQL identifier and value is validated or
+  escaped; every value from Civis is escaped in the web app.
 
 ## Git workflow
 
@@ -37,6 +53,10 @@ be made public at any time.
 - Before every commit, review the staged files (`git diff --cached --name-only`
   and `git diff --cached`) for secrets, client details, and anything from
   `Context/`. Stop and tell the user if anything looks unsafe.
+- The pre-commit hook in `.githooks/` also blocks staged `Context/` files and
+  likely secrets (gitleaks if installed, detect-secrets from `.venv`). Enable it
+  in each clone with `git config core.hooksPath .githooks`. Mark fake secrets in
+  tests with `# pragma: allowlist secret  gitleaks:allow`. Never bypass the hook.
 - Push to `main` after each commit.
 
 ## Writing style for docs and UI text
@@ -75,9 +95,11 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   loaded and validated by `common/rule_loader.py`. Matcher kinds are
   implemented in `scanner/engine.py`. Findings carry file, line number, and
   rule ID only.
-- **Status.** Phase 2 (scanner core: rules, engine, inventory) is done.
+- **Status.** Phase 2 (scanner core: rules, engine, inventory) is done, plus
+  the security foundation from SECURITY.md (redaction, safe scanner log, private
+  temp dirs, retention SQL, and the app's headers, CSRF, and escaping).
   Phase 3 (code retrieval and log scan) is next. Implementation choices not in
-  the approved plan are listed in docs/PLAN.md section 10.
+  the approved plan are in docs/PLAN.md sections 10 and 11.
 
 Constraints to keep in mind when writing code:
 
@@ -101,12 +123,18 @@ repo root:
 ```
 py -3.14 -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+python3.12 -m venv .venv312
+.venv312\Scripts\python.exe -m pip install -r requirements-dev-service.txt
+git config core.hooksPath .githooks
 copy .env.example .env
 ```
 
-`requirements-dev.txt` installs the scanner's pinned packages plus Flask and
-pytest. The Service's civis 2.7.1 limit is checked by a test, not by a second
-install.
+- `.venv` (Python 3.14) mirrors the scanner image: the scanner's pinned
+  packages plus Flask, pytest, and detect-secrets.
+- `.venv312` (Python 3.12) mirrors the Service image: civis 2.7.1, Flask,
+  gunicorn, plus pytest. Python 3.12 is installed per user with
+  `pymanager install 3.12`.
+- The Service's civis 2.7.1 limit is also checked statically by a test.
 
 To rebuild the civis 2.7.1 API list used by that test (only if the Service
 image changes), download the civis wheel to a temp folder, unzip it, and run
@@ -114,9 +142,17 @@ image changes), download the civis wheel to a temp folder, unzip it, and run
 
 ## Testing commands
 
+Run the full suite on both Python versions before every commit:
+
 ```
 .venv\Scripts\python.exe -m pytest
+.venv312\Scripts\python.exe -m pytest
 ```
+
+- `tests/test_security.py` proves the SECURITY.md requirements: no secret or
+  personal data from logs, code, or notebook output reaches any output,
+  malicious schema names are rejected, keys in exceptions are redacted, and
+  values from Civis render as text in the web app.
 
 - Unit tests make no Civis or network calls. Inventory tests use
   `tests/fake_civis.py` with synthetic responses in `tests/fixtures/civis_api/`.

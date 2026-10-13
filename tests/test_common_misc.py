@@ -62,3 +62,11 @@ def test_workflows_json_is_capped_for_the_column():
     assert entries[-1]["more"] == 100 - (len(entries) - 1)
     assert all(len(e.get("name", "")) <= 200 for e in entries)
     assert workflows_json([]) is None
+
+
+def test_readme_carries_the_same_disclaimer():
+    from pathlib import Path
+
+    readme = (Path(__file__).resolve().parent.parent / "README.md").read_text(encoding="utf-8")
+    quoted = " ".join(line[2:].strip() for line in readme.splitlines() if line.startswith("> "))
+    assert DISCLAIMER in quoted.replace("**Disclaimer.** ", "")

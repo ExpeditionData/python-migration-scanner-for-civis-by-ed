@@ -357,7 +357,7 @@ How each object runs:
 - **Service.** Repo ref: the same release tag. Path left blank. `start_service.sh` runs `exec gunicorn -b 0.0.0.0:${CIVIS_SERVICE_PORT:-3838} -w 2 "app:create_app()"`.
 - **Local testing.** The two Dockerfiles in `docker/` are `FROM` these exact tags and are used only for local tests.
 - **Requirements files.** They record the versions inside each image, so tests run against the same versions.
-- **Image digests.** Civis selects images by tag, so phase 6 records each image's digest in the README. That lets an admin confirm the tag has not been republished.
+- **Image digests.** Recorded in the README on October 13, 2026 (linux/amd64): `datascience-python:9.1.1` is `sha256:d6903fdcf6b13801417621ad7522c09a16e1d2c01d11eb398f75ad0f73d974ef`, and `civis-services-flask:0.1.0` is `sha256:e8d7a631ab46598caa6735e2dd657763c95eb5c76af7a57510f3d2370f02a20f`.
 
 ---
 
@@ -421,3 +421,21 @@ How each object runs:
 | 10.14 | Civis object URLs use `/spa/#/scripts/python3/<id>`, `/scripts/containers/<id>`, `/scripts/custom/<id>`, `/notebooks/<id>`, `/services/<id>`, and `/workflows/<id>`, on a base URL that `CIVIS_PLATFORM_URL` can change. | Civis does not document these paths. To confirm in Phase 7. |
 | 10.15 | Inline custom-script tasks in workflows (`civis.scripts.custom`) are recorded, but their template code is not read. | The template's backing script is scanned through the custom scripts that use it. Revisit in Phase 3 if needed. |
 | 10.16 | A `.gitattributes` file forces LF line endings for `.sh` files and Dockerfiles. | `start_service.sh` must run in Linux even when committed from Windows. |
+
+---
+
+## 11. Security and privacy requirements (added October 13, 2026)
+
+**Conclusion: the 18 security and privacy requirements are in [SECURITY.md](../SECURITY.md), which is written for clients. They apply to all code. The design choices below came from applying them.**
+
+| # | Choice | Why |
+|---|---|---|
+| 11.1 | The scanner logs only through `scanner/scan_log.py`. Its functions accept progress counts, object types and IDs, rule IDs, and exception type names, and validate each one. A redacting log filter (`common/redact.py`) is a second layer. | Requirements 1, 2, and 5. No function takes free text, so Civis content cannot reach the log by accident. |
+| 11.2 | New scanner job parameter `RETENTION_DAYS`. Blank or 0 keeps every run (the default). The most recent run is never deleted. Old checklist rows are deleted only when a newer row exists for the same object and rule. The `DELETE ... USING` form must be confirmed on Redshift in Phase 7. | Requirement 9. |
+| 11.3 | The Service frame rule is `frame-ancestors 'self' https://platform.civisanalytics.com`, changeable with `CIVIS_FRAME_ANCESTORS` (https origins only). No `X-Frame-Options` header. | Requirement 12. Civis shows Services in a cross-site iframe on platform.civisanalytics.com (Civis help articles "Civis Service Deployment", "Advanced Services", and "Third-Party Cookies in Services and Notebooks"). The exact parent pages must be confirmed in Phase 7 with a report-only policy first. |
+| 11.4 | The app sets no cookies. CSRF tokens are stateless: an HMAC over the viewer's `Civis-User-Id` header and a timestamp, valid for 8 hours, sent in a form field or the `X-CSRF-Token` header. Requests with a cross-site `Origin` are refused. | Requirement 11. Cookies inside a cross-site iframe are third-party cookies and are often blocked. Civis's proxy sets and overwrites the user headers, so another site cannot forge a viewer's token. |
+| 11.5 | The app's Flask secret is `FLASK_SECRET_KEY` if set (local runs), otherwise derived one-way from the Service's `CIVIS_API_KEY`. | No extra secret to store; every gunicorn worker gets the same key; it rotates when Civis rotates the API key. |
+| 11.6 | The app refuses to start if `FLASK_DEBUG` is set, and forces debug off whatever its configuration says. `CIVIS_API_KEY` was removed from `.env.example`. | Requirements 11 and 16. |
+| 11.7 | JSON responses escape `<`, `>`, `&`, and `'`. Templates rely on Jinja autoescaping. Links pass through a filter that allows only http and https. | Requirement 10. |
+| 11.8 | Secret scanning runs in `.githooks/pre-commit`: gitleaks when installed, plus detect-secrets 1.5.0 from `.venv`. The baseline is empty; fake secrets in tests carry inline allow comments. | Requirement 13. |
+| 11.9 | The full test suite runs on Python 3.14 (`.venv`, scanner packages) and Python 3.12 (`.venv312`, the Service image's packages, including civis 2.7.1). | Phase 2 answer 1. |
