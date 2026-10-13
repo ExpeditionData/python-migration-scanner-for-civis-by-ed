@@ -754,6 +754,7 @@ class Engine:
                     confidence=match.confidence,
                     impact=impact,
                     fix_guidance=rule.fix,
+                    workflows=tuple(obj.workflows),
                 )
             )
         return findings

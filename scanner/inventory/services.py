@@ -35,7 +35,7 @@ def inventory_services(ctx: InventoryContext) -> list[InventoryItem]:
     for row in rows:
         item = service_item(ctx, row)
         if item is None:
-            ctx.inventory.count(ObjectType.SERVICE).not_python += 1
+            ctx.inventory.count(ObjectType.SERVICE).add_not_python("r")  # Civis's Shiny image runs R.
         else:
             items.append(item)
     return items

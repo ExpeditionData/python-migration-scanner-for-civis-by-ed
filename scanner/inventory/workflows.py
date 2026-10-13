@@ -25,7 +25,7 @@ from typing import Any
 
 import yaml
 
-from common.models import CoverageItem, Impact, ObjectType
+from common.models import CoverageItem, Impact, ObjectType, WorkflowRef
 from scanner.inventory.base import (
     InventoryContext,
     InventoryItem,
@@ -137,11 +137,11 @@ def parse_definition(text: str | None) -> WorkflowDefinition:
     return result
 
 
-def inventory_workflows(ctx: InventoryContext) -> tuple[list[InventoryItem], dict[int, set[int]]]:
-    """Returns workflow items with inline code, and job ID -> IDs of active workflows that run it."""
+def inventory_workflows(ctx: InventoryContext) -> tuple[list[InventoryItem], dict[int, set[WorkflowRef]]]:
+    """Returns workflow items with inline code, and job ID -> active workflows that run it."""
     rows = listed_rows(ctx, ctx.client.workflows.list, ObjectType.WORKFLOW)
     ctx.inventory.count(ObjectType.WORKFLOW).found += len(rows)
-    references: dict[int, set[int]] = defaultdict(set)
+    references: dict[int, set[WorkflowRef]] = defaultdict(set)
     items = []
     for row in rows:
         obj = base_object(row, ObjectType.WORKFLOW)
@@ -161,8 +161,9 @@ def inventory_workflows(ctx: InventoryContext) -> tuple[list[InventoryItem], dic
             mark_not_scanned(obj, parsed.error, ctx.inventory)
             items.append(item)
             continue
+        ref = WorkflowRef(obj.object_id, obj.name)
         for job_id in parsed.job_ids:
-            references[job_id].add(obj.object_id)
+            references[job_id].add(ref)
         if parsed.dynamic_references:
             ctx.inventory.coverage.append(
                 CoverageItem(

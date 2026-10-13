@@ -4,14 +4,15 @@
 
 - Archived jobs are skipped, except archived jobs that an active workflow runs.
   Those are fetched one by one with jobs.get and added with archived=True.
-- Every job that an active workflow runs gets that workflow's ID.
+- Every job that an active workflow runs gets that workflow's ID and name, which
+  are also copied onto the job's findings.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from common.models import CoverageItem, ObjectType
+from common.models import CoverageItem, ObjectType, WorkflowRef
 from scanner.inventory.base import Inventory, InventoryContext, InventoryItem, UserInfo, field_of
 from scanner.inventory.containers import container_item, inventory_container_scripts
 from scanner.inventory.custom import custom_item, inventory_custom_scripts
@@ -46,10 +47,10 @@ def build_inventory(client: Any, users: dict[int, UserInfo] | None = None) -> In
 
     _add_archived_jobs_run_by_workflows(ctx, references)
     by_id = inventory.by_id()
-    for job_id, workflow_ids in references.items():
+    for job_id, refs in references.items():
         item = by_id.get(job_id)
         if item is not None and item.obj.object_type is not ObjectType.WORKFLOW:
-            item.obj.workflow_ids = sorted(workflow_ids)
+            item.obj.workflows = sorted(refs, key=lambda r: r.workflow_id)
     return inventory
 
 
@@ -66,7 +67,7 @@ def _job_kind(job: Any) -> ObjectType | None:
     return None
 
 
-def _add_archived_jobs_run_by_workflows(ctx: InventoryContext, references: dict[int, set[int]]) -> None:
+def _add_archived_jobs_run_by_workflows(ctx: InventoryContext, references: dict[int, set[WorkflowRef]]) -> None:
     known = {item.obj.object_id for item in ctx.inventory.items}
     builders = {
         ObjectType.PYTHON_SCRIPT: python_item,
@@ -78,9 +79,9 @@ def _add_archived_jobs_run_by_workflows(ctx: InventoryContext, references: dict[
             continue
         job, reason = ctx.fetch(ctx.client.jobs.get, job_id)
         if job is None:
-            for workflow_id in sorted(references[job_id]):
+            for ref in sorted(references[job_id], key=lambda r: r.workflow_id):
                 ctx.inventory.coverage.append(
-                    CoverageItem(ObjectType.WORKFLOW, workflow_id, f"Runs job {job_id}, which could not be read. {reason}")
+                    CoverageItem(ObjectType.WORKFLOW, ref.workflow_id, f"Runs job {job_id}, which could not be read. {reason}")
                 )
             continue
         if not field_of(job, "archived", False):
@@ -89,6 +90,9 @@ def _add_archived_jobs_run_by_workflows(ctx: InventoryContext, references: dict[
         if kind is None:
             continue  # An archived SQL, import, or other non-Python job.
         item = builders[kind](ctx, job)
+        if not isinstance(item, InventoryItem):
+            ctx.inventory.count(kind).add_not_python("dbt")  # A dbt template off the default image.
+            continue
         item.obj.archived = True
         ctx.inventory.count(kind).archived_included += 1
         ctx.inventory.count(kind).found += 1

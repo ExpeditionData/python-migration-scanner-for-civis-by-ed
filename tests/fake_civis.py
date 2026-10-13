@@ -130,6 +130,9 @@ class FakeClient:
     def _scripts__get_containers(self, object_id):
         return self._get(self.data.get("containers", []), object_id)
 
+    def _scripts__get_dbt(self, object_id):
+        return self._get(self.data.get("dbt", []), object_id)
+
     def _scripts__get_custom(self, object_id):
         return self._get(self.data.get("custom", []), object_id)
 

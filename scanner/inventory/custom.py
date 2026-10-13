@@ -1,10 +1,16 @@
 """Custom scripts created from templates.
 
 Endpoints (docs/PLAN.md section 2): scripts.list_custom, scripts.get_custom,
-templates.get_scripts, then the backing script's get_python3 or get_containers.
-Custom scripts have no image fields; they run on their backing script's image.
-If the backing script is unreadable, the custom script's code_preview is
-scanned instead (decision 5) and the impact is "unknown".
+templates.get_scripts, then the backing script's get_python3, get_containers,
+or get_dbt. Custom scripts have no image fields; they run on their backing
+script's image. If the backing script is unreadable, the custom script's
+code_preview is scanned instead (decision 5) and the impact is "unknown".
+
+dbt templates: Civis runs dbt inside a Python container, so a dbt-backed custom
+script is inventoried like a container script when its backing script runs on
+a Civis default Python image. Otherwise it is counted as not Python. The dbt
+script API returns only an image tag, so a blank or "latest" tag is treated as
+the Civis default image.
 """
 
 from __future__ import annotations
@@ -24,9 +30,10 @@ from scanner.inventory.base import (
     mark_not_scanned,
 )
 
-# Backing script types that can run Python. Others (sql, r, javascript, dbt)
-# are not Python, so those custom scripts are left out of the inventory.
 PYTHON_BACKING_TYPES = {"python3", "python", "container", "containers"}
+DBT_BACKING_TYPES = {"dbt"}
+
+_NOT_PYTHON = object()  # Returned by custom_item for scripts that cannot run Python.
 
 
 class TemplateCache:
@@ -53,8 +60,10 @@ class TemplateCache:
             method = client.scripts.get_python3
         elif "container" in script_type:
             method = client.scripts.get_containers
+        elif "dbt" in script_type:
+            method = client.scripts.get_dbt
         else:
-            return script_type, None, "The template's backing script is not a Python or container script."
+            return script_type, None, "The template's backing script is not a Python, container, or dbt script."
         detail, reason = self.ctx.fetch(method, script_id)
         if detail is None:
             return script_type, None, f"The template's backing script could not be read. {reason}"
@@ -63,19 +72,28 @@ class TemplateCache:
 
 def inventory_custom_scripts(ctx: InventoryContext) -> list[InventoryItem]:
     rows = listed_rows(ctx, ctx.client.scripts.list_custom, ObjectType.CUSTOM_SCRIPT)
+    counts = ctx.inventory.count(ObjectType.CUSTOM_SCRIPT)
     templates = TemplateCache(ctx)
     items = []
     for row in rows:
         backing_type = (field_of(row, "backing_script_type") or "").lower()
-        if backing_type and backing_type not in PYTHON_BACKING_TYPES:
-            ctx.inventory.count(ObjectType.CUSTOM_SCRIPT).not_python += 1
+        if backing_type and backing_type not in PYTHON_BACKING_TYPES | DBT_BACKING_TYPES:
+            counts.add_not_python(backing_type)  # SQL, R, or JavaScript template.
             continue
-        items.append(custom_item(ctx, row, templates))
+        item = custom_item(ctx, row, templates)
+        if item is _NOT_PYTHON:
+            counts.add_not_python(backing_type or "dbt")
+            continue
+        items.append(item)
     return items
 
 
-def custom_item(ctx: InventoryContext, row: Any, templates: TemplateCache | None = None) -> InventoryItem:
-    """Build one item from a list row, or from a job referenced by a workflow."""
+def custom_item(ctx: InventoryContext, row: Any, templates: TemplateCache | None = None):
+    """Build one item from a list row, or from a job referenced by a workflow.
+
+    Returns _NOT_PYTHON for a dbt-backed script that does not run on a Civis
+    default Python image.
+    """
     templates = templates or TemplateCache(ctx)
     obj = base_object(row, ObjectType.CUSTOM_SCRIPT)
     item = InventoryItem(obj)
@@ -99,7 +117,17 @@ def custom_item(ctx: InventoryContext, row: Any, templates: TemplateCache | None
         return item
 
     obj.backing_script_id = field_of(backing, "id")
-    if "python" in (backing_type or ""):
+    backing_type = backing_type or ""
+    if "dbt" in backing_type:
+        # Only the tag is available; the image name is implied.
+        image = classify_image(ObjectType.PYTHON_SCRIPT, None, field_of(backing, "docker_image_tag"))
+        if not image.uses_default_image:
+            return _NOT_PYTHON
+        apply_image(obj, image)
+        obj.git_repo = field_of(backing, "repo_http_uri")
+        obj.git_ref = field_of(backing, "repo_ref") if obj.git_repo else None
+        obj.git_path = field_of(field_of(backing, "dbt_project"), "project_dir") if obj.git_repo else None
+    elif "python" in backing_type:
         apply_image(obj, classify_image(ObjectType.PYTHON_SCRIPT, None, field_of(backing, "docker_image_tag")))
         item.code["backing_source"] = field_of(backing, "source", "")
     else:

@@ -81,7 +81,7 @@ OBJECTS = Table(
         Column("git_path", "VARCHAR(1024)", "Path inside the repository."),
         Column("template_id", "BIGINT", "Template ID, for custom scripts."),
         Column("backing_script_id", "BIGINT", "Script behind the template, for custom scripts."),
-        Column("workflow_ids", "VARCHAR(2048)", "Comma-separated IDs of active workflows that run this object."),
+        Column("workflows", "VARCHAR(4096)", "JSON list of active workflows that run this object: [{\"id\": 1, \"name\": \"...\"}]."),
         Column("scan_status", "VARCHAR(16)", "scanned, partial, not_scanned, or pending."),
         Column("scan_note", "VARCHAR(1024)", "Why the object was not fully scanned."),
     ),
@@ -102,6 +102,7 @@ FINDINGS = Table(
         Column("confidence", "VARCHAR(16)", "high, medium, or low."),
         Column("impact", "VARCHAR(16)", "affected, advisory, or unknown."),
         Column("fix_guidance", "VARCHAR(2048)", "How to fix it."),
+        Column("workflows", "VARCHAR(4096)", "JSON list of active workflows that run this object, so an admin sees what else breaks."),
     ),
 )
 
@@ -110,14 +111,14 @@ COVERAGE = Table(
     "Counts by object type, plus every object not fully scanned and why.",
     (
         Column("run_id", "VARCHAR(64)", "Scan run ID."),
-        Column("row_kind", "VARCHAR(16)", "summary or object."),
+        Column("row_kind", "VARCHAR(16)", "summary, object, or not_python."),
         Column("object_type", "VARCHAR(32)", "Object type."),
         Column("object_id", "BIGINT", "Object ID, on object rows only."),
-        Column("found_count", "INTEGER", "Objects found, on summary rows only."),
+        Column("language", "VARCHAR(32)", "Language of objects left out, on not_python rows only (for example r or sql)."),
+        Column("found_count", "INTEGER", "Objects found on summary rows; objects left out on not_python rows."),
         Column("scanned_count", "INTEGER", "Objects fully scanned, on summary rows only."),
         Column("hidden_skipped_count", "INTEGER", "Hidden objects skipped, on summary rows only."),
         Column("archived_included_count", "INTEGER", "Archived jobs included because an active workflow runs them."),
-        Column("not_python_count", "INTEGER", "Objects left out because they cannot run Python."),
         Column("reason", "VARCHAR(1024)", "Why the object was not fully scanned, on object rows."),
     ),
 )

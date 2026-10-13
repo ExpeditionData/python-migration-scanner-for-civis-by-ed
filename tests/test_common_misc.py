@@ -1,8 +1,10 @@
+import json
+
 import pytest
 
 from common import urls
 from common.disclaimer import DISCLAIMER
-from common.models import CivisObject, Finding, FindingSource, Impact, Level, ObjectType
+from common.models import CivisObject, Finding, FindingSource, Impact, Level, ObjectType, WorkflowRef, workflows_json
 from common.version import __version__
 
 
@@ -39,12 +41,24 @@ def test_version_is_semver():
 
 
 def test_rows_serialize_enums_as_plain_strings():
-    obj = CivisObject(object_id=1, object_type=ObjectType.PYTHON_SCRIPT, name="example", url="u", workflow_ids=[5, 6])
+    refs = [WorkflowRef(6, "Second"), WorkflowRef(5, "First")]
+    obj = CivisObject(object_id=1, object_type=ObjectType.PYTHON_SCRIPT, name="example", url="u", workflows=refs)
     row = obj.to_row()
     assert row["object_type"] == "python_script" and type(row["object_type"]) is str
-    assert row["workflow_ids"] == "5,6"
+    assert json.loads(row["workflows"]) == [{"id": 5, "name": "First"}, {"id": 6, "name": "Second"}]
+    assert obj.workflow_ids == [5, 6]
     finding = Finding(
         1, ObjectType.PYTHON_SCRIPT, "CV3-ML", "inline source", 3,
         FindingSource.CODE, Level.HIGH, Level.HIGH, Impact.AFFECTED, "fix",
     )
     assert finding.to_row()["impact"] == "affected"
+
+
+def test_workflows_json_is_capped_for_the_column():
+    refs = [WorkflowRef(i, "w" * 300) for i in range(100)]
+    text = workflows_json(refs)
+    assert len(text) < 4096
+    entries = json.loads(text)
+    assert entries[-1]["more"] == 100 - (len(entries) - 1)
+    assert all(len(e.get("name", "")) <= 200 for e in entries)
+    assert workflows_json([]) is None

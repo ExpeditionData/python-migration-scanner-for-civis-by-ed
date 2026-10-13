@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import copy
+import json
 
 import pytest
 
-from common.models import Impact, ObjectType, ScanStatus
+from common.models import Impact, ObjectType, ScanStatus, WorkflowRef
 from scanner.inventory import build_inventory
 from scanner.inventory.base import classify_image, normalize_image, schedule_summary
 from scanner.inventory.users import load_users, scanning_user
@@ -38,7 +39,7 @@ def test_inventoried_ids_by_type(built):
     assert ids == {
         ObjectType.PYTHON_SCRIPT: {101, 102, 105, 106, 107},
         ObjectType.CONTAINER_SCRIPT: {201, 202, 203, 204},
-        ObjectType.CUSTOM_SCRIPT: {301, 302, 304},
+        ObjectType.CUSTOM_SCRIPT: {301, 302, 304, 306},
         ObjectType.NOTEBOOK: {401, 403},
         ObjectType.SERVICE: {501, 502, 503},
         ObjectType.WORKFLOW: {601, 603},
@@ -50,9 +51,10 @@ def test_counts_cover_hidden_archived_and_non_python(built):
     c = inventory.counts
     assert (c[ObjectType.PYTHON_SCRIPT].found, c[ObjectType.PYTHON_SCRIPT].hidden_skipped) == (5, 1)
     assert c[ObjectType.PYTHON_SCRIPT].archived_included == 1
-    assert c[ObjectType.CUSTOM_SCRIPT].not_python == 1
-    assert c[ObjectType.NOTEBOOK].not_python == 1
-    assert c[ObjectType.SERVICE].not_python == 2
+    assert c[ObjectType.CUSTOM_SCRIPT].not_python == {"sql": 1, "dbt": 1}
+    assert c[ObjectType.NOTEBOOK].not_python == {"r": 1}
+    assert c[ObjectType.SERVICE].not_python == {"r": 2}
+    assert c[ObjectType.PYTHON_SCRIPT].not_python == {}
     assert c[ObjectType.WORKFLOW].found == 3
 
 
@@ -69,6 +71,35 @@ def test_workflow_ids_are_attached_to_jobs(built):
     assert obj(built, 201).workflow_ids == [601]
     assert obj(built, 101).workflow_ids == [604]
     assert obj(built, 102).workflow_ids == []
+
+
+def test_workflow_names_are_recorded_on_jobs_and_rows(built):
+    # Workflow 604 only orchestrates other jobs, so it is not inventoried itself,
+    # but its name still appears on the job it runs.
+    assert obj(built, 101).workflows == [WorkflowRef(604, "Example orchestration only")]
+    row = obj(built, 105).to_row()
+    assert json.loads(row["workflows"]) == [{"id": 601, "name": "Example daily pipeline"}]
+    assert obj(built, 102).to_row()["workflows"] is None
+
+
+def test_workflows_are_copied_onto_findings(built):
+    from scanner.engine import Engine
+
+    engine = Engine()
+    job = item(built, 101)
+    findings = engine.to_findings(job.obj, engine.scan_python(job.code["source"], "inline source").matches)
+    assert findings and all(f.workflows == (WorkflowRef(604, "Example orchestration only"),) for f in findings)
+    assert json.loads(findings[0].to_row()["workflows"]) == [{"id": 604, "name": "Example orchestration only"}]
+
+
+def test_dbt_templates_follow_the_backing_image(built):
+    dbt = obj(built, 306)
+    assert (dbt.uses_default_image, dbt.impact) == (True, Impact.AFFECTED)
+    assert (dbt.backing_script_id, dbt.git_repo, dbt.git_ref, dbt.git_path) == (
+        221, "github.com/example-org/example-dbt.git", "main", "warehouse"
+    )
+    _, inventory = built
+    assert 307 not in inventory.by_id()  # dbt on a pinned image: counted as not Python.
 
 
 @pytest.mark.parametrize(

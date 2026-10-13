@@ -34,7 +34,7 @@ def inventory_notebooks(ctx: InventoryContext) -> list[InventoryItem]:
     for row in rows:
         item = notebook_item(ctx, row)
         if item is None:
-            ctx.inventory.count(ObjectType.NOTEBOOK).not_python += 1
+            ctx.inventory.count(ObjectType.NOTEBOOK).add_not_python(field_of(row, "language"))
         else:
             items.append(item)
     return items

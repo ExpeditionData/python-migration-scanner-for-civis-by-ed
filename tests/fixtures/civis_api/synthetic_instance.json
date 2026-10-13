@@ -99,8 +99,25 @@
   "templates": {
     "31": {"id": 31, "name": "Example container template", "script_id": 211, "script_type": "container"},
     "32": {"id": 32, "name": "Example locked template", "script_id": 999, "script_type": "python3"},
-    "33": {"id": 33, "name": "Example python template", "script_id": 108, "script_type": "python3"}
+    "33": {"id": 33, "name": "Example python template", "script_id": 108, "script_type": "python3"},
+    "34": {"id": 34, "name": "Example dbt template on default image", "script_id": 221, "script_type": "dbt"},
+    "35": {"id": 35, "name": "Example dbt template on pinned image", "script_id": 222, "script_type": "dbt"}
   },
+  "dbt": [
+    {
+      "id": 221, "name": "Example dbt backing script", "type": "Dbt", "archived": false, "hidden": false, "_listed": false,
+      "author": {"id": 1, "name": "Example Robot", "username": "example_robot"},
+      "docker_image_tag": "",
+      "repo_http_uri": "github.com/example-org/example-dbt.git", "repo_ref": "main",
+      "dbt_project": {"project_dir": "warehouse", "dbt_command": "build"}
+    },
+    {
+      "id": 222, "name": "Example pinned dbt backing script", "type": "Dbt", "archived": false, "hidden": false, "_listed": false,
+      "author": {"id": 1, "name": "Example Robot", "username": "example_robot"},
+      "docker_image_tag": "1.2.3",
+      "repo_http_uri": "github.com/example-org/example-dbt.git", "repo_ref": "main"
+    }
+  ],
   "custom": [
     {
       "id": 301, "name": "Example custom from container template", "type": "Custom", "backing_script_type": "container",
@@ -125,6 +142,18 @@
       "archived": false, "hidden": false, "from_template_id": 33,
       "author": {"id": 2, "name": "Example Analyst", "username": "example_analyst"},
       "code_preview": "print('preview')"
+    },
+    {
+      "id": 306, "name": "Example dbt custom script on default image", "type": "Custom", "backing_script_type": "dbt",
+      "archived": false, "hidden": false, "from_template_id": 34,
+      "author": {"id": 2, "name": "Example Analyst", "username": "example_analyst"},
+      "code_preview": "dbt build"
+    },
+    {
+      "id": 307, "name": "Example dbt custom script on pinned image", "type": "Custom", "backing_script_type": "dbt",
+      "archived": false, "hidden": false, "from_template_id": 35,
+      "author": {"id": 2, "name": "Example Analyst", "username": "example_analyst"},
+      "code_preview": "dbt build"
     }
   ],
   "notebooks": [
