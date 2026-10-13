@@ -1,0 +1,55 @@
+#!/bin/sh
+# Pre-commit hook: blocks commits that stage Context/ or a likely secret.
+#
+# Enable it once per clone:   git config core.hooksPath .githooks
+#
+# Runs gitleaks if it is installed and detect-secrets from the project's
+# virtual environment (.venv) if it is there. At least one must be available,
+# or the commit is blocked. This is in addition to reviewing staged files.
+
+status=0
+ran=0
+
+if git diff --cached --name-only | grep -q '^Context/'; then
+  echo "pre-commit: files under Context/ are staged. Context/ must never be committed." >&2
+  exit 1
+fi
+
+if command -v gitleaks >/dev/null 2>&1; then
+  ran=1
+  if ! gitleaks git --pre-commit --redact --staged --verbose; then
+    echo "pre-commit: gitleaks found a possible secret. Commit blocked." >&2
+    status=1
+  fi
+fi
+
+hook=""
+for candidate in .venv/Scripts/detect-secrets-hook.exe .venv/bin/detect-secrets-hook; do
+  if [ -x "$candidate" ]; then
+    hook="$candidate"
+    break
+  fi
+done
+if [ -z "$hook" ] && command -v detect-secrets-hook >/dev/null 2>&1; then
+  hook="detect-secrets-hook"
+fi
+
+if [ -n "$hook" ]; then
+  ran=1
+  files=$(git diff --cached --name-only --diff-filter=ACMR)
+  if [ -n "$files" ]; then
+    if ! printf '%s\n' "$files" | tr '\n' '\0' | xargs -0 "$hook" --baseline .secrets.baseline; then
+      echo "pre-commit: detect-secrets found a possible secret. Commit blocked." >&2
+      echo "If it is a fake value in a test, add '# pragma: allowlist secret' to that line." >&2
+      status=1
+    fi
+  fi
+fi
+
+if [ "$ran" -eq 0 ]; then
+  echo "pre-commit: no secret scanner found. Install gitleaks, or run" >&2
+  echo "  .venv/Scripts/python.exe -m pip install -r requirements-dev.txt" >&2
+  exit 1
+fi
+
+exit $status

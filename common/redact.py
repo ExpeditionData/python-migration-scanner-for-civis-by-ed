@@ -53,7 +53,7 @@ _PATTERNS: tuple[tuple[re.Pattern, str], ...] = (
         ),
         r"\1" + REDACTED,
     ),
-    # Credentials inside URLs: https://user:pass@host
+    # Credentials inside URLs (a user name and password before the @ and host).
     (re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/\s:@]+:[^/\s@]+@"), r"\1" + REDACTED + "@"),
     # Signed URL query parameters (Civis file links, S3 presigned URLs).
     (

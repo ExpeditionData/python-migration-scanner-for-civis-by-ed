@@ -32,7 +32,7 @@ ROOT = Path(__file__).resolve().parent.parent
 FAKE_PASSWORD = "Tr0ub4dor-fake-pw-9431"  # pragma: allowlist secret  gitleaks:allow
 FAKE_EMAIL = "pat.donor@example.org"
 FAKE_API_KEY = "fakecivisapikey0123456789abcdef"  # pragma: allowlist secret  gitleaks:allow
-FAKE_GITHUB_TOKEN = "ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"  # gitleaks:allow
+FAKE_GITHUB_TOKEN = "ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"  # pragma: allowlist secret  gitleaks:allow
 SECRETS = (FAKE_PASSWORD, FAKE_EMAIL, FAKE_API_KEY, FAKE_GITHUB_TOKEN)
 
 

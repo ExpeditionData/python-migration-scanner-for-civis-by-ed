@@ -51,7 +51,7 @@ def test_line_numbers_point_at_the_call():
 
 
 def test_findings_never_contain_code_text():
-    secret = "hunter2-not-a-real-password"
+    secret = "hunter2-not-a-real-password"  # pragma: allowlist secret
     code = (
         "import civis\n"
         f"DB_PASSWORD = '{secret}'\n"
