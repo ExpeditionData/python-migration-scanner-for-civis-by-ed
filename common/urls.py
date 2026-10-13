@@ -1,7 +1,8 @@
 """Links to objects in the Civis Platform web interface.
 
-The path patterns below follow the Civis single-page app routes. They are not
-documented by Civis and must be confirmed in a live Civis instance.
+The path patterns below follow the Civis single-page app routes, which Civis
+does not document. The container script path was confirmed in a live instance
+on October 13, 2026. The other paths still need a check in Phase 7.
 The base URL can be changed with the CIVIS_PLATFORM_URL environment variable.
 """
 
