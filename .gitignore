@@ -112,3 +112,7 @@ $RECYCLE.BIN/
 .DocumentRevisions-V100
 .AppleDB
 .AppleDesktop
+
+# Local dry-run output (synthetic data only)
+dry_run_output/
+*.sqlite

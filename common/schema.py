@@ -37,12 +37,12 @@ class Table:
 
 SCAN_RUNS = Table(
     "scan_runs",
-    "One row per scan run.",
+    "Status rows for each scan run: one when it starts and one when it ends.",
     (
         Column("run_id", "VARCHAR(64)", "Unique ID for the scan run."),
         Column("started_at", "TIMESTAMP", "When the scan started (UTC)."),
         Column("finished_at", "TIMESTAMP", "When the scan finished (UTC). Empty while running."),
-        Column("status", "VARCHAR(32)", "running, succeeded, failed, or partial."),
+        Column("status", "VARCHAR(32)", "running, succeeded, tables_failed (CSV report only), or failed."),
         Column("scanning_user_id", "BIGINT", "Civis user ID the scan ran as."),
         Column("scanning_user_name", "VARCHAR(256)", "Civis user name the scan ran as."),
         Column("tool_version", "VARCHAR(32)", "Version of this tool."),
@@ -50,6 +50,7 @@ SCAN_RUNS = Table(
         Column("civis_job_id", "BIGINT", "Civis job ID of the scanner container script."),
         Column("civis_run_id", "BIGINT", "Civis run ID of the scanner run."),
         Column("disclaimer", "VARCHAR(2048)", "Disclaimer text shown with the results."),
+        Column("recorded_at", "TIMESTAMP", "When this row was written. Rows are append-only; the newest row per run is current."),
     ),
 )
 

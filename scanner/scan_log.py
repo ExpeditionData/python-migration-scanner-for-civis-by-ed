@@ -15,6 +15,8 @@ Line formats (parsed by the web app to show progress):
     FINDINGS rule_id=CV3-USE-PANDAS count=12
     PHASE name=inventory state=done
     CHECKPOINT objects_written=500
+    OUTPUT_FAILED error=CivisAPIError
+    FATAL error=KeyError
     TABLE_WRITE_FAILED table=findings error=CivisAPIError status=403
     RUN run_id=run-20261013T120000Z-a1b2c3 status=succeeded
 """
@@ -124,6 +126,16 @@ def run_status(run_id: str, status: str) -> None:
     if status not in RUN_STATUSES or not isinstance(run_id, str) or not _RUN_ID.match(run_id):
         raise ValueError("invalid run status line")
     _logger.info("RUN run_id=%s status=%s", run_id, status)
+
+
+def output_failed(exc: BaseException) -> None:
+    """The CSV report could not be saved as a run output."""
+    _logger.error("OUTPUT_FAILED error=%s", _error_name(exc))
+
+
+def fatal(exc: BaseException) -> None:
+    """The scan stopped. Logs the error type only; messages can hold Civis content."""
+    _logger.error("FATAL error=%s", _error_name(exc))
 
 
 def checkpoint(objects_written: int) -> None:
