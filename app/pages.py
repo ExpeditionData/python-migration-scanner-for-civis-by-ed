@@ -1,23 +1,380 @@
-"""Pages. Phase 5 adds the dashboard, inventory, findings, checklist, and history.
+"""Pages and the scan status API.
 
-The "/" route must answer quickly or Civis treats the Service as down, so it
-makes no Civis API or database calls.
+The "/" route must answer quickly, or Civis treats the Service as down. It
+reads only cached results, and every Civis read is cached (app/backends/cache.py).
+Civis health checks use /healthz, which makes no calls at all.
 """
 
 from __future__ import annotations
 
-from flask import Blueprint, Response, render_template
+from datetime import datetime, timezone
+from pathlib import Path
 
+from flask import Blueprint, Response, abort, current_app, jsonify, redirect, render_template, request, send_file, url_for
+
+from app import views
+from app.backends.base import ChecklistSaveError, Progress, ResultsUnavailable
+from app.security import safe_href
+from app.services import Services
 from common.disclaimer import DISCLAIMER
+from common.models import ObjectType
+from common.rule_loader import load_rules
+from common.version import __version__
 
 bp = Blueprint("pages", __name__)
+RULES = load_rules()
+RULE_IDS = set(RULES.ids())
+HISTORY_LIMIT = 10
+NOTICES = {
+    "started": ("success", "The scan has started. This page updates every 15 seconds."),
+    "busy": ("warning", "A scan is already queued or running, so a new one was not started."),
+    "no-job": ("error", "Run scan is turned off because SCANNER_JOB_ID is not set on this Service."),
+    "start-failed": ("error", "Civis did not start the scan. Try again in a few minutes."),
+}
+FILTER_KEYS = {
+    "inventory": ("q", "type", "image", "status"),
+    "findings": ("impact", "ruleset", "confidence", "status", "owner"),
+}
+
+
+def services() -> Services:
+    return current_app.extensions["cpvs"]
+
+
+def viewer_name() -> str | None:
+    svc = services()
+    if svc.local:
+        return svc.local_user
+    name = (request.headers.get("Civis-Username") or "").strip()
+    return name or None
+
+
+def load_situation() -> views.Situation:
+    svc = services()
+    if svc.results is None:
+        results_state = "not_configured"
+    else:
+        try:
+            results_state = svc.results.check()
+        except ResultsUnavailable as exc:
+            results_state = exc.kind
+    scans = []
+    if results_state == "ok":
+        try:
+            scans = views.summarize_scan_runs(svc.results.scan_runs())
+        except ResultsUnavailable:
+            results_state = "error"
+    runs, jobs_error = [], False
+    jobs = svc.jobs()
+    if jobs is not None:
+        try:
+            runs = jobs.runs()
+        except Exception:
+            jobs_error = True
+    return views.Situation(
+        results_state=results_state, job_configured=jobs is not None, jobs_error=jobs_error,
+        runs=runs, scans=scans, settings_problem=svc.settings.problem,
+    )
+
+
+def banners(situation: views.Situation) -> list[dict]:
+    items = []
+    if situation.settings_problem:
+        items.append({"kind": "error", "text": f"A setting on this Service is not valid. {situation.settings_problem}"})
+    if not situation.job_configured:
+        items.append({"kind": "warning", "text": "Run scan is turned off because SCANNER_JOB_ID is not set on this "
+                      "Service. Ask the admin who set up the tool to add the scanner job's ID."})
+    elif situation.jobs_error:
+        items.append({"kind": "error", "text": "The scanner job's runs could not be read from Civis. Check that "
+                      "SCANNER_JOB_ID is correct and that the Service owner can see that job."})
+    active = situation.active_run
+    if active is not None:
+        items.append({"kind": "info", "link": url_for("pages.scan"), "link_text": "See progress",
+                      "text": f"A scan is {'queued' if active.state == 'queued' else 'running'}. "
+                              f"Started {views.format_datetime(active.started_at or active.created_at)}."})
+    outcome = situation.last_outcome
+    current = situation.current
+    shown = f" The results shown are from {current.label}, {views.format_datetime(current.started_at)}." if current else ""
+    if outcome == "failed":
+        items.append({"kind": "error", "text": f"The last scan failed before it finished.{shown}",
+                      "link": url_for("pages.scan"), "link_text": "See scan history"})
+    elif outcome == "tables_failed":
+        items.append({"kind": "warning", "text": "The last scan finished but could not save its results tables, so "
+                      f"its results are only in its CSV report.{shown}",
+                      "link": url_for("pages.download_latest"), "link_text": "Download its CSV report"})
+    return items
+
+
+def empty_state(situation: views.Situation) -> dict | None:
+    if situation.current is not None:
+        return None
+    state = situation.results_state
+    if state == "not_configured":
+        return {"title": "The results schema is not set",
+                "body": "Set RESULTS_DATABASE and RESULTS_SCHEMA on this Service to the database and schema the "
+                        "scanner job writes to, then redeploy the Service."}
+    if state == "schema_missing":
+        return {"title": "The results schema does not exist yet",
+                "body": "Ask a database admin to create the schema named in RESULTS_SCHEMA and give the Service "
+                        "owner access to it. The scanner creates its tables there on its first run."}
+    if state == "error":
+        return {"title": "Results could not be read",
+                "body": "The app could not read the results tables. Check that RESULTS_DATABASE and "
+                        "RESULTS_SCHEMA are correct and that the Service owner can read the schema."}
+    if situation.active_run is not None:
+        return {"title": "The first scan is running", "body": "Results appear here when it finishes.",
+                "link": url_for("pages.scan"), "link_text": "See progress"}
+    if situation.last_outcome == "tables_failed":
+        return {"title": "The last scan saved a CSV report only",
+                "body": "The scan finished but could not save its tables, so there are no results to show here. "
+                        "Download the CSV report to see them, and check that the Service owner can write to the "
+                        "results schema.",
+                "link": url_for("pages.download_latest"), "link_text": "Download CSV report"}
+    if situation.last_outcome == "failed":
+        return {"title": "No completed scan yet",
+                "body": "The last scan failed before it finished. Check the scanner job's run log in Civis, then run "
+                        "the scan again."}
+    return {"title": "No scan yet", "body": "Run the first scan to find code affected by the February 2027 update."}
+
+
+def base_context(active: str, situation: views.Situation) -> dict:
+    return {
+        "active": active,
+        "viewer": viewer_name(),
+        "disclaimer": DISCLAIMER,
+        "version": __version__,
+        "banners": banners(situation),
+        "situation": situation,
+        "can_start": situation.can_start,
+        "local": services().local,
+    }
+
+
+def current_tables(situation: views.Situation) -> tuple[list, list, list, list]:
+    scan = situation.current
+    if scan is None:
+        return [], [], [], []
+    results = services().results
+    return (
+        results.rows("objects", scan.run_id),
+        results.rows("findings", scan.run_id),
+        results.rows("coverage", scan.run_id),
+        results.checklist(),
+    )
+
+
+def _filters(page: str) -> dict:
+    return {k: request.args.get(k, "").strip() for k in FILTER_KEYS[page] if request.args.get(k, "").strip()}
+
+
+def _page_number() -> int:
+    value = request.args.get("page", "1")
+    return int(value) if value.isdigit() else 1
 
 
 @bp.get("/")
-def landing():
-    return render_template("landing.html", disclaimer=DISCLAIMER)
+def overview():
+    situation = load_situation()
+    objects, findings, coverage, checklist = current_tables(situation)
+    stats = views.overview(objects, findings, coverage, checklist, RULES) if situation.current else None
+    current = situation.current
+    run = next((r for r in situation.runs if current and r.id == current.civis_run_id), None)
+    return render_template(
+        "overview.html", **base_context("overview", situation), stats=stats, empty=empty_state(situation),
+        last_scan=views.format_datetime(current.started_at) if current else None,
+        duration=views.format_duration(run.started_at, run.finished_at) if run else (
+            views.format_duration(current.started_at, current.finished_at) if current else None),
+        scan_label=current.label if current else None,
+    )
+
+
+@bp.get("/scan")
+def scan():
+    situation = load_situation()
+    svc = services()
+    run = situation.active_run or (situation.runs[0] if situation.runs else None)
+    progress = _progress(run)
+    counts = {}
+    completed = [s for s in situation.scans if s.status == "succeeded"][:HISTORY_LIMIT]
+    for scan_run in completed:
+        objects = svc.results.rows("objects", scan_run.run_id)
+        findings = svc.results.rows("findings", scan_run.run_id)
+        impacts = views._object_impacts(findings)
+        counts[scan_run.run_id] = {
+            "affected": sum(1 for v in impacts.values() if v == "affected"),
+            "advisory": sum(1 for v in impacts.values() if v == "advisory"),
+            "pairs": views.finding_pairs(findings),
+            "objects": len(objects),
+        }
+    scan_run = situation.scan_for(run)
+    lookback = (scan_run.parameters.get("lookback_days") if scan_run else None) or 200
+    notice = NOTICES.get(request.args.get("notice", ""))
+    view = views.progress_view(run, progress)
+    return render_template(
+        "scan.html", **base_context("scan", situation),
+        run=run, scan_run=scan_run, progress=view, running=view.get("state") in ("queued", "running"), lookback=lookback,
+        history=views.history(situation, counts), notice=notice, empty=empty_state(situation),
+    )
+
+
+@bp.get("/inventory")
+def inventory():
+    situation = load_situation()
+    objects, findings, _, _ = current_tables(situation)
+    filters = _filters("inventory")
+    rows = views.inventory(objects, findings, filters)
+    page = views.paginate(rows, _page_number())
+    types = [(t.value, views.TYPE_LABELS[t.value]) for t in ObjectType if any(o["object_type"] == t.value for o in objects)]
+    return render_template(
+        "inventory.html", **base_context("inventory", situation), page=page, filters=filters, types=types,
+        total_objects=len(objects), empty=empty_state(situation), current=situation.current,
+    )
+
+
+@bp.get("/findings")
+def findings():
+    situation = load_situation()
+    objects, finding_rows, _, checklist = current_tables(situation)
+    filters = _filters("findings")
+    rows = views.findings_rows(objects, finding_rows, checklist, RULES, filters)
+    page = views.paginate(rows, _page_number())
+    saved = request.args.get("saved", "")
+    error = request.args.get("error", "")
+    return render_template(
+        "findings.html", **base_context("findings", situation), page=page, filters=filters,
+        owners=views.owners(objects, finding_rows), empty=empty_state(situation), current=situation.current,
+        saved=int(saved) if saved.isdigit() else None,
+        error={"viewer": "Saving needs a signed-in Civis user. Open the app through Civis Platform and try again.",
+               "invalid": "The form contained a value that is not allowed. Reload the page and try again.",
+               "failed": "The changes could not be saved. Try again in a few minutes.",
+               "stale": "There is no completed scan to save changes against."}.get(error),
+        can_save=viewer_name() is not None,
+    )
+
+
+@bp.post("/findings/save")
+def save_findings():
+    filters = {k: request.form.get(f"f_{k}", "").strip() for k in FILTER_KEYS["findings"]}
+    filters = {k: v for k, v in filters.items() if v}
+    page = request.form.get("f_page", "")
+    if page.isdigit():
+        filters["page"] = page
+
+    def back(**extra):
+        return redirect(url_for("pages.findings", **filters, **extra))
+
+    viewer = viewer_name()
+    if not viewer:
+        return back(error="viewer")
+    situation = load_situation()
+    if situation.current is None:
+        return back(error="stale")
+    try:
+        changes = views.checklist_changes(request.form.items(), RULE_IDS)
+    except ValueError:
+        return back(error="invalid")
+    if not changes:
+        return back(saved="0")
+    try:
+        services().results.save_checklist(situation.current.run_id, changes, viewer, datetime.now(timezone.utc))
+    except ChecklistSaveError:
+        return back(error="failed")
+    return back(saved=str(len(changes)))
+
+
+@bp.post("/scan/start")
+def start_scan():
+    svc = services()
+    jobs = svc.jobs()
+    if jobs is None:
+        return redirect(url_for("pages.scan", notice="no-job"))
+    try:
+        if any(run.active for run in jobs.runs(limit=10)):
+            return redirect(url_for("pages.scan", notice="busy"))
+        jobs.start()
+    except Exception:
+        return redirect(url_for("pages.scan", notice="start-failed"))
+    return redirect(url_for("pages.scan", notice="started"))
+
+
+@bp.get("/api/scan-status")
+def scan_status():
+    situation = load_situation()
+    run = situation.active_run or (situation.runs[0] if situation.runs else None)
+    view = views.progress_view(run, _progress(run))
+    view["configured"] = situation.job_configured
+    view["can_start"] = situation.can_start
+    view["outcome"] = situation.last_outcome
+    if run is not None and not run.active:
+        scan_run = situation.scan_for(run)
+        if scan_run is not None and scan_run.status == "tables_failed":
+            view["state"] = "tables_failed"
+    return jsonify(view)
+
+
+@bp.get("/download/latest")
+def download_latest():
+    situation = load_situation()
+    for scan_run in situation.scans:
+        if scan_run.status in ("succeeded", "tables_failed") and scan_run.civis_run_id:
+            return download(scan_run.civis_run_id)
+    abort(404)
+
+
+@bp.get("/download/<int:civis_run_id>")
+def download(civis_run_id: int):
+    jobs = services().jobs()
+    if jobs is None:
+        abort(404)
+    try:
+        report = jobs.report(civis_run_id)
+    except Exception:
+        report = None
+    if report is None:
+        abort(404)
+    kind, target = report
+    if kind == "file":
+        path = Path(target)
+        return send_file(path, mimetype="text/csv", as_attachment=True, download_name=path.name)
+    link = safe_href(target)
+    if link == "#":
+        abort(404)
+    return redirect(link)
 
 
 @bp.get("/healthz")
 def healthz():
     return Response("ok", mimetype="text/plain")
+
+
+def _progress(run) -> Progress | None:
+    """Read new scanner log lines for this run and update its parsed progress."""
+    if run is None:
+        return None
+    svc = services()
+    jobs = svc.jobs()
+    with svc.progress_lock:
+        progress = svc.progress.setdefault(run.id, Progress())
+    if jobs is None:
+        return progress
+    try:
+        lines = jobs.logs(run.id, progress.last_id)
+    except Exception:
+        return progress
+    with svc.progress_lock:
+        progress.feed(lines)
+    return progress
+
+
+@bp.app_errorhandler(404)
+def not_found(_error):
+    return render_template("error.html", title="Page not found",
+                           body="That page or report could not be found.", viewer=viewer_name(),
+                           disclaimer=DISCLAIMER, version=__version__, banners=[], active=None), 404
+
+
+@bp.app_errorhandler(400)
+def bad_request(_error):
+    return render_template("error.html", title="The request could not be accepted",
+                           body="The form may have expired. Reload the page and try again.", viewer=viewer_name(),
+                           disclaimer=DISCLAIMER, version=__version__, banners=[], active=None), 400

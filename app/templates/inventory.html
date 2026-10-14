@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% from "macros.html" import empty_block, object_link, pager %}
+{% block title %}Inventory{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Inventory</h1>
+    <p class="subtitle">Every Python-based object the scan found, with the image it runs on.{% if current %} {{ current.label }}.{% endif %}</p>
+  </div>
+</div>
+
+{% if empty %}
+{{ empty_block(empty) }}
+{% else %}
+<form class="filters" method="get" action="{{ url_for('pages.inventory') }}" role="search" aria-label="Filter the inventory">
+  <label class="field field-grow">Search by name or owner
+    <input type="search" name="q" value="{{ filters.q or '' }}" autocomplete="off">
+  </label>
+  <label class="field">Object type
+    <select name="type">
+      <option value="">All types</option>
+      {% for value, label in types %}<option value="{{ value }}"{% if filters.type == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="field">Image
+    <select name="image">
+      {% for value, label in [("", "Any image"), ("default", "Civis default image"), ("custom", "Custom or pinned image"), ("unknown", "Image unknown")] %}
+      <option value="{{ value }}"{% if (filters.image or '') == value %} selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field">Scan status
+    <select name="status">
+      {% for value, label in [("", "Any status"), ("scanned", "Scanned"), ("partial", "Partial"), ("not_scanned", "Not scanned")] %}
+      <option value="{{ value }}"{% if (filters.status or '') == value %} selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <div class="actions">
+    <button type="submit" class="button button-secondary">Apply filters</button>
+    {% if filters %}<a href="{{ url_for('pages.inventory') }}">Clear filters</a>{% endif %}
+  </div>
+</form>
+
+<section class="card card-flush" aria-label="Inventory">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">Name</th><th scope="col">Type</th><th scope="col">Owner</th><th scope="col">Image and tag</th>
+          <th scope="col">Default image</th><th scope="col">Last run</th><th scope="col" class="num">Findings</th>
+          <th scope="col">Scan status</th><th scope="col">Run by workflows</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in page.rows %}
+        <tr>
+          <td class="strong">{{ object_link({"name": row.name, "url": row.url}) }}{% if row.archived %}<div class="cell-sub">Archived, but an active workflow runs it</div>{% endif %}</td>
+          <td>{{ row.type }}</td>
+          <td>{{ row.owner }}</td>
+          <td class="mono">{{ row.image }}</td>
+          <td>
+            {% if row.default_key == "default" %}<span class="badge badge-affected">Yes</span>
+            {% elif row.default_key == "custom" %}<span class="badge badge-advisory">No</span>
+            {% else %}<span class="badge badge-unknown">Unknown</span>{% endif %}
+          </td>
+          <td>{{ row.last_run }}</td>
+          <td class="num strong">{{ row.findings | number }}</td>
+          <td class="status-{{ row.status_key }}">
+            {{ row.status }}
+            {% if row.reason %}<div class="reason">{{ row.reason }}</div>{% endif %}
+          </td>
+          <td>{% for name in row.workflows %}<div>{{ name }}</div>{% else %}<span class="muted">None</span>{% endfor %}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9">No objects match these filters.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {{ pager(page, "pages.inventory", filters, "objects") }}
+</section>
+{% endif %}
+{% endblock %}

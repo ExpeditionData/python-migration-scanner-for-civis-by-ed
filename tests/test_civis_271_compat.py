@@ -102,6 +102,16 @@ def find_problems(source: str, filename: str, api: dict) -> list[str]:
             _check_keywords(node, api["api_client"]["init"], f"{where}: civis.APIClient", problems)
             continue
 
+        # <anything>.io.<function>(...), for example self.io.read_civis_sql() with civis.io injected
+        if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Attribute) and func.value.attr in ("io", "utils"):
+            module, name = func.value.attr, func.attr
+            functions = api[module]
+            if name not in functions:
+                problems.append(f"{where}: civis.{module}.{name} does not exist in civis 2.7.1")
+            else:
+                _check_keywords(node, functions[name], f"{where}: civis.{module}.{name}", problems)
+            continue
+
         # <anything>.<endpoint>.<method>(...), for example client.users.list_me()
         if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Attribute):
             endpoint, method = func.value.attr, func.attr
@@ -149,6 +159,8 @@ def test_app_and_common_only_use_civis_2_7_1_api():
         ),
         ("import civis as c\nc.APIClient(not_an_arg=1)", "argument 'not_an_arg' does not exist"),
         ("client.scripts.post_containers_runs(1, bogus=2)", "argument 'bogus' does not exist"),
+        ("self.io.query_civis('select 1', 'db', sql_params_arguments={})", "argument 'sql_params_arguments' does not exist"),
+        ("self.io.no_such_helper()", "civis.io.no_such_helper does not exist"),
     ],
 )
 def test_checker_catches_calls_missing_from_2_7_1(source, expected):

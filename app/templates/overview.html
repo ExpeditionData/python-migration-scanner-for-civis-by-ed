@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% from "macros.html" import run_scan_button, empty_block %}
+{% block title %}Overview{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Overview</h1>
+    {% if stats %}<p class="subtitle">Last scan: {{ last_scan }}. Completed in {{ duration }}. {{ scan_label }}.</p>{% endif %}
+  </div>
+  <div class="actions">
+    {{ run_scan_button(can_start, situation) }}
+    {% if stats and situation.current.civis_run_id %}
+    <a class="button button-secondary" href="{{ url_for('pages.download', civis_run_id=situation.current.civis_run_id) }}">Download CSV</a>
+    {% endif %}
+  </div>
+</div>
+
+{% if empty %}
+{{ empty_block(empty) }}
+{% else %}
+<div class="tiles">
+  <div class="tile">
+    <div class="tile-label">Python objects found</div>
+    <div class="tile-value">{{ stats.found | number }}</div>
+    <div class="tile-note">{{ stats.scanned | number }} fully scanned</div>
+  </div>
+  <div class="tile tile-affected">
+    <div class="tile-label">Affected in February</div>
+    <div class="tile-value">{{ stats.affected | number }}</div>
+    <div class="tile-note">Have findings and run on a Civis default image</div>
+  </div>
+  <div class="tile tile-advisory">
+    <div class="tile-label">Advisory</div>
+    <div class="tile-value">{{ stats.advisory | number }}</div>
+    <div class="tile-note">Have findings on a custom or pinned image</div>
+  </div>
+  <div class="tile tile-neutral">
+    <div class="tile-label">Not scanned</div>
+    <div class="tile-value">{{ stats.not_scanned | number }}</div>
+    <div class="tile-note">{{ stats.partial | number }} more partly scanned. <a href="{{ url_for('pages.inventory', status='not_scanned') }}">Review manually</a></div>
+  </div>
+</div>
+
+<div class="two-col">
+  <section class="card wide" aria-labelledby="by-type">
+    <h2 id="by-type">By object type</h2>
+    <div class="table-wrap">
+      <table class="nowrap">
+        <thead>
+          <tr><th scope="col">Object type</th><th scope="col" class="num">Found</th><th scope="col" class="num">Scanned</th><th scope="col" class="num">Affected</th><th scope="col" class="num">Advisory</th><th scope="col" class="num">Not scanned</th></tr>
+        </thead>
+        <tbody>
+          {% for t in stats.types %}
+          <tr>
+            <th scope="row">{{ t.label }}</th>
+            <td class="num">{{ t.found | number }}</td>
+            <td class="num">{{ t.scanned | number }}</td>
+            <td class="num affected-text">{{ t.affected | number }}</td>
+            <td class="num advisory-text">{{ t.advisory | number }}</td>
+            <td class="num">{{ t.not_scanned | number }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if stats.left_out or stats.hidden_skipped %}
+    <p class="note">
+      Left out because they cannot run Python:
+      {% for item in stats.left_out %}{{ item.type }}: {{ item.language }} ({{ item.count | number }}){{ "; " if not loop.last }}{% else %}none{% endfor %}.
+      {% if stats.hidden_skipped %}Hidden objects skipped: {{ stats.hidden_skipped | number }}.{% endif %}
+    </p>
+    {% endif %}
+  </section>
+
+  <section class="card narrow" aria-labelledby="checklist-progress">
+    <h2 id="checklist-progress">Checklist progress</h2>
+    <p class="note">{{ stats.checklist.total | number }} findings across {{ stats.checklist.objects | number }} objects</p>
+    <div class="stack" role="img" aria-label="{{ stats.checklist.open }} open, {{ stats.checklist.fixed }} fixed, {{ stats.checklist.ignored }} ignored">
+      <div class="stack-fixed w-{{ stats.checklist.fixed_pct }}"></div>
+      <div class="stack-ignored w-{{ stats.checklist.ignored_pct }}"></div>
+    </div>
+    <div class="legend">
+      <span><strong>{{ stats.checklist.open | number }}</strong> open</span>
+      <span class="fixed-text"><strong>{{ stats.checklist.fixed | number }}</strong> fixed</span>
+      <span class="muted"><strong>{{ stats.checklist.ignored | number }}</strong> ignored</span>
+    </div>
+    <a class="strong" href="{{ url_for('pages.findings') }}">Go to findings</a>
+  </section>
+</div>
+
+<section class="card" aria-labelledby="common-issues">
+  <h2 id="common-issues">Most common issues</h2>
+  {% if stats.issues %}
+  <div class="table-wrap">
+    <table class="nowrap">
+      <thead><tr><th scope="col">Rule</th><th scope="col">What breaks</th><th scope="col">Confidence</th><th scope="col" class="num">Objects</th></tr></thead>
+      <tbody>
+        {% for issue in stats.issues %}
+        <tr>
+          <td class="mono">{{ issue.rule_id }}</td>
+          <td>{{ issue.title }}</td>
+          <td>{{ issue.confidence }}</td>
+          <td class="num strong">{{ issue.objects | number }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="note">The last scan found no issues. Test every job before February 2027 anyway.</p>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

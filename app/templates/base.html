@@ -3,18 +3,55 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Civis Python Version Search{% endblock %}</title>
+  <title>{% block title %}Overview{% endblock %} | Civis Python Version Search</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  {% block scripts %}{% endblock %}
 </head>
 <body>
-  <header class="site-header">
-    <p class="site-title">Civis Python Version Search</p>
-  </header>
-  <main class="page">
-    {% block content %}{% endblock %}
-  </main>
-  <footer class="site-footer">
-    <p class="disclaimer">{{ disclaimer }}</p>
-  </footer>
+  <a class="skip-link" href="#main">Skip to main content</a>
+  <div class="site">
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="{{ url_for('pages.overview') }}">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="#0F5F5F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 7 L3 14 L8 21"></path><path d="M20 7 L25 14 L20 21"></path><circle cx="13.5" cy="13" r="4"></circle><path d="M16.5 16 L19 18.5"></path></svg>
+          <span class="brand-name">Civis Python Version Search</span>
+        </a>
+        <nav aria-label="Main" class="main-nav">
+          {% for key, label, endpoint in [("overview", "Overview", "pages.overview"), ("inventory", "Inventory", "pages.inventory"), ("findings", "Findings", "pages.findings"), ("scan", "Scan history", "pages.scan")] %}
+          <a href="{{ url_for(endpoint) }}"{% if active == key %} class="active" aria-current="page"{% endif %}>{{ label }}</a>
+          {% endfor %}
+        </nav>
+        <div class="signed-in">
+          {% if viewer %}Signed in through Civis as <strong>{{ viewer }}</strong>{% else %}Not signed in through Civis{% endif %}
+        </div>
+      </div>
+    </header>
+
+    <main id="main" class="page" tabindex="-1">
+      <div class="banner banner-warning" role="note">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8A5A00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3 L22 20 H2 Z"></path><path d="M12 10 V14"></path><path d="M12 17 V17.5"></path></svg>
+        <div>
+          <p>{{ disclaimer }}</p>
+          <p><strong>For Civis admins only.</strong> Results include the names, owners, and links of private objects, so share this app with Civis admins only.</p>
+        </div>
+      </div>
+      {% for banner in banners %}
+      <div class="banner banner-{{ banner.kind }}" role="{{ 'alert' if banner.kind == 'error' else 'status' }}">
+        <p>{{ banner.text }}{% if banner.link %} <a href="{{ banner.link }}">{{ banner.link_text }}</a>{% endif %}</p>
+      </div>
+      {% endfor %}
+      {% block content %}{% endblock %}
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <span>Version {{ version }}</span>
+        <span>Apache 2.0 license</span>
+        <span>Built by Expedition Data LLC</span>
+        <span>Runs inside your Civis environment. No data leaves Civis.</span>
+        {% if local %}<span>Local preview with made-up data</span>{% endif %}
+      </div>
+    </footer>
+  </div>
 </body>
 </html>

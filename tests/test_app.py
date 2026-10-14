@@ -1,0 +1,577 @@
+"""Web app route tests on the made-up preview data. No Civis calls, no network.
+
+Covers every page and API, CSRF on every POST, escaping of hostile object
+names, security headers, the concurrent-run guard, the batched checklist save,
+the empty and error states, the Civis data layer (civis 2.7.1 calls only),
+and local preview mode.
+"""
+
+from __future__ import annotations
+
+import html
+import json
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+
+import pytest
+
+from app import create_app
+from app import local as local_mode
+from app import views
+from app.backends.base import JobRun, LogLine, Progress, ResultsUnavailable, normalize_row
+from app.backends.cache import CachedResults
+from app.backends.civis_backend import CivisJobs, CivisResults
+from app.security import generate_csrf_token
+from app.services import Services, local_services
+from app.settings import Settings
+from common.rule_loader import load_rules
+from scanner.synthetic.preview import HOSTILE_NAME, build_preview
+
+NOW = datetime(2026, 10, 14, 15, 0, tzinfo=timezone.utc)
+SECRET = "app-test-secret-key-that-is-long-enough-01"  # pragma: allowlist secret  gitleaks:allow
+PAGES = ["/", "/scan", "/inventory", "/findings"]
+
+
+@pytest.fixture(scope="module")
+def preview(tmp_path_factory) -> Path:
+    folder = tmp_path_factory.mktemp("preview")
+    build_preview(folder, now=NOW)
+    return folder
+
+
+def make_app(preview: Path, state: str = "normal", monkeypatch=None):
+    services = local_services(preview, state)
+    return create_app({"SECRET_KEY": SECRET, "SERVICES": services, "TESTING": True})
+
+
+@pytest.fixture
+def app(preview, monkeypatch):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    return make_app(preview)
+
+
+def csrf(app, user_id: str = "anonymous") -> str:
+    headers = {"Civis-User-Id": user_id} if user_id != "anonymous" else {}
+    with app.test_request_context("/", headers=headers):
+        return generate_csrf_token(app)
+
+
+def text_of(response) -> str:
+    body = response.get_data(as_text=True)
+    main = body[body.index("<main"): body.index("</main>")]
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", main)))
+
+
+# --- Every page --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("url, heading, nav", [
+    ("/", "Overview", "Overview"),
+    ("/scan", "Scan in progress", "Scan history"),
+    ("/inventory", "Inventory", "Inventory"),
+    ("/findings", "Findings and checklist", "Findings"),
+])
+def test_pages_render_with_navigation_banner_and_footer(app, url, heading, nav):
+    response = app.test_client().get(url)
+    body = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert f"<h1>{heading}</h1>" in body
+    assert f'class="active" aria-current="page">{nav}</a>' in body
+    assert "It is not a complete audit." in body and "For Civis admins only." in body
+    assert "Runs inside your Civis environment. No data leaves Civis." in body
+    assert 'href="#main"' in body  # Skip link for keyboard users.
+
+
+@pytest.mark.parametrize("url", PAGES + ["/api/scan-status", "/healthz", "/static/css/app.css", "/no-such-page"])
+def test_security_headers_on_every_response(app, url):
+    response = app.test_client().get(url)
+    csp = response.headers["Content-Security-Policy"]
+    assert "script-src 'self'" in csp and "style-src 'self'" in csp and "unsafe-inline" not in csp
+    assert "frame-ancestors 'self' https://platform.civisanalytics.com" in csp
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert "X-Frame-Options" not in response.headers
+    assert "Set-Cookie" not in response.headers
+
+
+def test_pages_have_no_inline_scripts_or_styles(app):
+    for url in PAGES:
+        body = app.test_client().get(url).get_data(as_text=True)
+        assert not re.search(r"<script(?![^>]*\bsrc=)", body)
+        assert "<style" not in body and ' style="' not in body
+        assert "https://fonts." not in body and "cdn" not in body.lower()
+
+
+def test_static_assets_are_vendored(app):
+    client = app.test_client()
+    for path in ("css/app.css", "js/scan-status.js", "js/findings.js", "fonts/ibm-plex-sans-latin-400-normal.woff2"):
+        assert client.get(f"/static/{path}").status_code == 200
+
+
+def test_overview_numbers(app):
+    page = text_of(app.test_client().get("/"))
+    assert "Python objects found 87" in page
+    assert "Checklist progress" in page and "Most common issues" in page
+    assert "Last scan: October 7, 2026" in page and "Run 3." in page
+    assert "A scan is running." in page
+
+
+def test_scan_page_progress_and_history(app):
+    page = text_of(app.test_client().get("/scan"))
+    assert "Scanning code and logs: 40 of 87 objects" in page
+    assert "1. Inventory" in page and "2. Code and log scan" in page and "3. Save results" in page
+    for status in ("In progress", "Completed", "Failed"):
+        assert status in page
+    history = page[page.index("Fixed since last run"):]
+    assert re.search(r"Run 3 .* Completed \d+ \d+ \d+", history)  # Fixed since Run 1 is a number.
+
+
+def test_scan_status_api(app):
+    response = app.test_client().get("/api/scan-status")
+    data = response.get_json()
+    assert response.mimetype == "application/json"
+    assert data["state"] == "running" and data["percent"] == 45 and data["can_start"] is False
+    assert [s["state"] for s in data["steps"]] == ["Done", "Running", "Waiting"]
+
+
+def test_inventory_filters_reasons_and_workflows(app):
+    client = app.test_client()
+    everything = text_of(client.get("/inventory"))
+    assert "Showing 1 to 50 of 87 objects" in everything
+    partial = text_of(client.get("/inventory?status=partial"))
+    assert "GitHub returned 404" in partial and "Scanned the code preview instead." in partial
+    notebooks = text_of(client.get("/inventory?type=notebook"))
+    assert "Notebook" in notebooks and "Python script" not in notebooks.split("Run by workflows")[1]
+    search = text_of(client.get("/inventory?q=nightly+load"))
+    assert "Showing 1 to 1 of 1 objects" in search and "Example Analyst" in search
+    run_by = text_of(client.get("/inventory?q=member+file+load+01"))
+    assert "Example nightly pipeline" in run_by
+    assert "No objects match" in text_of(client.get("/inventory?q=zzzz-no-match"))
+    page_two = text_of(client.get("/inventory?page=2"))
+    assert "Showing 51 to 87 of 87 objects" in page_two
+
+
+def test_findings_filters_show_location_never_code(app):
+    client = app.test_client()
+    page = text_of(client.get("/findings?status=all"))
+    assert ", line " in page
+    assert "make_backend_factory" not in page and "read_civis_sql(" not in page and "QUERY" not in page
+    fixed = text_of(client.get("/findings?status=fixed"))
+    assert "By example_admin" in fixed
+    advisory = text_of(client.get("/findings?status=all&impact=advisory"))
+    assert "Advisory" in advisory and "Affected in February Advisory" in advisory  # Filter labels plus rows.
+    py315 = client.get("/findings?status=all&ruleset=python315").get_data(as_text=True)
+    assert "PY315-" in py315 and "CV3-USE-PANDAS</div>" not in py315
+
+
+def test_hostile_object_names_render_as_text(app):
+    client = app.test_client()
+    for url in ("/inventory?q=quoted", "/findings?status=all&q=x"):
+        body = client.get(url).get_data(as_text=True)
+        assert "<script>alert" not in body and "<b>job</b>" not in body
+    body = client.get("/inventory?q=quoted").get_data(as_text=True)
+    assert "Example &lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt; &amp; &#34;quoted&#34; &lt;b&gt;job&lt;/b&gt;" in body
+
+
+def test_csv_download(app):
+    client = app.test_client()
+    response = client.get("/download/latest")
+    assert response.status_code == 200 and response.mimetype == "text/csv"
+    assert "attachment" in response.headers["Content-Disposition"]
+    assert client.get("/download/502").status_code == 404  # The failed run has no report.
+
+
+# --- CSRF and the concurrent-run guard -----------------------------------------------------
+
+
+@pytest.mark.parametrize("url", ["/scan/start", "/findings/save"])
+def test_every_post_needs_a_csrf_token(app, url):
+    client = app.test_client()
+    assert client.post(url).status_code == 400
+    assert client.post(url, data={"csrf_token": "123.bad"}).status_code == 400
+    token = csrf(app)
+    cross = client.post(url, data={"csrf_token": token}, headers={"Origin": "https://attacker.example.test"})
+    assert cross.status_code == 403
+
+
+def test_run_scan_refuses_while_a_run_is_active(app):
+    client = app.test_client()
+    jobs = app.extensions["cpvs"].jobs()
+    before = len(jobs.runs())
+    response = client.post("/scan/start", data={"csrf_token": csrf(app)})
+    assert response.status_code == 302 and response.headers["Location"].endswith("/scan?notice=busy")
+    assert len(jobs.runs()) == before
+    assert "already queued or running" in text_of(client.get("/scan?notice=busy"))
+    assert 'disabled>Scan running</button>' in client.get("/").get_data(as_text=True)
+
+
+def test_run_scan_starts_once_then_refuses_while_queued(preview, monkeypatch):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    app = make_app(preview, "failed")
+    client = app.test_client()
+    first = client.post("/scan/start", data={"csrf_token": csrf(app)})
+    assert first.headers["Location"].endswith("/scan?notice=started")
+    assert app.extensions["cpvs"].jobs().runs()[0].state == "queued"
+    second = client.post("/scan/start", data={"csrf_token": csrf(app)})
+    assert second.headers["Location"].endswith("/scan?notice=busy")
+
+
+# --- The batched checklist save -----------------------------------------------------------
+
+
+def _form_rows(app, query="status=all"):
+    body = app.test_client().get(f"/findings?{query}").get_data(as_text=True)
+    return re.findall(r'name="o:(\d+):([A-Z0-9-]+)" value="(\w+)"', body)
+
+
+def test_checklist_save_is_one_batched_write(app, monkeypatch):
+    results = app.extensions["cpvs"].results
+    calls = []
+    original = results.save_checklist
+
+    def spy(run_id, entries, changed_by, when):
+        calls.append((run_id, list(entries), changed_by))
+        return original(run_id, entries, changed_by, when)
+
+    monkeypatch.setattr(results, "save_checklist", spy)
+    rows = [r for r in _form_rows(app, "status=open")][:3]
+    data = {"csrf_token": csrf(app), "f_status": "open"}
+    for object_id, rule_id, status in rows:
+        data[f"o:{object_id}:{rule_id}"] = status
+        data[f"s:{object_id}:{rule_id}"] = status
+    data[f"s:{rows[0][0]}:{rows[0][1]}"] = "fixed"
+    data[f"s:{rows[1][0]}:{rows[1][1]}"] = "ignored"
+    response = app.test_client().post("/findings/save", data=data)
+    assert response.status_code == 302 and "saved=2" in response.headers["Location"]
+    assert "status=open" in response.headers["Location"]
+    assert len(calls) == 1
+    run_id, entries, changed_by = calls[0]
+    assert changed_by == "local preview user"
+    assert sorted(entries) == sorted([(int(rows[0][0]), rows[0][1], "fixed"), (int(rows[1][0]), rows[1][1], "ignored")])
+    fixed_page = text_of(app.test_client().get("/findings?status=fixed"))
+    assert "By local preview user" in fixed_page
+    assert "Saved 2 status changes." in text_of(app.test_client().get("/findings?saved=2"))
+
+
+def test_checklist_save_rejects_values_that_are_not_allowed(app, monkeypatch):
+    results = app.extensions["cpvs"].results
+    monkeypatch.setattr(results, "save_checklist", lambda *a, **k: pytest.fail("must not save"))
+    object_id, rule_id, status = _form_rows(app)[0]
+    for bad in ({f"s:{object_id}:{rule_id}": "deleted"}, {f"s:{object_id}:NOT-A-RULE": "fixed"},
+                {"s:abc:CV3-ML": "fixed"}):
+        response = app.test_client().post("/findings/save", data={"csrf_token": csrf(app), **bad})
+        assert "error=invalid" in response.headers["Location"]
+    unchanged = {"csrf_token": csrf(app), f"o:{object_id}:{rule_id}": status, f"s:{object_id}:{rule_id}": status}
+    assert "saved=0" in app.test_client().post("/findings/save", data=unchanged).headers["Location"]
+
+
+# --- Empty and error states ----------------------------------------------------------------
+
+
+@pytest.mark.parametrize("state, expected", [
+    ("no-scan", "No scan yet"),
+    ("first-scan-running", "The first scan is running"),
+    ("schema-missing", "The results schema does not exist yet"),
+    ("failed", "The last scan failed before it finished."),
+    ("tables-failed", "could not save its results tables"),
+    ("no-job-id", "Run scan is turned off because SCANNER_JOB_ID is not set"),
+])
+def test_empty_and_error_states(preview, monkeypatch, state, expected):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    app = make_app(preview, state)
+    for url in PAGES:
+        response = app.test_client().get(url)
+        assert response.status_code == 200
+    assert expected in text_of(app.test_client().get("/"))
+
+
+def test_no_job_id_turns_off_run_scan(preview, monkeypatch):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    app = make_app(preview, "no-job-id")
+    body = app.test_client().get("/").get_data(as_text=True)
+    assert 'disabled aria-describedby="run-scan-off">Run scan</button>' in body
+    response = app.test_client().post("/scan/start", data={"csrf_token": csrf(app)})
+    assert response.headers["Location"].endswith("/scan?notice=no-job")
+
+
+def test_results_not_configured_in_civis_mode(monkeypatch):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    app = create_app({"SECRET_KEY": SECRET, "SERVICES": Services(Settings(), None, None)})
+    page = text_of(app.test_client().get("/"))
+    assert "The results schema is not set" in page and "SCANNER_JOB_ID is not set" in page
+
+
+def test_saving_needs_a_civis_user(monkeypatch):
+    """Inside Civis the user name comes from the Civis-Username header; without it nothing is saved."""
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    services = Services(Settings(), None, None)
+    app = create_app({"SECRET_KEY": SECRET, "SERVICES": services})
+    response = app.test_client().post("/findings/save", data={"csrf_token": csrf(app), "s:1:CV3-ML": "fixed"})
+    assert "error=viewer" in response.headers["Location"]
+
+
+# --- The Civis data layer (civis 2.7.1 calls only) -----------------------------------------
+
+
+class FakeFuture:
+    def result(self):
+        return None
+
+
+class FakeCivisIO:
+    def __init__(self, tables: dict[str, list[list]]):
+        self.tables = tables
+        self.reads: list[str] = []
+        self.queries: list[str] = []
+
+    def read_civis_sql(self, sql, database, return_as=None, client=None, credential_id=None, hidden=True):
+        assert return_as == "list"
+        self.reads.append(sql)
+        for key, rows in self.tables.items():
+            if key in sql:
+                return rows
+        return []
+
+    def query_civis(self, sql, database, client=None, credential_id=None, hidden=True):
+        self.queries.append(sql)
+        return FakeFuture()
+
+
+def test_civis_results_reads_escaped_sql_and_normalizes_text():
+    fake = FakeCivisIO({
+        "information_schema.schemata": [["schema_name"], ["results"]],
+        "information_schema.tables": [["table_name"], ["scan_runs"]],
+        "results.objects": [["run_id", "object_id", "owner_active", "name"], ["run-1", "101", "f", "Example"]],
+    })
+    store = CivisResults(object(), fake, "analytics", "results", 77)
+    assert store.check() == "ok"
+    rows = store.rows("objects", "run-1")
+    assert rows == [{"run_id": "run-1", "object_id": 101, "owner_active": False, "name": "Example"}]
+    assert "WHERE run_id = 'run-1'" in fake.reads[-1]
+    with pytest.raises(Exception):
+        store.rows("objects", "run-1'; DROP TABLE x; --")
+    with pytest.raises(ValueError):
+        store.rows("pg_user", "run-1")
+
+
+def test_civis_results_reports_a_missing_schema():
+    store = CivisResults(object(), FakeCivisIO({}), "analytics", "results", None)
+    with pytest.raises(ResultsUnavailable) as excinfo:
+        store.check()
+    assert excinfo.value.kind == "schema_missing"
+
+
+def test_civis_checklist_save_is_one_escaped_insert():
+    fake = FakeCivisIO({})
+    store = CivisResults(object(), fake, "analytics", "results", None)
+    store.save_checklist("run-1", [(101, "CV3-ML", "fixed"), (102, "CV3-PARALLEL", "ignored")], "o'neil",
+                         datetime(2026, 10, 14, 12, 0))
+    assert len(fake.queries) == 1
+    statement = fake.queries[0]
+    assert statement.startswith("INSERT INTO results.checklist_status")
+    assert "'o''neil'" in statement and "(101, 'CV3-ML', 'fixed'" in statement.replace("'run-1', ", "")
+    from app.backends.base import ChecklistSaveError
+
+    with pytest.raises(ChecklistSaveError):
+        store.save_checklist("run-1", [(101, "CV3-ML", "fixed")], "user\\'); DROP TABLE x; --", datetime(2026, 10, 14))
+    assert len(fake.queries) == 1
+
+
+class FakeScripts:
+    def __init__(self):
+        self.calls = []
+
+    def list_containers_runs(self, id, limit=None):
+        self.calls.append(("list_containers_runs", id, limit))
+        return [{"id": 7, "state": "succeeded"}, {"id": 8, "state": "running", "started_at": "2026-10-14T12:00:00Z"}]
+
+    def list_containers_runs_logs(self, id, run_id, last_id=None, limit=None):
+        self.calls.append(("list_containers_runs_logs", id, run_id, last_id))
+        return [{"id": 2, "message": "PHASE name=inventory state=done"}, {"id": 1, "message": "RUN run_id=run-1 status=running"}]
+
+    def post_containers_runs(self, id):
+        self.calls.append(("post_containers_runs", id))
+        return {"id": 9, "state": "queued"}
+
+    def list_containers_runs_outputs(self, id, run_id):
+        return [{"object_type": "File", "object_id": 55, "name": "report.csv"}]
+
+
+class FakeFiles:
+    def __init__(self, url):
+        self.url = url
+
+    def get(self, id):
+        return {"id": id, "file_url": self.url}
+
+
+class FakeClient:
+    def __init__(self, url="https://example-bucket.s3.amazonaws.com/report.csv?X-Amz-Signature=synthetic"):
+        self.scripts = FakeScripts()
+        self.files = FakeFiles(url)
+
+
+def test_civis_jobs_use_the_scanner_job():
+    client = FakeClient()
+    jobs = CivisJobs(client, 1234)
+    runs = jobs.runs()
+    assert [r.id for r in runs] == [8, 7] and runs[0].active
+    lines = jobs.logs(8, last_id=0)
+    assert [line.id for line in lines] == [1, 2]
+    assert jobs.start().state == "queued"
+    assert jobs.report(7) == ("url", "https://example-bucket.s3.amazonaws.com/report.csv?X-Amz-Signature=synthetic")
+    assert all(call[1] == 1234 for call in client.scripts.calls)
+
+
+def test_download_redirects_only_to_http_links(monkeypatch):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    for url, status in (("https://example-bucket.s3.amazonaws.com/r.csv", 302), ("javascript:alert(1)", 404)):
+        client = FakeClient(url)
+        services = Services(Settings(scanner_job_id=1234), None, lambda c=client: CivisJobs(c, 1234))
+        app = create_app({"SECRET_KEY": SECRET, "SERVICES": services})
+        assert app.test_client().get("/download/7").status_code == status
+
+
+def test_cache_reads_each_finished_run_once():
+    class Store:
+        def __init__(self):
+            self.calls = 0
+
+        def rows(self, table, run_id):
+            self.calls += 1
+            return [{"run_id": run_id}]
+
+        def checklist(self):
+            self.calls += 1
+            return []
+
+        def save_checklist(self, *args):
+            pass
+
+    store = Store()
+    clock = {"now": 0.0}
+    cache = CachedResults(lambda: store, clock=lambda: clock["now"])
+    for _ in range(3):
+        cache.rows("objects", "run-1")
+        cache.checklist()
+    assert store.calls == 2
+    cache.save_checklist("run-1", [], "x", NOW)
+    cache.checklist()
+    assert store.calls == 3  # Saving clears the checklist cache at once.
+
+
+# --- Pure helpers ----------------------------------------------------------------------------
+
+
+def test_month_first_dates_and_durations():
+    assert views.format_datetime("2026-10-12T14:14:00Z") == "October 12, 2026 at 2:14 PM UTC"
+    assert views.format_datetime("2026-10-12 09:05:00") == "October 12, 2026 at 9:05 AM UTC"
+    assert views.format_date("2026-04-02T00:00:00Z") == "Apr 2, 2026"
+    assert views.format_duration("2026-10-12T14:00:00Z", "2026-10-12T14:41:30Z") == "41 min"
+    assert views.format_duration("2026-10-12T14:00:00Z", "2026-10-12T16:05:00Z") == "2 hr 5 min"
+
+
+def test_progress_parsing_and_view():
+    progress = Progress()
+    progress.feed([
+        LogLine(1, "RUN run_id=run-9 status=running", "2026-10-14T12:00:00Z"),
+        LogLine(2, "PHASE name=inventory state=done", "2026-10-14T12:01:00Z"),
+        LogLine(3, "PROGRESS phase=inventory objects_done=200 objects_total=200", "2026-10-14T12:01:00Z"),
+        LogLine(4, "PHASE name=code state=start", "2026-10-14T12:01:00Z"),
+        LogLine(5, "PROGRESS phase=code objects_done=50 objects_total=200", "2026-10-14T12:11:00Z"),
+        LogLine(6, "a line of job output that is not a scanner line", "2026-10-14T12:11:00Z"),
+    ])
+    assert (progress.scan_run_id, progress.done, progress.total, progress.last_id) == ("run-9", 50, 200, 6)
+    view = views.progress_view(JobRun(9, "running", "2026-10-14T12:00:00Z"), progress)
+    assert view["headline"] == "Scanning code and logs: 50 of 200 objects" and view["percent"] == 25
+    assert view["eta"] == "About 31 minutes left"
+
+
+def test_checklist_changes_from_form():
+    rules = set(load_rules().ids())
+    form = [("o:1:CV3-ML", "open"), ("s:1:CV3-ML", "fixed"), ("o:2:CV3-ML", "open"), ("s:2:CV3-ML", "open"), ("csrf_token", "x")]
+    assert views.checklist_changes(form, rules) == [(1, "CV3-ML", "fixed")]
+    with pytest.raises(ValueError):
+        views.checklist_changes([("s:1:CV3-ML", "removed")], rules)
+
+
+def test_normalize_row_types():
+    row = normalize_row("findings", {"object_id": "12", "line_number": "", "rule_id": "CV3-ML", "workflows": None})
+    assert row == {"object_id": 12, "line_number": None, "rule_id": "CV3-ML", "workflows": None}
+
+
+def test_settings_from_env():
+    settings = Settings.from_env({"SCANNER_JOB_ID": "77", "RESULTS_DATABASE": "analytics", "RESULTS_SCHEMA": "results"})
+    assert (settings.scanner_job_id, settings.results_configured, settings.problem) == (77, True, None)
+    bad = Settings.from_env({"SCANNER_JOB_ID": "abc", "RESULTS_SCHEMA": "results; DROP"})
+    assert bad.scanner_job_id is None and bad.results_schema is None and "SCANNER_JOB_ID" in bad.problem
+
+
+# --- Accessibility: text contrast ----------------------------------------------------------
+
+
+def _luminance(hex_color: str) -> float:
+    channels = [int(hex_color[i: i + 2], 16) / 255 for i in (1, 3, 5)]
+    linear = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
+def _contrast(a: str, b: str) -> float:
+    high, low = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def test_text_contrast_is_at_least_4_5_to_1():
+    css = (Path(__file__).resolve().parent.parent / "app/static/css/app.css").read_text(encoding="utf-8")
+    colors = dict(re.findall(r"--([\w-]+):\s*(#[0-9a-fA-F]{6});", css))
+    pairs = [
+        ("text", "bg"), ("text", "surface"), ("muted", "bg"), ("muted", "surface"), ("nav-text", "surface"),
+        ("teal", "surface"), ("teal", "bg"), ("teal-dark", "teal-soft"), ("warn-text", "warn-bg"),
+        ("error-text", "error-bg"), ("teal-dark", "info-bg"), ("fixed", "success-bg"), ("fixed", "surface"),
+        ("affected", "affected-bg"), ("affected", "surface"), ("advisory", "advisory-bg"), ("advisory", "surface"),
+        ("nav-text", "disabled-bg"), ("nav-text", "row-border"), ("muted", "row-border"),
+    ]
+    low = [(a, b, round(_contrast(colors[a], colors[b]), 2)) for a, b in pairs if _contrast(colors[a], colors[b]) < 4.5]
+    assert low == []
+    assert _contrast("#ffffff", colors["teal"]) >= 4.5  # White text on the primary button.
+
+
+def test_phone_width_rules_exist():
+    css = (Path(__file__).resolve().parent.parent / "app/static/css/app.css").read_text(encoding="utf-8")
+    assert "@media (max-width: 640px)" in css and ".table-wrap { overflow-x: auto; }" in css
+
+
+# --- Local preview mode -----------------------------------------------------------------------
+
+
+def test_local_mode_refuses_when_a_civis_key_is_set(preview, monkeypatch):
+    monkeypatch.setenv("CIVIS_API_KEY", "x" * 40)  # pragma: allowlist secret  gitleaks:allow
+    with pytest.raises(SystemExit, match="refuses to start while CIVIS_API_KEY is set"):
+        local_mode.build(preview)
+
+
+def test_local_mode_binds_to_localhost_only(preview, monkeypatch):
+    monkeypatch.delenv("CIVIS_API_KEY", raising=False)
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    seen = {}
+
+    def fake_run(self, host=None, port=None, debug=None, use_reloader=None):
+        seen.update(host=host, debug=debug)
+
+    monkeypatch.setattr("flask.Flask.run", fake_run)
+    assert local_mode.main(["--results", str(preview), "--port", "8051"]) == 0
+    assert seen == {"host": "127.0.0.1", "debug": False}
+
+
+def test_local_mode_needs_preview_data(tmp_path, monkeypatch):
+    monkeypatch.delenv("CIVIS_API_KEY", raising=False)
+    with pytest.raises(SystemExit, match="No preview data"):
+        local_mode.build(tmp_path)
+
+
+def test_hostile_name_is_in_the_preview(preview):
+    import sqlite3
+
+    conn = sqlite3.connect(preview / "results.sqlite")
+    assert conn.execute("SELECT COUNT(*) FROM objects WHERE name = ?", (HOSTILE_NAME,)).fetchone()[0] > 0
+    json.loads((preview / "local_jobs.json").read_text(encoding="utf-8"))

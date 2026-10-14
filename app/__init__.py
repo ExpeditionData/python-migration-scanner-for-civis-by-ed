@@ -1,8 +1,9 @@
 """Flask web app, deployed as a Civis Service.
 
-Started by gunicorn: ``gunicorn "app:create_app()"``. Phase 5 adds the result
-pages. This module sets up the security settings every page relies on (see
-SECURITY.md and app/security.py).
+Started by gunicorn: ``gunicorn "app:create_app()"``. This module sets up the
+security settings every page relies on (see SECURITY.md and app/security.py)
+and connects the pages to their data: Civis inside the Service, or the
+dry-run preview files in local preview mode (app/local.py).
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ import os
 
 from flask import Flask
 
-from app import pages, security
+from app import pages, security, views
 
 MAX_REQUEST_BYTES = 1024 * 1024
 
@@ -60,6 +61,15 @@ def create_app(test_config: dict | None = None) -> Flask:
     if not app.config.get("SECRET_KEY"):
         raise RuntimeError("No secret key: set FLASK_SECRET_KEY (32+ characters) or run inside Civis with CIVIS_API_KEY.")
 
+    services = app.config.pop("SERVICES", None)
+    if services is None:
+        from app.services import civis_services
+        from app.settings import Settings
+
+        services = civis_services(Settings.from_env())
+    app.extensions["cpvs"] = services
+
     security.init_app(app)
     app.register_blueprint(pages.bp)
+    app.jinja_env.filters["number"] = views.number
     return app

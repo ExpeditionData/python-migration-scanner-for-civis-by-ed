@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% from "macros.html" import empty_block, object_link, pager, csrf_field, impact_badge %}
+{% block title %}Findings and checklist{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/findings.js') }}" defer></script>{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Findings and checklist</h1>
+    <p class="subtitle">Each finding shows the file, line, and rule. Code is never shown, since scripts can contain passwords.</p>
+  </div>
+  {% if not empty %}
+  <div class="actions">
+    <span class="note" data-field="changed-text" aria-live="polite">No unsaved changes</span>
+    {% if can_save %}
+    <button type="submit" form="checklist-form" class="button button-primary">Save changes</button>
+    {% endif %}
+    {% if current and current.civis_run_id %}
+    <a class="button button-secondary" href="{{ url_for('pages.download', civis_run_id=current.civis_run_id) }}">Download CSV</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+{% if saved is not none %}
+<div class="banner banner-success" role="status"><p>{% if saved == 0 %}No status changes to save.{% elif saved == 1 %}Saved 1 status change.{% else %}Saved {{ saved }} status changes.{% endif %}</p></div>
+{% endif %}
+{% if error %}
+<div class="banner banner-error" role="alert"><p>{{ error }}</p></div>
+{% endif %}
+
+{% if empty %}
+{{ empty_block(empty) }}
+{% else %}
+<form class="filters" method="get" action="{{ url_for('pages.findings') }}" aria-label="Filter the findings">
+  <label class="field">Impact
+    <select name="impact">
+      {% for value, label in [("", "All"), ("affected", "Affected in February"), ("advisory", "Advisory"), ("unknown", "Image unknown")] %}
+      <option value="{{ value }}"{% if (filters.impact or '') == value %} selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field">Rule set
+    <select name="ruleset">
+      {% for value, label in [("", "All rules"), ("civis_v3", "civis-python v3"), ("python315", "Python 3.15")] %}
+      <option value="{{ value }}"{% if (filters.ruleset or '') == value %} selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field">Confidence
+    <select name="confidence">
+      {% for value, label in [("", "Any"), ("high", "High"), ("medium", "Medium"), ("low", "Low")] %}
+      <option value="{{ value }}"{% if (filters.confidence or '') == value %} selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field">Status
+    <select name="status">
+      {% for value, label in [("open", "Open"), ("fixed", "Fixed"), ("ignored", "Ignored"), ("all", "All")] %}
+      <option value="{{ value }}"{% if (filters.status or 'open') == value %} selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field">Owner
+    <select name="owner">
+      <option value="">Anyone</option>
+      {% for owner in owners %}<option value="{{ owner }}"{% if filters.owner == owner %} selected{% endif %}>{{ owner }}</option>{% endfor %}
+    </select>
+  </label>
+  <div class="actions">
+    <button type="submit" class="button button-secondary">Apply filters</button>
+    {% if filters %}<a href="{{ url_for('pages.findings') }}">Clear filters</a>{% endif %}
+  </div>
+</form>
+
+<form id="checklist-form" method="post" action="{{ url_for('pages.save_findings') }}">
+  {{ csrf_field() }}
+  {% for key, value in filters.items() %}<input type="hidden" name="f_{{ key }}" value="{{ value }}">{% endfor %}
+  <input type="hidden" name="f_page" value="{{ page.page }}">
+  <section class="card card-flush" aria-label="Findings">
+    <div class="table-wrap">
+      <table class="findings-table">
+        <thead>
+          <tr><th scope="col">Object</th><th scope="col">Rule</th><th scope="col">Location</th><th scope="col">Impact</th><th scope="col">Confidence</th><th scope="col">How to fix</th><th scope="col">Status</th></tr>
+        </thead>
+        <tbody>
+          {% for row in page.rows %}
+          <tr>
+            <td>
+              {{ object_link({"name": row.object_name, "url": row.object_url}) }}
+              <div class="cell-sub">{{ row.type }}, owner {{ row.owner }}</div>
+              {% if row.workflows %}<div class="cell-sub">Run by: {{ row.workflows | join(", ") }}</div>{% endif %}
+            </td>
+            <td><div class="mono small">{{ row.rule_id }}</div><div>{{ row.title }}</div></td>
+            <td>
+              <ul class="locations">
+                {% for location in row.locations %}<li>{{ location }}</li>{% endfor %}
+                {% if row.more_locations %}<li>and {{ row.more_locations }} more</li>{% endif %}
+              </ul>
+            </td>
+            <td>{{ impact_badge(row.impact) }}</td>
+            <td>{{ row.confidence }}</td>
+            <td class="fix">{{ row.fix }}</td>
+            <td>
+              <label class="sr-only" for="s-{{ loop.index }}">Status for {{ row.object_name }}, rule {{ row.rule_id }}</label>
+              <input type="hidden" name="o:{{ row.key }}" value="{{ row.status }}">
+              <select class="status-select" id="s-{{ loop.index }}" name="s:{{ row.key }}" data-original="{{ row.status }}"{% if not can_save %} disabled{% endif %}>
+                {% for value, label in [("open", "Open"), ("fixed", "Fixed"), ("ignored", "Ignored")] %}
+                <option value="{{ value }}"{% if row.status == value %} selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+              {% if row.changed_by %}<div class="cell-sub">By {{ row.changed_by }}, {{ row.changed_at }}</div>{% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7">No findings match these filters.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {{ pager(page, "pages.findings", filters, "findings") }}
+  </section>
+</form>
+<p class="note">Status changes are saved with your Civis user name and the time. A new scan never overwrites a status your team has set.{% if not can_save %} Saving is turned off because the app cannot see your Civis user name.{% endif %}</p>
+{% endif %}
+{% endblock %}

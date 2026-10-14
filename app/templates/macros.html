@@ -4,9 +4,50 @@
     http and https. -#}
 
 {% macro object_link(obj) -%}
-<a href="{{ obj.url | safe_href }}" target="_blank" rel="noopener noreferrer">{{ obj.name }}</a>
+<a href="{{ obj.url | safe_href }}" target="_blank" rel="noopener noreferrer">{{ obj.name }}<span class="sr-only"> (opens Civis in a new tab)</span></a>
 {%- endmacro %}
 
 {% macro csrf_field() -%}
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
+
+{% macro run_scan_button(can_start, situation) -%}
+{% if can_start %}
+<form method="post" action="{{ url_for('pages.start_scan') }}">
+  {{ csrf_field() }}
+  <button type="submit" class="button button-primary">Run scan</button>
+</form>
+{% elif situation.active_run %}
+<button type="button" class="button" disabled>Scan running</button>
+{% else %}
+<button type="button" class="button" disabled aria-describedby="run-scan-off">Run scan</button>
+<span id="run-scan-off" class="sr-only">Run scan is turned off. See the message at the top of the page.</span>
+{% endif %}
+{%- endmacro %}
+
+{% macro empty_block(empty) -%}
+<section class="card empty" aria-labelledby="empty-title">
+  <h2 id="empty-title">{{ empty.title }}</h2>
+  <p>{{ empty.body }}</p>
+  {% if empty.link %}<p><a href="{{ empty.link }}">{{ empty.link_text }}</a></p>{% endif %}
+</section>
+{%- endmacro %}
+
+{% macro pager(page, endpoint, filters, noun) -%}
+<div class="pager">
+  <span>Showing {{ page.first | number }} to {{ page.last | number }} of {{ page.total | number }} {{ noun }}</span>
+  {% if page.pages > 1 %}
+  <nav class="pager-links" aria-label="Pages">
+    {% if page.page > 1 %}<a href="{{ url_for(endpoint, page=page.page - 1, **filters) }}">Previous page</a>{% endif %}
+    <span>Page {{ page.page }} of {{ page.pages }}</span>
+    {% if page.page < page.pages %}<a href="{{ url_for(endpoint, page=page.page + 1, **filters) }}">Next page</a>{% endif %}
+  </nav>
+  {% endif %}
+</div>
+{%- endmacro %}
+
+{% macro impact_badge(impact) -%}
+{% if impact == "affected" %}<span class="badge badge-affected">Affected</span>
+{% elif impact == "advisory" %}<span class="badge badge-advisory">Advisory</span>
+{% else %}<span class="badge badge-unknown">Unknown image</span>{% endif %}
 {%- endmacro %}
