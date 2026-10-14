@@ -588,6 +588,16 @@ def test_logo_svg_is_inert_and_served_safely(app):
     for forbidden in ("<script", "foreignobject", "<image", "href"):
         assert forbidden not in svg.lower(), forbidden
     assert not re.search(r"\son[a-z]+\s*=", svg, re.IGNORECASE)  # No event handler attributes.
+    # No metadata (such as content credentials) and no namespace other than SVG.
+    svg_ns = "http://www.w3.org/2000/svg"
+    assert "<metadata" not in svg.lower()
+    declarations = re.findall(r"""\sxmlns(?::([\w.-]+))?\s*=\s*["']([^"']*)["']""", svg)
+    assert declarations and all(prefix == "" and uri == svg_ns for prefix, uri in declarations), declarations
+    from xml.etree import ElementTree
+
+    root = ElementTree.fromstring(svg)
+    assert all(el.tag.startswith("{" + svg_ns + "}") for el in root.iter())
+    assert all(":" not in name.split("}")[-1] and not name.startswith("{") for el in root.iter() for name in el.attrib)
     response = app.test_client().get("/static/img/expedition-data-logo.svg")
     assert response.status_code == 200
     assert response.mimetype == "image/svg+xml"
