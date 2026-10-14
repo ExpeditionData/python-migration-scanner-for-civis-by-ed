@@ -24,7 +24,7 @@ from scanner.inventory.base import describe_error, field_of
 LOG_PAGE_SIZE = 10_000
 MAX_LOG_LINES = 200_000
 SERVICE_LOG_LIMIT = 10_000
-JOB_TYPES = (ObjectType.PYTHON_SCRIPT, ObjectType.CONTAINER_SCRIPT, ObjectType.CUSTOM_SCRIPT)
+JOB_TYPES = (ObjectType.PYTHON_SCRIPT, ObjectType.CONTAINER_SCRIPT, ObjectType.CUSTOM_SCRIPT, ObjectType.DBT_SCRIPT)
 
 
 @dataclass

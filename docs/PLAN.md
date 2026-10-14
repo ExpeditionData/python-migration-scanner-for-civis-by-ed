@@ -468,7 +468,7 @@ How each object runs:
 | 12.1 | Inventory runs in one thread. `MAX_CONCURRENCY` applies to the code and log phase, where most time goes. A resumed run repeats the inventory (about one call per object), then skips finished objects. | The request budget, not thread count, sets the speed (section 5). Inventory must be complete to know what is left. |
 | 12.2 | Git-backed Python scripts are scanned from the repository only, never from their saved source. Notebooks are scanned from the Civis notebook file, not from git. | Phase 2 answer 2: saved source can be out of date. The notebook file is what Civis runs. |
 | 12.3 | A Service with no git repository is "not scanned, review manually." | Its code is inside its Docker image, which the scanner cannot read. |
-| 12.4 | Notebook links are downloaded only from `*.civisanalytics.com`, `*.civis.io`, and `*.amazonaws.com`, over https. A link on any other host is refused and reported. | Requirement 18. The host Civis uses for file links is not documented. Confirm in Phase 7. |
+| 12.4 | Notebook links are downloaded only over https from Civis hosts (`*.civisanalytics.com`, `*.civis.io`) and Amazon S3 hostnames: `s3.amazonaws.com`, `s3.<region>.amazonaws.com`, `<bucket>.s3.amazonaws.com`, and `<bucket>.s3.<region>.amazonaws.com`. Other `amazonaws.com` hosts and look-alike domains are refused and reported. **Tightened October 14, 2026. The exact host Civis uses is confirmed in Phase 7.** | Requirement 18. The host Civis uses for file links is not documented. |
 | 12.5 | GitHub tarballs (up to 200 MB) are streamed into the private temp folder, the needed files (up to 2 MB each, 100 MB per repo) are read into memory without extracting, and the tarball is deleted at once. Links and special files are skipped. After a rate limit, no GitHub requests are sent until GitHub's reset time. Dependency files are read from the object's folder and the repo root. | Requirement 3 and safe archive handling. |
 | 12.6 | Job logs are read in pages of 10,000 lines with `last_id`, up to 200,000 lines. Service deployment logs are read in one call of up to 10,000 lines. Longer logs make the object "partial." | Bounded memory and API calls. |
 | 12.7 | `scan_runs` gets two rows per run (start and end) and a new `recorded_at` column. The current status is the newest row, preferring a final status over "running" on a tie. Statuses: `running`, `succeeded`, `tables_failed`, `failed`. | Append-only by run ID. |
@@ -481,3 +481,18 @@ How each object runs:
 | 12.14 | `python -m scanner` refuses a live scan unless Civis has set `CIVIS_JOB_ID` and `CIVIS_RUN_ID`. `--dry-run` uses the synthetic instance, a local SQLite file, and a local CSV. | Requirement 16. |
 | 12.15 | The synthetic client, synthetic HTTP session, and synthetic instance moved to `scanner/synthetic/`, so dry runs work from the scanner package. They contain made-up data only. | Dry runs need them outside the test folder. |
 | 12.16 | The SQLite sink runs the retention cleanup with an `EXISTS` subquery, because SQLite has no `DELETE ... USING`. The Redshift form is still to be confirmed in Phase 7 (11.2). | Same behavior on both. |
+
+---
+
+## 13. Phase 4 questions (applied October 14, 2026, pending Rob's review)
+
+**Conclusion: each question from the Phase 4 report has its recommended option applied. None of them loosens a rule in SECURITY.md or CLAUDE.md. Each is marked "applied, pending Rob's review."**
+
+| # | Question | Recommended option | Status |
+|---|---|---|---|
+| 13.1 | Should a run whose table writes failed show as failed in Civis, even though the CSV report was saved? | Yes. Keep exit code 3, so the Civis run shows failed with the CSV attached and the problem is not missed. | Applied (no change), pending Rob's review |
+| 13.2 | Should the scanner create the results schema if it is missing? | No. Creating schemas stays the admin's decision, like granting access. A missing schema ends the run as `tables_failed` with the CSV saved. | Applied (no change), pending Rob's review |
+| 13.3 | May gitleaks be installed? | Yes. Installed for the current user with `winget install Gitleaks.Gitleaks` (8.30.1). The pre-commit hook now runs gitleaks and detect-secrets. One fake test value already in history is listed in `.gitleaksignore`. | Applied, pending Rob's review |
+| 13.4 | Is a blank or `latest` tag on a dbt script the Civis default Python image? | Treat it as the default image, as now. The dbt script API returns only a tag. Confirm in Phase 7. | Applied (no change), pending Rob's review |
+| 13.5 | Should dbt scripts that are not created from a template follow the same image rule as dbt templates? | Yes. New object type `dbt_script`: inventoried and scanned (repo and most recent run log) on a Civis default image, otherwise counted as not Python with language `dbt`. Its Civis link path (`/spa/#/scripts/dbt/<id>`) is checked in Phase 7. | Applied, pending Rob's review |
+| 13.6 | What contact should SECURITY.md give for reporting security issues? | GitHub private vulnerability reporting on the public repository, so no email address is published. Rob must turn it on in the repository settings (Security, "Private vulnerability reporting") before the public release. | Applied in SECURITY.md, pending Rob's review |

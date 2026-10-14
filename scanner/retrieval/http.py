@@ -11,16 +11,29 @@ URL, because file links carry signatures and GitHub links can carry tokens.
 
 from __future__ import annotations
 
+import re
 import threading
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
 GITHUB_HOSTS = ("api.github.com", "codeload.github.com")
-# Civis returns notebook links on its own domains or on Amazon S3. Hosts are
-# not documented; a link on any other host is refused and reported.
-CIVIS_FILE_HOSTS = ("*.civisanalytics.com", "*.civis.io", "*.amazonaws.com")
+# Amazon S3 hostnames only: s3.amazonaws.com, s3.<region>.amazonaws.com, and the
+# virtual-host forms <bucket>.s3.amazonaws.com and <bucket>.s3.<region>.amazonaws.com.
+# Other amazonaws.com hosts (EC2, API Gateway, and so on) are refused.
+_S3_REGION = r"[a-z]{2}(?:-gov)?-[a-z]+-\d"
+_S3_BUCKET = r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]"
+_S3_HOST = re.compile(rf"^(?:{_S3_BUCKET}\.)?s3(?:\.{_S3_REGION})?\.amazonaws\.com$")
+
+
+def is_s3_host(host: str) -> bool:
+    return bool(_S3_HOST.match((host or "").lower()))
+
+
+# Civis returns notebook links on its own domains or on Amazon S3. The exact host
+# is confirmed in Phase 7; a link on any other host is refused and reported.
+CIVIS_FILE_HOSTS: tuple = ("*.civisanalytics.com", "*.civis.io", is_s3_host)
 
 MAX_REDIRECTS = 5
 CHUNK_BYTES = 64 * 1024
@@ -36,9 +49,14 @@ class FetchError(Exception):
         self.headers = {k.lower(): v for k, v in (headers or {}).items()}
 
 
-def host_allowed(host: str, allowed: Iterable[str]) -> bool:
+def host_allowed(host: str, allowed: Iterable[str | Callable[[str], bool]]) -> bool:
+    """Each entry is an exact host, a "*.domain" wildcard, or a function that checks the host."""
     host = (host or "").lower()
     for pattern in allowed:
+        if callable(pattern):
+            if pattern(host):
+                return True
+            continue
         pattern = pattern.lower()
         if pattern.startswith("*."):
             if host.endswith(pattern[1:]) and host != pattern[2:]:

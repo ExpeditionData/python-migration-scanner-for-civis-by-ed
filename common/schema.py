@@ -60,7 +60,7 @@ OBJECTS = Table(
     (
         Column("run_id", "VARCHAR(64)", "Scan run ID."),
         Column("object_id", "BIGINT", "Civis object ID."),
-        Column("object_type", "VARCHAR(32)", "python_script, container_script, custom_script, notebook, service, or workflow."),
+        Column("object_type", "VARCHAR(32)", "python_script, container_script, custom_script, dbt_script, notebook, service, or workflow."),
         Column("name", "VARCHAR(1024)", "Object name in Civis."),
         Column("url", "VARCHAR(512)", "Link to the object in Civis."),
         Column("owner_id", "BIGINT", "Civis user ID of the owner."),

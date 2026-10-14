@@ -15,9 +15,22 @@ if git diff --cached --name-only | grep -q '^Context/'; then
   exit 1
 fi
 
+gitleaks_bin=""
 if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks_bin="gitleaks"
+else
+  # Windows: a winget install is not on PATH until a new shell starts.
+  for candidate in "${LOCALAPPDATA:-}"/Microsoft/WinGet/Packages/Gitleaks.Gitleaks_*/gitleaks.exe; do
+    if [ -x "$candidate" ]; then
+      gitleaks_bin="$candidate"
+      break
+    fi
+  done
+fi
+
+if [ -n "$gitleaks_bin" ]; then
   ran=1
-  if ! gitleaks git --pre-commit --redact --staged --verbose; then
+  if ! "$gitleaks_bin" git --pre-commit --redact --staged --no-banner; then
     echo "pre-commit: gitleaks found a possible secret. Commit blocked." >&2
     status=1
   fi

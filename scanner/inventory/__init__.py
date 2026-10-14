@@ -16,6 +16,7 @@ from common.models import CoverageItem, ObjectType, WorkflowRef
 from scanner.inventory.base import Inventory, InventoryContext, InventoryItem, UserInfo, field_of
 from scanner.inventory.containers import container_item, inventory_container_scripts
 from scanner.inventory.custom import custom_item, inventory_custom_scripts
+from scanner.inventory.dbt import dbt_item, inventory_dbt_scripts
 from scanner.inventory.notebooks import inventory_notebooks
 from scanner.inventory.python3 import inventory_python_scripts, python_item
 from scanner.inventory.services import inventory_services
@@ -28,6 +29,7 @@ _BY_TYPE = (
     (ObjectType.PYTHON_SCRIPT, inventory_python_scripts),
     (ObjectType.CONTAINER_SCRIPT, inventory_container_scripts),
     (ObjectType.CUSTOM_SCRIPT, inventory_custom_scripts),
+    (ObjectType.DBT_SCRIPT, inventory_dbt_scripts),
     (ObjectType.NOTEBOOK, inventory_notebooks),
     (ObjectType.SERVICE, inventory_services),
 )
@@ -58,6 +60,8 @@ def _job_kind(job: Any) -> ObjectType | None:
     """Map a jobs.get response to an object type. Job type strings are not documented,
     so this matches on words in the type and falls back to the template ID."""
     job_type = (field_of(job, "type") or "").lower()
+    if "dbt" in job_type:
+        return ObjectType.DBT_SCRIPT
     if "python" in job_type:
         return ObjectType.PYTHON_SCRIPT
     if "container" in job_type:
@@ -73,6 +77,7 @@ def _add_archived_jobs_run_by_workflows(ctx: InventoryContext, references: dict[
         ObjectType.PYTHON_SCRIPT: python_item,
         ObjectType.CONTAINER_SCRIPT: container_item,
         ObjectType.CUSTOM_SCRIPT: custom_item,
+        ObjectType.DBT_SCRIPT: dbt_item,
     }
     for job_id in sorted(references):
         if job_id in known:
@@ -91,7 +96,7 @@ def _add_archived_jobs_run_by_workflows(ctx: InventoryContext, references: dict[
             continue  # An archived SQL, import, or other non-Python job.
         item = builders[kind](ctx, job)
         if not isinstance(item, InventoryItem):
-            ctx.inventory.count(kind).add_not_python("dbt")  # A dbt template off the default image.
+            ctx.inventory.count(kind).add_not_python("dbt")  # dbt off the default image.
             continue
         item.obj.archived = True
         ctx.inventory.count(kind).archived_included += 1

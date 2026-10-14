@@ -64,7 +64,7 @@ def test_config_from_env_defaults():
 
 def test_config_reads_every_parameter_and_hides_the_token():
     env = {
-        **BASE_ENV, "RESULTS_DB_CREDENTIAL_ID": "77", "GITHUB_PASSWORD": "ghp_" + "x" * 36,  # pragma: allowlist secret
+        **BASE_ENV, "RESULTS_DB_CREDENTIAL_ID": "77", "GITHUB_PASSWORD": "ghp_" + "x" * 36,  # pragma: allowlist secret  gitleaks:allow
         "LOOKBACK_DAYS": "120", "MAX_CONCURRENCY": "8", "REQUEST_BUDGET": "300", "RETENTION_DAYS": "365",
         "RUN_ID": "run-20261013T120000Z-abc123", "CIVIS_JOB_ID": "5", "CIVIS_RUN_ID": "9",
     }
@@ -248,21 +248,21 @@ def test_checkpoints_every_n_objects_or_n_seconds():
 
 def test_dry_run_end_to_end(tmp_path, log_stream):
     result = dry_run(tmp_path, now=NOW)
-    assert result.status == "succeeded" and result.report_saved and result.objects == 22
+    assert result.status == "succeeded" and result.report_saved and result.objects == 23
     conn = db(tmp_path)
     assert count(conn, "scan_runs") == 2
     assert [r[0] for r in conn.execute("SELECT status FROM scan_runs ORDER BY rowid")] == ["running", "succeeded"]
-    assert count(conn, "objects") == 22
+    assert count(conn, "objects") == 23
     assert count(conn, "findings") == result.findings > 0
     assert count(conn, "coverage", "row_kind = 'summary'") == len(ObjectType)
-    assert count(conn, "coverage", "row_kind = 'not_python'") == 4
+    assert count(conn, "coverage", "row_kind = 'not_python'") == 5
     assert count(conn, "checklist_status") == count(conn, "(SELECT DISTINCT object_id, rule_id FROM findings)")
     assert set(dict(conn.execute("SELECT scan_status, COUNT(*) FROM objects GROUP BY 1")).keys()) == {"scanned", "partial", "not_scanned"}
     params = conn.execute("SELECT parameters FROM scan_runs LIMIT 1").fetchone()[0]
     assert "synthetic-github-token" not in params
 
     logged = log_stream.getvalue()
-    assert "PROGRESS phase=code objects_done=22 objects_total=22" in logged
+    assert "PROGRESS phase=code objects_done=23 objects_total=23" in logged
     assert re.search(r"RUN run_id=run-\d{8}T\d{6}Z-[0-9a-f]{6} status=succeeded", logged)
 
     report = next(tmp_path.glob("*.csv")).read_bytes()
@@ -299,8 +299,8 @@ def test_stop_partway_then_resume(tmp_path):
     resumed = dry_run(tmp_path, now=NOW, run_id=run_id, checkpoint_objects=5)
     assert resumed.status == "succeeded" and resumed.skipped_as_done == 10
     conn = db(tmp_path)
-    assert count(conn, "objects") == 22
-    assert count(conn, "(SELECT DISTINCT object_id FROM objects)") == 22  # No object written twice.
+    assert count(conn, "objects") == 23
+    assert count(conn, "(SELECT DISTINCT object_id FROM objects)") == 23  # No object written twice.
 
     full = tmp_path / "full"
     complete = dry_run(full, now=NOW)
@@ -309,7 +309,7 @@ def test_stop_partway_then_resume(tmp_path):
     assert conn.execute(finding_set).fetchall() == reference.execute(finding_set).fetchall()
     assert resumed.findings == complete.findings
     report = next(tmp_path.glob("*.csv")).read_text(encoding="utf-8-sig")
-    assert len({row["object_id"] for row in csv.DictReader(io.StringIO(report))}) == 22
+    assert len({row["object_id"] for row in csv.DictReader(io.StringIO(report))}) == 23
 
     with pytest.raises(AlreadyFinished):
         dry_run(tmp_path, now=NOW, run_id=run_id)
@@ -327,7 +327,7 @@ def test_table_failure_still_saves_the_csv(tmp_path, monkeypatch, log_stream):
     assert result.status == "tables_failed" and result.report_saved and not result.tables_ok
     assert "TABLE_WRITE_FAILED table=findings" in log_stream.getvalue()
     report = next(tmp_path.glob("*.csv")).read_text(encoding="utf-8-sig")
-    assert len({row["object_id"] for row in csv.DictReader(io.StringIO(report))}) == 22
+    assert len({row["object_id"] for row in csv.DictReader(io.StringIO(report))}) == 23
 
 
 def test_retention_deletes_old_runs_but_not_the_current_one(tmp_path):

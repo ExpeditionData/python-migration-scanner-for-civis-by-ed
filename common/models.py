@@ -15,6 +15,7 @@ class ObjectType(StrEnum):
     PYTHON_SCRIPT = "python_script"
     CONTAINER_SCRIPT = "container_script"
     CUSTOM_SCRIPT = "custom_script"
+    DBT_SCRIPT = "dbt_script"
     NOTEBOOK = "notebook"
     SERVICE = "service"
     WORKFLOW = "workflow"

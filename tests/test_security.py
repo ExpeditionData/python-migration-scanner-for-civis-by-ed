@@ -319,7 +319,7 @@ def test_retention_deletes_from_all_five_tables_and_keeps_current_checklist_stat
 @pytest.fixture
 def app(monkeypatch):
     monkeypatch.delenv("FLASK_DEBUG", raising=False)
-    application = create_app({"SECRET_KEY": "test-secret-key-that-is-long-enough-123", "TESTING": True})
+    application = create_app({"SECRET_KEY": "test-secret-key-that-is-long-enough-123", "TESTING": True})  # pragma: allowlist secret  gitleaks:allow
 
     @application.post("/test-post")
     def _test_post():

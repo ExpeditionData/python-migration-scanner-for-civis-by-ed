@@ -362,6 +362,45 @@
       "docker_image_tag": "1.2.3",
       "repo_http_uri": "github.com/example-org/example-dbt.git",
       "repo_ref": "main"
+    },
+    {
+      "id": 231,
+      "name": "Example dbt project on default image",
+      "type": "Dbt",
+      "archived": false,
+      "hidden": false,
+      "author": {
+        "id": 2,
+        "name": "Example Analyst",
+        "username": "example_analyst"
+      },
+      "docker_image_tag": "latest",
+      "last_run": {
+        "id": 9231,
+        "state": "succeeded",
+        "finished_at": "2026-10-02T03:00:00Z"
+      },
+      "repo_http_uri": "github.com/example-org/example-dbt.git",
+      "repo_ref": "main",
+      "dbt_project": {
+        "project_dir": "warehouse",
+        "dbt_command": "build"
+      }
+    },
+    {
+      "id": 232,
+      "name": "Example dbt project on pinned image",
+      "type": "Dbt",
+      "archived": false,
+      "hidden": false,
+      "author": {
+        "id": 2,
+        "name": "Example Analyst",
+        "username": "example_analyst"
+      },
+      "docker_image_tag": "1.2.3",
+      "repo_http_uri": "github.com/example-org/example-dbt.git",
+      "repo_ref": "main"
     }
   ],
   "custom": [

@@ -18,6 +18,7 @@ _PATHS = {
     ObjectType.PYTHON_SCRIPT: "/spa/#/scripts/python3/{id}",
     ObjectType.CONTAINER_SCRIPT: "/spa/#/scripts/containers/{id}",
     ObjectType.CUSTOM_SCRIPT: "/spa/#/scripts/custom/{id}",
+    ObjectType.DBT_SCRIPT: "/spa/#/scripts/dbt/{id}",
     ObjectType.NOTEBOOK: "/spa/#/notebooks/{id}",
     ObjectType.SERVICE: "/spa/#/services/{id}",
     ObjectType.WORKFLOW: "/spa/#/workflows/{id}",

@@ -93,6 +93,9 @@ def process_item(item: InventoryItem, deps: ScanDeps) -> ObjectResult:
     if obj.object_type is ObjectType.SERVICE and not obj.git_repo:
         needed = True
         problems.append("The Service has no git repository set, so its code is inside its Docker image. Review it manually.")
+    if obj.object_type is ObjectType.DBT_SCRIPT and not obj.git_repo:
+        needed = True
+        problems.append("The dbt script has no git repository set, so its project could not be read. Review it manually.")
     if obj.git_repo and obj.object_type is not ObjectType.NOTEBOOK:
         needed = True
         try:

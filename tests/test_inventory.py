@@ -40,6 +40,7 @@ def test_inventoried_ids_by_type(built):
         ObjectType.PYTHON_SCRIPT: {101, 102, 105, 106, 107},
         ObjectType.CONTAINER_SCRIPT: {201, 202, 203, 204, 205, 206},
         ObjectType.CUSTOM_SCRIPT: {301, 302, 304, 306},
+        ObjectType.DBT_SCRIPT: {231},
         ObjectType.NOTEBOOK: {401, 403},
         ObjectType.SERVICE: {501, 502, 503},
         ObjectType.WORKFLOW: {601, 603},
@@ -55,6 +56,7 @@ def test_counts_cover_hidden_archived_and_non_python(built):
     assert c[ObjectType.NOTEBOOK].not_python == {"r": 1}
     assert c[ObjectType.SERVICE].not_python == {"r": 2}
     assert c[ObjectType.PYTHON_SCRIPT].not_python == {}
+    assert c[ObjectType.DBT_SCRIPT].not_python == {"dbt": 1}  # The pinned dbt script.
     assert c[ObjectType.WORKFLOW].found == 3
 
 
@@ -90,6 +92,14 @@ def test_workflows_are_copied_onto_findings(built):
     findings = engine.to_findings(job.obj, engine.scan_python(job.code["source"], "inline source").matches)
     assert findings and all(f.workflows == (WorkflowRef(604, "Example orchestration only"),) for f in findings)
     assert json.loads(findings[0].to_row()["workflows"]) == [{"id": 604, "name": "Example orchestration only"}]
+
+
+def test_standalone_dbt_scripts_follow_the_image_rule(built):
+    dbt = obj(built, 231)
+    assert (dbt.uses_default_image, dbt.impact, dbt.git_path) == (True, Impact.AFFECTED, "warehouse")
+    assert dbt.url.endswith("/spa/#/scripts/dbt/231")
+    _, inventory = built
+    assert 232 not in inventory.by_id()
 
 
 def test_dbt_templates_follow_the_backing_image(built):
@@ -214,7 +224,7 @@ def test_api_usage(built):
             assert kwargs["archived"] == "false" and kwargs["iterator"] is True and kwargs["limit"] == 50
     # One hidden-object pass per listed type.
     hidden_passes = [k for n, _, k in client.calls if k.get("hidden") is True]
-    assert len(hidden_passes) == 6
+    assert len(hidden_passes) == 7
 
 
 def test_templates_are_read_once_per_template():

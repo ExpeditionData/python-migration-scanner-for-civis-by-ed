@@ -112,7 +112,7 @@ class FakeClient:
     # -- scripts ----------------------------------------------------------
 
     def _scripts__list(self, type=None, **kwargs):
-        rows = self.data.get({"python3": "python3", "containers": "containers"}[type], [])
+        rows = self.data.get({"python3": "python3", "containers": "containers", "dbt": "dbt"}[type], [])
         return self._list(rows, SCRIPT_LIST_FIELDS, **kwargs)
 
     def _scripts__list_custom(self, **kwargs):

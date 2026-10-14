@@ -205,6 +205,7 @@ DELETE FROM results_schema.scan_runs WHERE run_id IN ('<run_id>');
 
 ## Reporting a security issue
 
-Please report security issues privately to Expedition Data LLC. Do not open a
-public GitHub issue. The contact address will be published here before the
-public release.
+Please report security issues privately through GitHub's private vulnerability
+reporting: on this repository's page, open the **Security** tab and choose
+**Report a vulnerability**. Do not open a public GitHub issue. Expedition Data
+LLC reviews every report.

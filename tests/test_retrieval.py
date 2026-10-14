@@ -130,10 +130,37 @@ def test_github_host_allow_list(host, allowed):
     assert host_allowed(host, GITHUB_HOSTS) is allowed
 
 
-def test_civis_file_host_allow_list():
-    assert host_allowed("bucket.s3.amazonaws.com", CIVIS_FILE_HOSTS)
-    assert not host_allowed("amazonaws.com.evil.test", CIVIS_FILE_HOSTS)
-    assert not host_allowed("example.test", CIVIS_FILE_HOSTS)
+@pytest.mark.parametrize(
+    "host",
+    [
+        "s3.amazonaws.com",
+        "s3.us-east-1.amazonaws.com",
+        "s3.us-gov-west-1.amazonaws.com",
+        "example-bucket.s3.amazonaws.com",
+        "example.bucket.s3.eu-west-2.amazonaws.com",
+        "files.civisanalytics.com",
+        "example.civis.io",
+    ],
+)
+def test_civis_file_hosts_allowed(host):
+    assert host_allowed(host, CIVIS_FILE_HOSTS)
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        "ec2.amazonaws.com",
+        "example.amazonaws.com",
+        "example.execute-api.us-east-1.amazonaws.com",
+        "bucket.s3-website-us-east-1.amazonaws.com",
+        "x.s3.evil.amazonaws.com",
+        "s3.amazonaws.com.evil.test",
+        "civisanalytics.com.evil.test",
+        "example.test",
+    ],
+)
+def test_civis_file_hosts_refused(host):
+    assert not host_allowed(host, CIVIS_FILE_HOSTS)
 
 
 @pytest.mark.parametrize("url", ["http://api.github.com/x", "https://example.test/x", "ftp://api.github.com/x"])
@@ -420,6 +447,7 @@ def scanned(tmp_path_factory):
         (501, ScanStatus.SCANNED),
         (502, ScanStatus.NOT_SCANNED),
         (601, ScanStatus.SCANNED),
+        (231, ScanStatus.SCANNED),
         (603, ScanStatus.NOT_SCANNED),
     ],
 )
@@ -483,6 +511,11 @@ def test_service_repo_folder_and_current_deployment_log(scanned):
     assert ("CV3-ML", "log", "deployment log (deployment 7001)") in found
     assert not any(f.file.startswith("scripts/") for f in scanned[501].findings)
     assert "no git repository" in scanned[502].obj.scan_note
+
+
+def test_standalone_dbt_script_repo_and_log(scanned):
+    found = {(f.rule_id, f.file) for f in scanned[231].findings}
+    assert ("PY315-STRPTIME-NO-YEAR", "warehouse/models/score.py") in found
 
 
 def test_dbt_template_repo(scanned):

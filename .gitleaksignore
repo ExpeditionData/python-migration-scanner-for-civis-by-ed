@@ -1,0 +1,3 @@
+# Fake values in tests that were committed before their lines were marked
+# "gitleaks:allow". Each entry is a gitleaks fingerprint (commit:file:rule:line).
+19d90ac880df4a822599481ed551cc4e557cf5bd:tests/test_security.py:generic-api-key:322
