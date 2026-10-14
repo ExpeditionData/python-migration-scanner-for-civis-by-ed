@@ -13,10 +13,11 @@
   <div class="site">
     <header class="site-header">
       <div class="header-inner">
-        <a class="brand" href="{{ url_for('pages.overview') }}">
-          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="#0F5F5F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 7 L3 14 L8 21"></path><path d="M20 7 L25 14 L20 21"></path><circle cx="13.5" cy="13" r="4"></circle><path d="M16.5 16 L19 18.5"></path></svg>
-          <span class="brand-name">Civis Python Version Search</span>
-        </a>
+        <div class="brand">
+          <a class="brand-logo" href="https://www.expedition-data.com/" target="_blank" rel="noopener noreferrer"><img src="{{ url_for('static', filename='img/expedition-data-logo.svg') }}" alt="Expedition Data website (opens in a new tab)" width="149" height="40"></a>
+          <span class="brand-divider" aria-hidden="true"></span>
+          <a class="brand-name" href="{{ url_for('pages.overview') }}">Civis Python Version Search</a>
+        </div>
         <nav aria-label="Main" class="main-nav">
           {% for key, label, endpoint in [("overview", "Overview", "pages.overview"), ("inventory", "Inventory", "pages.inventory"), ("findings", "Findings", "pages.findings"), ("scan", "Scan history", "pages.scan")] %}
           <a href="{{ url_for(endpoint) }}"{% if active == key %} class="active" aria-current="page"{% endif %}>{{ label }}</a>
@@ -48,7 +49,7 @@
       <div class="footer-inner">
         <span>Version {{ version }}</span>
         <span>Apache 2.0 license</span>
-        <span>Built by Expedition Data LLC</span>
+        <span>Built by <a href="https://www.expedition-data.com/" target="_blank" rel="noopener noreferrer">Expedition Data LLC<span class="sr-only"> (opens in a new tab)</span></a></span>
         <span>Runs inside your Civis environment. No data leaves Civis.</span>
         {% if local %}<span>Local preview with made-up data</span>{% endif %}
       </div>

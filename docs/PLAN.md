@@ -532,3 +532,19 @@ How each object runs:
 | 14.13 | The time left estimate uses the timestamps on the scanner's PROGRESS log lines. | No extra API calls. |
 | 14.14 | Local preview: `python -m scanner --dry-run --preview` seeds made-up data, including one object with a hostile name; `python -m app.local` serves it on 127.0.0.1 only, refuses to start if `CIVIS_API_KEY` is set, and `--state` shows each empty and error state. | Lets Rob click through every page on this machine without Civis. |
 | 14.15 | The civis 2.7.1 compatibility test now also checks calls through an injected `civis.io` module (`self.io.read_civis_sql(...)`). | The app passes civis.io in, so the plain `civis.io.` check would miss those calls. |
+
+---
+
+## 15. Rebrand to Expedition Data's style (October 14, 2026)
+
+**Conclusion: the web app now uses Expedition Data's palette, type, and logo. Behavior, routes, and data are unchanged.**
+
+| # | Choice | Why |
+|---|---|---|
+| 15.1 | Navy primary, cream background, tan borders, and orange used only for decoration. Semantic colors are unchanged. Info banners (a scan is running) use navy text on a pale blue-gray (`#EEF0F6`, border `#C5CBDB`), since the teal they used is gone and orange would read as a warning. | Rob's palette; orange on white is 2.7 to 1. |
+| 15.2 | Font stack `Calibri, Carlito, system-ui, sans-serif`. Carlito 5.3.0 (regular, bold, italic; latin woff2) is vendored from `@fontsource/carlito` with its OFL license. Calibri is never vendored. Weights 500 and 600 became 400 and 700. IBM Plex Sans was removed; IBM Plex Mono stays for rule IDs and file locations. | Carlito is metric-compatible with Calibri and free to redistribute. |
+| 15.3 | The header logo and the footer "Expedition Data LLC" link to https://www.expedition-data.com/ in a new tab with `rel="noopener noreferrer"`. | The app runs inside a Civis iframe; a same-tab link would replace it, and noreferrer keeps the Service URL private. |
+| 15.4 | Links to objects in Civis Platform (Inventory and Findings) stay. They are built from scan data, not written into the templates. The test allows only the two Expedition Data links and Civis Platform object links as external hrefs, and no external `src` at all. | Removing them would change behavior. |
+| 15.5 | Table header cells inside the body (row headers such as object types on the Overview) keep the body style; only column headers get the navy fill. | The mockup's navy fill is for column headers. |
+| 15.6 | The logo SVG is copied unchanged. It carries a C2PA content-credentials manifest in its metadata (signed provenance stating it was provided through Claude); it has no script, links, or embedded images. | Rob asked for an unchanged copy. |
+

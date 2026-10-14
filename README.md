@@ -84,3 +84,5 @@ The digests were read from Docker Hub on October 13, 2026.
 
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) and
 [NOTICE](NOTICE).
+
+The Expedition Data name and logo are trademarks of Expedition Data LLC. They are not licensed under the Apache License 2.0.

@@ -30,6 +30,9 @@ Its only outbound calls are reads from:
 3. **Your own GitHub repositories**, to read code for git-backed objects. This
    only happens if you attach a GitHub token.
 
+The web app also shows two links to the Expedition Data website, which open
+only when a viewer clicks them and send no referrer.
+
 The tool writes to two places only, and both are inside Civis:
 
 - **The schema you name**, where it saves its result tables.

@@ -106,7 +106,19 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   `app/templates/`. Data layer: `app/backends/civis_backend.py` (civis 2.7.1
   calls only), `local_backend.py` (dry-run preview files), `cache.py`.
   Styles in `app/static/css/app.css`, scripts in `app/static/js/`, fonts in
-  `app/static/fonts/`.
+  `app/static/fonts/`, the logo in `app/static/img/`.
+- **Look.** Expedition Data's style: navy `--primary` (#26304F) for headings,
+  labels, links, nav, and primary buttons; cream page background; tan borders;
+  orange `--accent` (#DD8A33) for decoration only (header rule, section heading
+  rules, active nav bar, link underlines), never for text or focus outlines.
+  Semantic colors (warning, error, success, affected, advisory, fixed) are
+  unchanged. Font stack `Calibri, Carlito, system-ui, sans-serif`: Carlito is
+  vendored (OFL), Calibri is never vendored, and only weights 400 and 700 are
+  used. IBM Plex Mono is vendored for rule IDs and file locations. The header
+  logo and the footer "Expedition Data LLC" link to https://www.expedition-data.com/
+  with `target="_blank" rel="noopener noreferrer"`; those are the only external
+  links in the templates (object links to Civis Platform come from scan data).
+  Contrast is checked by `tests/test_app.py`.
 - **Scanner flow.** `scanner/__main__.py` -> `runner.run_scan` -> inventory ->
   `process.process_item` per object (retrieval, engine, logs) ->
   `checkpoint.Checkpointer` -> `output` sinks. Every Civis API call goes
@@ -120,7 +132,9 @@ Constraints to keep in mind when writing code:
 - `common/` must run on Python 3.12 and 3.14.
 - Never store, log, or output code snippets. Fetched code stays in memory or a
   temp directory deleted at the end of the run.
-- Front-end libraries are vendored into `app/static/`. No CDN links.
+- Front-end libraries and fonts are vendored into `app/static/`. No CDN links
+  and no external `src` attributes. The Expedition Data name and logo are
+  trademarks and are not Apache-licensed (see NOTICE).
 - Every value in a SQL insert is validated and escaped, including request headers.
 - Unit tests use synthetic fixtures only. Never record fixtures from a real Civis
   instance, and never commit real object names, user names, or code.

@@ -434,7 +434,8 @@ def test_templates_and_static_files_have_no_inline_code_or_cdn_links():
     for path in list((ROOT / "app" / "templates").rglob("*.html")) + list((ROOT / "app" / "static").rglob("*")):
         if not path.is_file() or path.suffix not in (".html", ".css", ".js"):
             continue  # Font files and their license are not code.
-        text = path.read_text(encoding="utf-8")
+        # The only external address allowed: the two links to the Expedition Data website.
+        text = path.read_text(encoding="utf-8").replace('href="https://www.expedition-data.com/"', "")
         for pattern in (r"<script(?![^>]*\bsrc=)", r"<style", r"\sstyle=", r"\son[a-z]+=", r"https?://", r"//cdn"):
             if re.search(pattern, text, re.IGNORECASE):
                 offenders.append(f"{path.relative_to(ROOT).as_posix()}: {pattern}")

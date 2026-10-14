@@ -104,7 +104,9 @@ def test_pages_have_no_inline_scripts_or_styles(app):
 
 def test_static_assets_are_vendored(app):
     client = app.test_client()
-    for path in ("css/app.css", "js/scan-status.js", "js/findings.js", "fonts/ibm-plex-sans-latin-400-normal.woff2"):
+    for path in ("css/app.css", "js/scan-status.js", "js/findings.js", "js/local-time.js",
+                 "fonts/carlito-latin-400-normal.woff2", "fonts/ibm-plex-mono-latin-400-normal.woff2",
+                 "img/expedition-data-logo.svg"):
         assert client.get(f"/static/{path}").status_code == 200
 
 
@@ -524,16 +526,88 @@ def _contrast(a: str, b: str) -> float:
 def test_text_contrast_is_at_least_4_5_to_1():
     css = (Path(__file__).resolve().parent.parent / "app/static/css/app.css").read_text(encoding="utf-8")
     colors = dict(re.findall(r"--([\w-]+):\s*(#[0-9a-fA-F]{6});", css))
+    colors["white"] = "#ffffff"
     pairs = [
-        ("text", "bg"), ("text", "surface"), ("muted", "bg"), ("muted", "surface"), ("nav-text", "surface"),
-        ("teal", "surface"), ("teal", "bg"), ("teal-dark", "teal-soft"), ("warn-text", "warn-bg"),
-        ("error-text", "error-bg"), ("teal-dark", "info-bg"), ("fixed", "success-bg"), ("fixed", "surface"),
-        ("affected", "affected-bg"), ("affected", "surface"), ("advisory", "advisory-bg"), ("advisory", "surface"),
-        ("nav-text", "disabled-bg"), ("nav-text", "row-border"), ("muted", "row-border"),
+        # Body text and muted text on every background they appear on.
+        ("text", "bg"), ("text", "surface"), ("text", "stripe"), ("text", "row-border"),
+        ("muted", "bg"), ("muted", "surface"), ("muted", "stripe"),
+        # Navy: headings, labels, links, nav, tile numbers, step states, disabled buttons.
+        ("primary", "bg"), ("primary", "surface"), ("primary", "stripe"), ("primary", "nav-active-bg"),
+        ("primary", "disabled-bg"), ("primary", "info-bg"), ("primary-hover", "surface"), ("primary-hover", "stripe"),
+        # White on navy: primary buttons, table headers, skip link.
+        ("white", "primary"), ("white", "primary-hover"),
+        # Semantic colors, unchanged.
+        ("warn-text", "warn-bg"), ("error-text", "error-bg"), ("fixed", "success-bg"), ("fixed", "surface"),
+        ("fixed", "stripe"), ("affected", "affected-bg"), ("affected", "surface"), ("affected", "stripe"),
+        ("advisory", "advisory-bg"), ("advisory", "surface"), ("advisory", "stripe"),
     ]
     low = [(a, b, round(_contrast(colors[a], colors[b]), 2)) for a, b in pairs if _contrast(colors[a], colors[b]) < 4.5]
     assert low == []
-    assert _contrast("#ffffff", colors["teal"]) >= 4.5  # White text on the primary button.
+    # Orange is decoration only: it fails text contrast, so it must never color text or focus outlines.
+    assert _contrast(colors["accent"], colors["surface"]) < 4.5
+    assert not re.search(r"(?<![-\w])color:\s*var\(--accent\)", css)
+    assert "outline: 3px solid var(--primary)" in css
+
+
+def test_input_borders_meet_3_to_1():
+    css = (Path(__file__).resolve().parent.parent / "app/static/css/app.css").read_text(encoding="utf-8")
+    colors = dict(re.findall(r"--([\w-]+):\s*(#[0-9a-fA-F]{6});", css))
+    for background in ("surface", "bg"):
+        assert _contrast(colors["input-border"], colors[background]) >= 3.0, background
+
+
+LOGO_LINK = re.compile(
+    r'<a class="brand-logo" href="https://www\.expedition-data\.com/" target="_blank" rel="noopener noreferrer">'
+    r'<img src="(/static/img/expedition-data-logo\.svg)" alt="Expedition Data website \(opens in a new tab\)"'
+)
+
+
+@pytest.mark.parametrize("url", PAGES + ["/no-such-page"])
+def test_every_page_has_the_logo_link_and_only_local_sources(app, url):
+    body = app.test_client().get(url).get_data(as_text=True)
+    match = LOGO_LINK.search(body)
+    assert match, url
+    assert 'aria-label' not in body[match.start(): body.index("</a>", match.start())]
+    assert app.test_client().get(match.group(1)).status_code == 200
+    # Footer link to the same site, opened the same way.
+    assert re.search(r'Built by <a href="https://www\.expedition-data\.com/" target="_blank" rel="noopener noreferrer">'
+                     r"Expedition Data LLC", body)
+    # Every src stays on the app. The only external hrefs in the page itself are the two
+    # Expedition Data links; the rest are links to objects in Civis Platform, built from scan data.
+    assert all(src.startswith("/static/") for src in re.findall(r'\ssrc="([^"]*)"', body))
+    external = [h for h in re.findall(r'\shref="([^"]*)"', body) if re.match(r"(?i)(https?:)?//", h)]
+    brand = [h for h in external if h == "https://www.expedition-data.com/"]
+    assert len(brand) == 2
+    assert all(h.startswith("https://platform.civisanalytics.com/spa/#/") for h in external if h not in brand)
+    assert '<span class="brand-divider" aria-hidden="true"></span>' in body
+    assert re.search(r'<a class="brand-name" href="/">Civis Python Version Search</a>', body)
+
+
+def test_logo_svg_is_inert_and_served_safely(app):
+    svg = (Path(__file__).resolve().parent.parent / "app/static/img/expedition-data-logo.svg").read_text(encoding="utf-8")
+    for forbidden in ("<script", "foreignobject", "<image", "href"):
+        assert forbidden not in svg.lower(), forbidden
+    assert not re.search(r"\son[a-z]+\s*=", svg, re.IGNORECASE)  # No event handler attributes.
+    response = app.test_client().get("/static/img/expedition-data-logo.svg")
+    assert response.status_code == 200
+    assert response.mimetype == "image/svg+xml"
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_fonts_are_carlito_and_plex_mono_only():
+    fonts = Path(__file__).resolve().parent.parent / "app/static/fonts"
+    names = sorted(p.name for p in fonts.iterdir())
+    assert names == [
+        "Carlito-LICENSE.txt", "IBM-Plex-LICENSE.txt",
+        "carlito-latin-400-italic.woff2", "carlito-latin-400-normal.woff2", "carlito-latin-700-normal.woff2",
+        "ibm-plex-mono-latin-400-normal.woff2", "ibm-plex-mono-latin-500-normal.woff2",
+    ]
+    assert "SIL Open Font License" in (fonts / "Carlito-LICENSE.txt").read_text(encoding="utf-8")
+    css = (Path(__file__).resolve().parent.parent / "app/static/css/app.css").read_text(encoding="utf-8")
+    assert "--sans: Calibri, Carlito, system-ui, sans-serif;" in css
+    # Carlito has no 500 or 600 weights; only the Plex Mono font face may use 500.
+    weights = re.findall(r"font-weight:\s*(\d+)", css.split("--mono")[0].split(":root")[1] + css.split(":root")[1])
+    assert set(weights) <= {"400", "700"}
 
 
 def test_phone_width_rules_exist():
