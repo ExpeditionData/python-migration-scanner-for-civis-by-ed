@@ -116,3 +116,6 @@ $RECYCLE.BIN/
 # Local dry-run output (synthetic data only)
 dry_run_output/
 *.sqlite
+
+# Working files from Claude sessions, not part of the project
+Claude outputs/
