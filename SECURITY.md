@@ -164,6 +164,9 @@ DELETE FROM results_schema.scan_runs WHERE run_id IN ('<run_id>');
   sets no cookies of its own.
 - **Debug mode is always off.** The app refuses to start if Flask debug mode is
   turned on.
+- **Local preview uses made-up data only.** The developer preview
+  (`python -m app.local`) reads made-up dry-run files, listens only on the
+  developer's own computer, and refuses to start if a Civis API key is set.
 - **Who is viewing.** The app identifies the viewer from the headers Civis adds
   to each request. It records that user name only on checklist changes.
 - **Safe database writes.** Every value written to the database is checked and

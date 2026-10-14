@@ -73,6 +73,10 @@ The digests were read from Docker Hub on October 13, 2026.
 - **Dry run.** `python -m scanner --dry-run --out dry_run_output` runs the whole
   scanner on made-up data and writes a local SQLite file and CSV report. It
   never contacts Civis or GitHub.
+- **Local app preview.** `python -m scanner --dry-run --preview --out dry_run_output`,
+  then `python -m app.local --results dry_run_output`, and open
+  http://127.0.0.1:8050. It shows made-up data only, listens on this machine
+  only, and refuses to start if `CIVIS_API_KEY` is set.
 - **Secret scanning.** Turn on the secret-scanning hook in each clone:
   `git config core.hooksPath .githooks`.
 

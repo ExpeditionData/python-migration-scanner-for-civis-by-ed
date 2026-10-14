@@ -95,12 +95,18 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   loaded and validated by `common/rule_loader.py`. Matcher kinds are
   implemented in `scanner/engine.py`. Findings carry file, line number, and
   rule ID only.
-- **Status.** Phases 2 to 4 are done: rules, engine, inventory, code
-  retrieval (inline, notebooks, GitHub), log scan, request budget, output to
-  the five tables and a CSV run output, checkpoints, resume, and dry runs.
-  The security foundation from SECURITY.md is in place. Phase 5 (the Flask
-  app) is next. Implementation choices not in the approved plan are in
-  docs/PLAN.md sections 10 to 12.
+- **Status.** Phases 2 to 5 are done: the scanner (rules, engine,
+  inventory, code retrieval, log scan, request budget, output, checkpoints,
+  resume, dry runs) and the Flask app (Overview, Scan history, Inventory,
+  Findings and checklist, scan status API, local preview). Phase 6 (Civis
+  deployment, README setup, TESTING.md) is next. Implementation choices not in
+  the approved plan are in docs/PLAN.md sections 10 to 14.
+- **App flow.** `app/__init__.create_app` -> `app/services.py` (Civis or local
+  data layer) -> `app/pages.py` routes -> `app/views.py` (pure shaping) ->
+  `app/templates/`. Data layer: `app/backends/civis_backend.py` (civis 2.7.1
+  calls only), `local_backend.py` (dry-run preview files), `cache.py`.
+  Styles in `app/static/css/app.css`, scripts in `app/static/js/`, fonts in
+  `app/static/fonts/`.
 - **Scanner flow.** `scanner/__main__.py` -> `runner.run_scan` -> inventory ->
   `process.process_item` per object (retrieval, engine, logs) ->
   `checkpoint.Checkpointer` -> `output` sinks. Every Civis API call goes
@@ -161,6 +167,20 @@ the CSV report to a local folder (ignored by git):
 The last two commands stop a run partway and then resume it. A live scan
 (`python -m scanner` with no flags) refuses to run outside Civis.
 
+## Local app preview
+
+Seeds made-up data (four scans: completed, failed, completed with fixes, and
+one still running), then serves the app on 127.0.0.1 only:
+
+```
+.venv\Scripts\python.exe -m scanner --dry-run --preview --out dry_run_output
+.venv312\Scripts\python.exe -m app.local --results dry_run_output
+```
+
+Open http://127.0.0.1:8050. Add `--state no-scan` (or `first-scan-running`,
+`failed`, `tables-failed`, `schema-missing`, `no-job-id`) to see the empty and
+error states. Local preview refuses to start if `CIVIS_API_KEY` is set.
+
 ## Testing commands
 
 Run the full suite on both Python versions before every commit:
@@ -175,13 +195,20 @@ Run the full suite on both Python versions before every commit:
   malicious schema names are rejected, keys in exceptions are redacted, and
   values from Civis render as text in the web app.
 
-- Unit tests make no Civis or network calls. Inventory tests use
-  `tests/fake_civis.py` with synthetic responses in `tests/fixtures/civis_api/`.
+- Unit tests make no Civis or network calls. Inventory tests use the
+  synthetic client in `scanner/synthetic/` (re-exported by
+  `tests/fake_civis.py`) with the made-up instance in
+  `scanner/synthetic/synthetic_instance.json`.
 - Every rule needs a positive and a negative fixture in `tests/test_rules.py`.
   A test fails if a rule has none.
 - `tests/test_self_scan.py` runs the tool's own rules over this repo.
 - `tests/test_civis_271_compat.py` fails if `app/` or `common/` calls a civis
-  method missing from civis 2.7.1.
+  method missing from civis 2.7.1, including calls through an injected
+  `civis.io` module.
+- `tests/test_app.py` covers every page and API, CSRF on every POST, escaping
+  of hostile object names, security headers, the concurrent-run guard, the
+  batched checklist save, the empty and error states, text contrast, and local
+  preview mode.
 
 ## Keeping docs current
 
