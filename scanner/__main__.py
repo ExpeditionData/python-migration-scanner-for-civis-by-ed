@@ -127,7 +127,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.dry_run and args.preview:
             from scanner.synthetic.preview import build_preview
 
-            build_preview(args.out)
+            try:
+                build_preview(args.out)
+            except PermissionError:
+                print("The preview data is in use, most likely by a running local preview. Stop it with Ctrl+C, "
+                      "then run this command again.", file=sys.stderr)
+                return 1
             print(f"Preview data written to {args.out}. Open it with: python -m app.local --results {args.out}")
             return 0
         if args.dry_run:

@@ -43,3 +43,12 @@ def test_fixed_code_removes_some_findings():
 def test_preview_cli(tmp_path, capsys):
     assert main(["--dry-run", "--preview", "--out", str(tmp_path)]) == 0
     assert "python -m app.local --results" in capsys.readouterr().out
+
+
+def test_preview_cli_explains_when_the_data_is_in_use(tmp_path, monkeypatch, capsys):
+    def locked(out, now=None):
+        raise PermissionError("in use")
+
+    monkeypatch.setattr("scanner.synthetic.preview.build_preview", locked)
+    assert main(["--dry-run", "--preview", "--out", str(tmp_path)]) == 1
+    assert "Stop it with Ctrl+C" in capsys.readouterr().err

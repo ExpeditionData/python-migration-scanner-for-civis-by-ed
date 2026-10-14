@@ -594,6 +594,13 @@ def test_logo_svg_is_inert_and_served_safely(app):
     assert response.headers["X-Content-Type-Options"] == "nosniff"
 
 
+def test_fonts_and_logo_are_served_with_the_right_types(app):
+    client = app.test_client()
+    assert client.get("/static/fonts/carlito-latin-400-normal.woff2").mimetype == "font/woff2"
+    assert client.get("/static/fonts/ibm-plex-mono-latin-400-normal.woff2").mimetype == "font/woff2"
+    assert client.get("/static/img/expedition-data-logo.svg").mimetype == "image/svg+xml"
+
+
 def test_fonts_are_carlito_and_plex_mono_only():
     fonts = Path(__file__).resolve().parent.parent / "app/static/fonts"
     names = sorted(p.name for p in fonts.iterdir())

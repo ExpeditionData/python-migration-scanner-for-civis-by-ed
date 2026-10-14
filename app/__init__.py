@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import mimetypes
 import os
 
 from flask import Flask
@@ -17,6 +18,11 @@ from flask import Flask
 from app import pages, security, views
 
 MAX_REQUEST_BYTES = 1024 * 1024
+
+# Python 3.12 (the Service image) has no type for .woff2, and Windows can map
+# .svg oddly, so static files would be served with the wrong Content-Type.
+mimetypes.add_type("font/woff2", ".woff2")
+mimetypes.add_type("image/svg+xml", ".svg")
 
 
 def _truthy(value: str | None) -> bool:
