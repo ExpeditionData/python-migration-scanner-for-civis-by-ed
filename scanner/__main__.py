@@ -7,6 +7,7 @@ Inside Civis (the container script's command):
 Dry run on this machine, against the synthetic instance only:
 
     python -m scanner --dry-run --out dry_run_output
+    python -m scanner --dry-run --preview --out dry_run_output   (seeds the local app preview)
 
 A live scan runs only inside Civis. It refuses to start unless Civis has set
 CIVIS_JOB_ID and CIVIS_RUN_ID, so it can never be pointed at a real Civis
@@ -22,6 +23,7 @@ import argparse
 import json
 import logging
 import sys
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -41,12 +43,19 @@ def _configure_logging() -> None:
 
 
 def dry_run(out: Path, fixture: Path | None = None, now: datetime | None = None, run_id: str | None = None,
-            checkpoint_objects: int = 500, stop_after: int | None = None) -> RunResult:
-    """Run the whole pipeline against the synthetic instance. No network calls."""
+            checkpoint_objects: int = 500, stop_after: int | None = None, data: dict | None = None,
+            civis_job_id: int | None = None, civis_run_id: int | None = None,
+            clock: Callable[[], datetime] | None = None) -> RunResult:
+    """Run the whole pipeline against the synthetic instance. No network calls.
+
+    ``data`` replaces the synthetic instance file (used by the preview seeder),
+    and ``clock`` replaces the fixed ``now`` so runs can have a duration.
+    """
     from scanner.output import LocalRunOutputs, SqliteSink
     from scanner.synthetic import FIXTURES, FakeClient, SyntheticSession
 
-    data = json.loads((fixture or FIXTURES / "synthetic_instance.json").read_text(encoding="utf-8"))
+    if data is None:
+        data = json.loads((fixture or FIXTURES / "synthetic_instance.json").read_text(encoding="utf-8"))
     client = FakeClient(data)
     session = SyntheticSession(data)
     out.mkdir(parents=True, exist_ok=True)
@@ -55,13 +64,13 @@ def dry_run(out: Path, fixture: Path | None = None, now: datetime | None = None,
         sink = _StopAfter(sink, stop_after)
     config = ScanConfig(
         database="synthetic", schema=DRY_RUN_SCHEMA, github_token="synthetic-github-token",
-        run_id=run_id, request_budget=1000,
+        run_id=run_id, request_budget=1000, civis_job_id=civis_job_id, civis_run_id=civis_run_id,
     )
     fixed_now = now or datetime.now(timezone.utc)
     try:
         return run_scan(
             config, client=client, http_session=session, sink=sink, outputs=LocalRunOutputs(out),
-            now=lambda: fixed_now, checkpoint_objects=checkpoint_objects,
+            now=clock or (lambda: fixed_now), checkpoint_objects=checkpoint_objects,
         )
     finally:
         (sink.inner if isinstance(sink, _StopAfter) else sink).close()
@@ -110,9 +119,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, default=Path("dry_run_output"), help="dry run output folder")
     parser.add_argument("--run-id", help="dry run: resume this run ID")
     parser.add_argument("--stop-after", type=int, help="dry run: stop after this many objects are written (tests resume)")
+    parser.add_argument("--preview", action="store_true",
+                        help="dry run: seed a local web app preview with several runs of made-up data")
     args = parser.parse_args(argv)
     _configure_logging()
     try:
+        if args.dry_run and args.preview:
+            from scanner.synthetic.preview import build_preview
+
+            build_preview(args.out)
+            print(f"Preview data written to {args.out}. Open it with: python -m app.local --results {args.out}")
+            return 0
         if args.dry_run:
             result = dry_run(args.out, run_id=args.run_id, stop_after=args.stop_after,
                              checkpoint_objects=5 if args.stop_after else 500)

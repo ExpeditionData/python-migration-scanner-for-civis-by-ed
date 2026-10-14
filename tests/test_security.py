@@ -432,8 +432,8 @@ def test_secret_key_is_derived_from_the_service_api_key(monkeypatch):
 def test_templates_and_static_files_have_no_inline_code_or_cdn_links():
     offenders = []
     for path in list((ROOT / "app" / "templates").rglob("*.html")) + list((ROOT / "app" / "static").rglob("*")):
-        if not path.is_file():
-            continue
+        if not path.is_file() or path.suffix not in (".html", ".css", ".js"):
+            continue  # Font files and their license are not code.
         text = path.read_text(encoding="utf-8")
         for pattern in (r"<script(?![^>]*\bsrc=)", r"<style", r"\sstyle=", r"\son[a-z]+=", r"https?://", r"//cdn"):
             if re.search(pattern, text, re.IGNORECASE):
