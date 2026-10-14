@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import empty_block, object_link, pager, csrf_field, impact_badge %}
+{% from "macros.html" import empty_block, object_link, pager, csrf_field, impact_badge, local_time %}
 {% block title %}Findings and checklist{% endblock %}
 {% block scripts %}<script src="{{ url_for('static', filename='js/findings.js') }}" defer></script>{% endblock %}
 {% block content %}
@@ -108,7 +108,7 @@
                 <option value="{{ value }}"{% if row.status == value %} selected{% endif %}>{{ label }}</option>
                 {% endfor %}
               </select>
-              {% if row.changed_by %}<div class="cell-sub">By {{ row.changed_by }}, {{ row.changed_at }}</div>{% endif %}
+              {% if row.changed_by %}<div class="cell-sub">By {{ row.changed_by }}, {{ local_time(row.changed_at) }}</div>{% endif %}
             </td>
           </tr>
           {% else %}

@@ -484,24 +484,24 @@ How each object runs:
 
 ---
 
-## 13. Phase 4 questions (applied October 14, 2026, pending Rob's review)
+## 13. Phase 4 questions (approved October 14, 2026)
 
-**Conclusion: each question from the Phase 4 report has its recommended option applied. None of them loosens a rule in SECURITY.md or CLAUDE.md. Each is marked "applied, pending Rob's review."**
+**Conclusion: each question from the Phase 4 report has its recommended option applied, and Rob approved all six on October 14, 2026. None of them loosens a rule in SECURITY.md or CLAUDE.md. Rob turns on private vulnerability reporting (13.6) before the public release.**
 
 | # | Question | Recommended option | Status |
 |---|---|---|---|
-| 13.1 | Should a run whose table writes failed show as failed in Civis, even though the CSV report was saved? | Yes. Keep exit code 3, so the Civis run shows failed with the CSV attached and the problem is not missed. | Applied (no change), pending Rob's review |
-| 13.2 | Should the scanner create the results schema if it is missing? | No. Creating schemas stays the admin's decision, like granting access. A missing schema ends the run as `tables_failed` with the CSV saved. | Applied (no change), pending Rob's review |
-| 13.3 | May gitleaks be installed? | Yes. Installed for the current user with `winget install Gitleaks.Gitleaks` (8.30.1). The pre-commit hook now runs gitleaks and detect-secrets. One fake test value already in history is listed in `.gitleaksignore`. | Applied, pending Rob's review |
-| 13.4 | Is a blank or `latest` tag on a dbt script the Civis default Python image? | Treat it as the default image, as now. The dbt script API returns only a tag. Confirm in Phase 7. | Applied (no change), pending Rob's review |
-| 13.5 | Should dbt scripts that are not created from a template follow the same image rule as dbt templates? | Yes. New object type `dbt_script`: inventoried and scanned (repo and most recent run log) on a Civis default image, otherwise counted as not Python with language `dbt`. Its Civis link path (`/spa/#/scripts/dbt/<id>`) is checked in Phase 7. | Applied, pending Rob's review |
-| 13.6 | What contact should SECURITY.md give for reporting security issues? | GitHub private vulnerability reporting on the public repository, so no email address is published. Rob must turn it on in the repository settings (Security, "Private vulnerability reporting") before the public release. | Applied in SECURITY.md, pending Rob's review |
+| 13.1 | Should a run whose table writes failed show as failed in Civis, even though the CSV report was saved? | Yes. Keep exit code 3, so the Civis run shows failed with the CSV attached and the problem is not missed. | Approved |
+| 13.2 | Should the scanner create the results schema if it is missing? | No. Creating schemas stays the admin's decision, like granting access. A missing schema ends the run as `tables_failed` with the CSV saved. | Approved |
+| 13.3 | May gitleaks be installed? | Yes. Installed for the current user with `winget install Gitleaks.Gitleaks` (8.30.1). The pre-commit hook now runs gitleaks and detect-secrets. One fake test value already in history is listed in `.gitleaksignore`. | Approved |
+| 13.4 | Is a blank or `latest` tag on a dbt script the Civis default Python image? | Treat it as the default image, as now. The dbt script API returns only a tag. Confirm in Phase 7. | Approved |
+| 13.5 | Should dbt scripts that are not created from a template follow the same image rule as dbt templates? | Yes. New object type `dbt_script`: inventoried and scanned (repo and most recent run log) on a Civis default image, otherwise counted as not Python with language `dbt`. Its Civis link path (`/spa/#/scripts/dbt/<id>`) is checked in Phase 7. | Approved |
+| 13.6 | What contact should SECURITY.md give for reporting security issues? | GitHub private vulnerability reporting on the public repository, so no email address is published. Rob must turn it on in the repository settings (Security, "Private vulnerability reporting") before the public release. | Approved |
 
 ---
 
 ## 14. Implementation notes (Phase 5, October 14, 2026)
 
-**Conclusion: the web app is built to the mockups and tested on made-up data only. These choices were not covered by the plan.**
+**Conclusion: the web app is built to the mockups and tested on made-up data only. These choices were not covered by the plan. Rob approved them on October 14, 2026, with the change to 14.7 below.**
 
 ### Service settings
 
@@ -523,9 +523,9 @@ How each object runs:
 | 14.4 | Scans are numbered Run 1, Run 2, and so on, by start time in the `scan_runs` table. The history table shows counts for the 10 most recent completed scans. | Each table read in Civis starts a query run, so older scans are listed without counts. |
 | 14.5 | Finished scans' tables are cached in memory (12 tables). The scan list, checklist, and schema check are cached for 20 seconds; a checklist save clears the checklist cache at once. A new civis client is made for each request. | Section 4 and 1.10. |
 | 14.6 | Every page shows the full disclaimer from `common/disclaimer.py` plus the admin-only note, not the mockup's shorter sentence. | The same disclaimer must appear in the README, every report, and the app. |
-| 14.7 | Times are shown in UTC, month first ("October 12, 2026 at 2:14 PM UTC"). | Civis stores UTC, and the server does not know the viewer's time zone. |
+| 14.7 | Times are shown in each viewer's local time, month first, with the time zone abbreviation ("October 12, 2026 at 10:14 AM EDT"). The server writes each time as a `<time>` element with UTC text, and `app/static/js/local-time.js` (vendored, no inline script, CSP unchanged) converts it in the browser. Without JavaScript, the page shows UTC. Dates without a time (last run, checklist changes) are converted too. **Changed October 14, 2026 at Rob's request (was UTC only).** | Civis stores UTC; only the browser knows the viewer's time zone. |
 | 14.8 | Filters and search are forms that submit to the server (50 rows per page), with an Apply filters button. The mockup's type-to-filter search needs JavaScript; this works without it and with a keyboard. | Accessibility and very large inventories. |
-| 14.9 | Download CSV sends the browser to the Civis file link for the scanner run's CSV output. Local preview serves the file from the dry-run folder. The app does not copy the report itself. | The file stays in Civis file storage; downloading is the viewer's choice (SECURITY.md). |
+| 14.9 | Download CSV sends the browser to the Civis file link for the scanner run's CSV output. The app never streams client data through itself. Local preview serves the file from the dry-run folder. **Confirmed by Rob October 14, 2026.** | The file stays in Civis file storage; downloading is the viewer's choice (SECURITY.md). |
 | 14.10 | Saving checklist changes needs the `Civis-Username` header. Without it, the dropdowns are disabled and a note explains why. The Civis save is one validated and escaped INSERT (query_civis has no bound parameters); local preview uses bound parameters. | Requirement 4 and the "recorded with the Civis-Username header" rule. |
 | 14.11 | The results schema check uses `information_schema.schemata` and `information_schema.tables`. To confirm on Redshift in Phase 7. | Distinguishes "schema missing" from "no scan yet." |
 | 14.12 | A failed Civis run shows as "Failed" only. The run's error text is never shown. | Error text can hold job output. |

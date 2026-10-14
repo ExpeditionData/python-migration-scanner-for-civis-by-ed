@@ -7,6 +7,15 @@
 <a href="{{ obj.url | safe_href }}" target="_blank" rel="noopener noreferrer">{{ obj.name }}<span class="sr-only"> (opens Civis in a new tab)</span></a>
 {%- endmacro %}
 
+{% macro local_time(value) -%}
+{#- A When value: UTC text without JavaScript; js/local-time.js shows the viewer's local time. -#}
+{%- if value.iso is defined and value.iso -%}
+<time datetime="{{ value.iso }}" data-local="{{ value.kind }}">{{ value.text }}</time>
+{%- else -%}
+{{ value }}
+{%- endif -%}
+{%- endmacro %}
+
 {% macro csrf_field() -%}
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 {%- endmacro %}

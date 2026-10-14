@@ -94,6 +94,33 @@ def format_duration(start: Any, end: Any) -> str:
     return f"{minutes // 60} hr {minutes % 60} min"
 
 
+@dataclass(frozen=True)
+class When:
+    """A time for a template: UTC text for pages without JavaScript, plus the ISO
+    time that app/static/js/local-time.js turns into the viewer's local time."""
+
+    iso: str | None
+    text: str
+    kind: str = "datetime"  # "datetime" or "date"
+
+    def __str__(self) -> str:
+        return self.text
+
+
+def _iso(moment: datetime) -> str:
+    return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def when(value: Any) -> When:
+    moment = parse_time(value)
+    return When(_iso(moment) if moment else None, format_datetime(value), "datetime")
+
+
+def when_date(value: Any) -> When:
+    moment = parse_time(value)
+    return When(_iso(moment) if moment else None, format_date(value), "date")
+
+
 def number(value: int | None) -> str:
     return "n/a" if value is None else f"{value:,}"
 
@@ -330,7 +357,7 @@ def history(situation: Situation, counts: dict[str, dict]) -> list[dict]:
         shows = scan is not None and scan.status == "succeeded" and data is not None
         return {
             "run": scan.label if scan else f"Civis run {run.id}",
-            "started": format_datetime(started),
+            "started": when(started),
             "duration": "Running" if run and run.active else format_duration(started, finished),
             "status": label,
             "affected": number(data["affected"]) if shows else "n/a",
@@ -454,7 +481,7 @@ def inventory(objects: list[dict], findings: list[dict], filters: dict) -> list[
             "image": image_text(obj),
             "default": {"default": "Yes", "custom": "No", "unknown": "Unknown"}[default_key],
             "default_key": default_key,
-            "last_run": format_date(obj.get("last_run_at")) if obj.get("last_run_at") else "Never",
+            "last_run": when_date(obj.get("last_run_at")) if obj.get("last_run_at") else "Never",
             "findings": counts.get(obj["object_id"], 0),
             "status": SCAN_STATUS_LABELS.get(status, status),
             "status_key": status,
@@ -522,7 +549,7 @@ def findings_rows(objects: list[dict], findings: list[dict], checklist: list[dic
             "confidence": confidence.capitalize(),
             "status": status,
             "changed_by": (current or {}).get("changed_by") if status != "open" else None,
-            "changed_at": format_date((current or {}).get("changed_at")) if status != "open" and current else None,
+            "changed_at": when_date((current or {}).get("changed_at")) if status != "open" and current else None,
             "workflows": workflow_names(items[0].get("workflows")),
         })
     rows.sort(key=lambda r: (r["object_name"].lower(), r["object_id"], r["rule_id"]))

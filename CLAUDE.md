@@ -205,6 +205,7 @@ Run the full suite on both Python versions before every commit:
 - `tests/test_civis_271_compat.py` fails if `app/` or `common/` calls a civis
   method missing from civis 2.7.1, including calls through an injected
   `civis.io` module.
+- `tests/test_local_time.py` runs `app/static/js/local-time.js` under Node (skipped if Node is not installed) to check local times and the UTC fallback.
 - `tests/test_app.py` covers every page and API, CSRF on every POST, escaping
   of hostile object names, security headers, the concurrent-run guard, the
   batched checklist save, the empty and error states, text contrast, and local

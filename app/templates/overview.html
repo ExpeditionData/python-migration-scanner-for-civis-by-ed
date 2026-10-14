@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% from "macros.html" import run_scan_button, empty_block %}
+{% from "macros.html" import run_scan_button, empty_block, local_time %}
 {% block title %}Overview{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
     <h1>Overview</h1>
-    {% if stats %}<p class="subtitle">Last scan: {{ last_scan }}. Completed in {{ duration }}. {{ scan_label }}.</p>{% endif %}
+    {% if stats %}<p class="subtitle">Last scan: {{ local_time(last_scan) }}. Completed in {{ duration }}. {{ scan_label }}.</p>{% endif %}
   </div>
   <div class="actions">
     {{ run_scan_button(can_start, situation) }}

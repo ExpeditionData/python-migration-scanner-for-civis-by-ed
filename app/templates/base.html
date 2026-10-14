@@ -1,10 +1,11 @@
-<!doctype html>
+{% from "macros.html" import local_time %}<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Overview{% endblock %} | Civis Python Version Search</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <script src="{{ url_for('static', filename='js/local-time.js') }}" defer></script>
   {% block scripts %}{% endblock %}
 </head>
 <body>
@@ -37,7 +38,7 @@
       </div>
       {% for banner in banners %}
       <div class="banner banner-{{ banner.kind }}" role="{{ 'alert' if banner.kind == 'error' else 'status' }}">
-        <p>{{ banner.text }}{% if banner.link %} <a href="{{ banner.link }}">{{ banner.link_text }}</a>{% endif %}</p>
+        <p>{{ banner.text }}{% if banner.when %} {{ local_time(banner.when) }}{{ banner.tail }}{% endif %}{% if banner.link %} <a href="{{ banner.link }}">{{ banner.link_text }}</a>{% endif %}</p>
       </div>
       {% endfor %}
       {% block content %}{% endblock %}

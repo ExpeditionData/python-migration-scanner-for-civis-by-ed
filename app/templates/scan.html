@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import run_scan_button, empty_block %}
+{% from "macros.html" import run_scan_button, empty_block, local_time %}
 {% block title %}{{ "Scan in progress" if running else "Scan history" }}{% endblock %}
 {% block scripts %}<script src="{{ url_for('static', filename='js/scan-status.js') }}" defer></script>{% endblock %}
 {% block content %}
@@ -8,7 +8,7 @@
     <h1>{{ "Scan in progress" if running else "Scan history" }}</h1>
     {% if running %}
     <p class="subtitle">
-      {% if scan_run %}{{ scan_run.label }}. {% endif %}Started {{ progress.started }}{% if scan_run and scan_run.scanning_user %} as {{ scan_run.scanning_user }}{% endif %}. Lookback window: {{ lookback }} days.
+      {% if scan_run %}{{ scan_run.label }}. {% endif %}Started {{ local_time(run_started) }}{% if scan_run and scan_run.scanning_user %} as {{ scan_run.scanning_user }}{% endif %}. Lookback window: {{ lookback }} days.
     </p>
     {% else %}
     <p class="subtitle">Every scan of this Civis environment, newest first.</p>
@@ -53,7 +53,7 @@
         {% for row in history %}
         <tr>
           <th scope="row">{{ row.run }}</th>
-          <td>{{ row.started }}</td>
+          <td>{{ local_time(row.started) }}</td>
           <td>{{ row.duration }}</td>
           <td>{{ row.status }}</td>
           <td class="num affected-text">{{ row.affected }}</td>

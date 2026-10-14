@@ -87,20 +87,22 @@ def banners(situation: views.Situation) -> list[dict]:
     elif situation.jobs_error:
         items.append({"kind": "error", "text": "The scanner job's runs could not be read from Civis. Check that "
                       "SCANNER_JOB_ID is correct and that the Service owner can see that job."})
+    # A banner's time goes in "when" (shown in the viewer's local time) followed by "tail".
     active = situation.active_run
     if active is not None:
         items.append({"kind": "info", "link": url_for("pages.scan"), "link_text": "See progress",
-                      "text": f"A scan is {'queued' if active.state == 'queued' else 'running'}. "
-                              f"Started {views.format_datetime(active.started_at or active.created_at)}."})
+                      "text": f"A scan is {'queued' if active.state == 'queued' else 'running'}. Started",
+                      "when": views.when(active.started_at or active.created_at), "tail": "."})
     outcome = situation.last_outcome
     current = situation.current
-    shown = f" The results shown are from {current.label}, {views.format_datetime(current.started_at)}." if current else ""
+    shown = {"when": views.when(current.started_at), "tail": "."} if current else {}
+    shown_text = f" The results shown are from {current.label}," if current else ""
     if outcome == "failed":
-        items.append({"kind": "error", "text": f"The last scan failed before it finished.{shown}",
+        items.append({"kind": "error", "text": f"The last scan failed before it finished.{shown_text}", **shown,
                       "link": url_for("pages.scan"), "link_text": "See scan history"})
     elif outcome == "tables_failed":
         items.append({"kind": "warning", "text": "The last scan finished but could not save its results tables, so "
-                      f"its results are only in its CSV report.{shown}",
+                      f"its results are only in its CSV report.{shown_text}", **shown,
                       "link": url_for("pages.download_latest"), "link_text": "Download its CSV report"})
     return items
 
@@ -181,7 +183,7 @@ def overview():
     run = next((r for r in situation.runs if current and r.id == current.civis_run_id), None)
     return render_template(
         "overview.html", **base_context("overview", situation), stats=stats, empty=empty_state(situation),
-        last_scan=views.format_datetime(current.started_at) if current else None,
+        last_scan=views.when(current.started_at) if current else None,
         duration=views.format_duration(run.started_at, run.finished_at) if run else (
             views.format_duration(current.started_at, current.finished_at) if current else None),
         scan_label=current.label if current else None,
@@ -213,6 +215,7 @@ def scan():
     return render_template(
         "scan.html", **base_context("scan", situation),
         run=run, scan_run=scan_run, progress=view, running=view.get("state") in ("queued", "running"), lookback=lookback,
+        run_started=views.when(run.started_at or run.created_at) if run else None,
         history=views.history(situation, counts), notice=notice, empty=empty_state(situation),
     )
 

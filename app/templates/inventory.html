@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import empty_block, object_link, pager %}
+{% from "macros.html" import empty_block, object_link, pager, local_time %}
 {% block title %}Inventory{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -64,7 +64,7 @@
             {% elif row.default_key == "custom" %}<span class="badge badge-advisory">No</span>
             {% else %}<span class="badge badge-unknown">Unknown</span>{% endif %}
           </td>
-          <td>{{ row.last_run }}</td>
+          <td>{{ local_time(row.last_run) }}</td>
           <td class="num strong">{{ row.findings | number }}</td>
           <td class="status-{{ row.status_key }}">
             {{ row.status }}
