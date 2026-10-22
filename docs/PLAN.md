@@ -659,6 +659,19 @@ Field labels come from these public Civis help articles at support.civisanalytic
 
 ### Public-release readiness (October 22, 2026)
 
-- **gitleaks 8.30.1 over the full git history:** 33 commits scanned, no leaks found. One fake test value from Phase 3 stays allowlisted in `.gitleaksignore` (13.3). History was not changed.
-- **detect-secrets 1.5.0 over the working tree:** all 117 tracked files scanned, 0 findings. Fake secrets in tests carry inline allow comments.
-- **Before Rob makes the repository public:** turn on GitHub private vulnerability reporting (13.6). Then create the `v0.1.0-rc1` tag for the first live test (16.2).
+- **gitleaks 8.30.1 over the full git history:** 33 commits scanned, no leaks found. Rerun before this checklist was committed: 40 commits, no leaks found. One fake test value from Phase 3 stays allowlisted in `.gitleaksignore` (13.3). History was not changed.
+- **detect-secrets 1.5.0 over the working tree:** all 117 tracked files scanned, 0 findings (the same on the rerun). Fake secrets in tests carry inline allow comments.
+
+### Release checklist (Rob, in this order)
+
+On the organization's GitHub Free plan, private vulnerability reporting and rulesets work only on public repositories. Checked October 22, 2026 with read-only GitHub API calls while the repository was private: the private vulnerability reporting endpoint returned 404, and the rulesets endpoint returned "Upgrade to GitHub Pro or make this repository public to enable this feature." So steps 2 and 3 come right after the visibility change, before the repository is shared or announced and before any tag exists.
+
+1. **Make the repository public** (Settings, General, Danger Zone, Change visibility).
+2. **Turn on private vulnerability reporting** (13.6): Settings, then Advanced Security under "Security and quality", then **Enable** next to "Private vulnerability reporting". SECURITY.md already points reporters to it.
+3. **Add a tag ruleset so release tags cannot be moved or deleted:** Settings, Rules, Rulesets, **New ruleset**, **New tag ruleset**.
+   - Ruleset name: `release tags`. Enforcement status: **Active**.
+   - Target tags: include the pattern `v*`.
+   - Tag protections: **Restrict updates** (no one can move a tag), **Restrict deletions**, and **Block force pushes**.
+   - Leave **Restrict creations** off, so new release tags can still be created.
+   - Leave the bypass list empty, so not even an admin can move or delete a release tag without first changing the ruleset.
+4. **Create `v0.1.0-rc1`** from the commit on `main` that includes the October 22, 2026 Phase 6 follow-up (the commit that added this checklist), push it, and confirm on GitHub that the ruleset blocks deleting it.
