@@ -111,23 +111,36 @@ Notes:
 ```
 civis-python-version-search/
   scanner/                  Container script entry point: python -m scanner
-    __main__.py             Reads job parameters, runs the scan
+    __main__.py             Reads job parameters, runs a live scan or a dry run
+    config.py               Job parameters from environment variables
+    runner.py               One scan from start to finish
+    process.py              Per object: code retrieval, rules, log scan
     inventory/              One module per object type (python3, containers, custom,
-                            notebooks, services, workflows, users), plus base.py
+                            dbt, notebooks, services, workflows, users), plus base.py
                             for shared helpers and __init__.py for build_inventory()
-    retrieval/              Inline code, notebook download, GitHub fetch, template fallback
+    retrieval/              Inline code (code.py), notebook download, GitHub fetch,
+                            http.py (SafeHttp and its host allow list), tempdir.py
     logs.py                 Log scan (most recent run only)
     engine.py               Runs AST and regex rules over code and log text
     checkpoint.py           Resume by run ID
-    output.py               Table writes, CSV run output
+    output.py               Table writes (Civis and SQLite), CSV run output
     ratelimit.py            Shared request budget across worker threads
+    scan_log.py             The scanner's only log writer (structured lines)
+    synthetic/              Made-up Civis instance, client, and HTTP for dry runs
+                            and tests; preview.py seeds the local app preview
   app/                      Flask Service: gunicorn "app:create_app()"
     __init__.py             create_app()
-    routes/                 Landing, dashboard, inventory, findings, checklist,
-                            history, CSV download, /healthz, /api/scan-status
-    data.py                 Reads result tables (cached per run ID)
+    pages.py                Routes: Overview, Scan history, Inventory, Findings and
+                            checklist, CSV download, /healthz, /api/scan-status
+    services.py             Connects pages to the Civis or local data layer
+    views.py                Pure shaping of rows for templates
+    settings.py             Service environment variables
+    security.py             Headers, CSP, CSRF, safe JSON and links
+    local.py                Local preview on 127.0.0.1 (python -m app.local)
+    backends/               base.py, civis_backend.py (civis 2.7.1 calls only),
+                            local_backend.py (dry-run files), cache.py
     templates/
-    static/                 Vendored JS, CSS, and fonts. No CDN links.
+    static/                 Vendored CSS, JS, fonts, and the logo. No CDN links.
   common/                   Shared by both. Must stay compatible with Python 3.12
                             (Service image) and 3.14 (scanner image).
     rules/
@@ -139,27 +152,33 @@ civis-python-version-search/
     models.py               Object, Finding, CoverageItem, ChecklistEntry
     schema.py               Table definitions and column names
     urls.py                 Civis URL builders
+    redact.py               Redacting log filter
+    retention.py            RETENTION_DAYS cleanup
     disclaimer.py           The one disclaimer string used everywhere
     version.py
   tools/
     build_civis_api_fixture.py  Builds the civis 2.7.1 API list from the civis wheel
   tests/
-    fake_civis.py           Fake civis client serving synthetic API responses
-    fixtures/               Synthetic API responses and the civis 2.7.1 API list
-    test_rules_civis_v3.py
-    test_rules_python315.py
-    test_inventory.py, test_engine.py, test_app.py, ...
+    fake_civis.py           Re-exports the synthetic client from scanner/synthetic/
+    fixtures/               The civis 2.7.1 API list
+    test_rules.py, test_engine.py, test_inventory.py, test_retrieval.py,
+    test_output_and_runs.py, test_app.py, test_security.py, test_deploy.py, ...
     test_civis_271_compat.py  Fails if app/ or common/ calls a civis method missing from 2.7.1
   docker/
-    scanner.Dockerfile      FROM the pinned scanner image. Local testing only.
-    service.Dockerfile      FROM the pinned Flask image. Local testing only.
+    scanner.Dockerfile      FROM the pinned scanner image by digest. Local testing only.
+    service.Dockerfile      FROM the pinned Flask image by digest. Local testing only.
+    check_image.py          Fails a build if image versions differ from the requirements
+                            files, or if adding pytest changes a package
   docs/
     PLAN.md
-  start_service.sh          Started by the Flask image. Launches gunicorn on port 3838.
+  .githooks/pre-commit      Blocks Context/ files and likely secrets
+  start_service.sh          Run by the Flask image's entrypoint. Execs gunicorn on port 3838.
   requirements-scanner.txt  Pins matching the scanner image (documentation and local tests)
   requirements-service.txt  Pins matching the Flask image
-  requirements-dev.txt      pytest and similar. Local only.
-  README.md  TESTING.md  CLAUDE.md  LICENSE  NOTICE  .env.example  .gitignore
+  requirements-dev.txt      Local Python 3.14 environment (scanner pins, Flask, pytest)
+  requirements-dev-service.txt  Local Python 3.12 environment (Service pins, pytest)
+  README.md  TESTING.md  SECURITY.md  CLAUDE.md  LICENSE  NOTICE
+  .env.example  .gitignore  .gitattributes  .dockerignore
 ```
 
 ---
@@ -355,7 +374,7 @@ How each object runs:
 
 - **Scanner job.** Docker command: `cd /app && python -m scanner`. Repo ref: a release tag of this repo, for example `v1.0.0`, never `main`.
 - **Service.** Repo ref: the same release tag. Path left blank. `start_service.sh` runs `exec gunicorn -b 0.0.0.0:${CIVIS_SERVICE_PORT:-3838} -w 2 "app:create_app()"`.
-- **Local testing.** The two Dockerfiles in `docker/` are `FROM` these exact tags and are used only for local tests.
+- **Local testing.** The two Dockerfiles in `docker/` are `FROM` these exact images by digest (tag in a comment) and are used only for local tests (section 16).
 - **Requirements files.** They record the versions inside each image, so tests run against the same versions.
 - **Image digests.** Recorded in the README on October 13, 2026 (linux/amd64): `datascience-python:9.1.1` is `sha256:d6903fdcf6b13801417621ad7522c09a16e1d2c01d11eb398f75ad0f73d974ef`, and `civis-services-flask:0.1.0` is `sha256:e8d7a631ab46598caa6735e2dd657763c95eb5c76af7a57510f3d2370f02a20f`.
 
@@ -563,6 +582,37 @@ How each object runs:
 
 ## 16. Phase 6: deployment files, setup, and test plan (October 22, 2026)
 
+**Conclusion: the deployment files, local image tests, setup steps, and live test checklist are built. Rob's four Phase 6 decisions are applied, and the choices below were not covered by the plan. Nothing here has run in Civis yet; Phase 7 does that, following TESTING.md.**
+
+### Decisions from Rob (October 22, 2026)
+
+| # | Decision | How it is applied |
+|---|---|---|
+| 16.1 | The repository is made public before live testing. Rob changes the visibility himself after this phase. | Both objects clone the public repo with no git credential, and the README says to leave the scanner job's git credential blank. The client's optional GitHub token (the `GITHUB` parameter) is attached to the scanner job only. From the civis-python 2.10.1 API spec: container scripts accept `gitCredentialId`; Services accept no git credential, and a credential attached to a Service through its credentials list becomes an environment variable in the app. So the README never tells admins to attach the token to the Service, and step 6 of "Create the Service" says to attach no credentials at all. |
+| 16.2 | Both objects run a release tag, never `main`. The first live test uses `v0.1.0-rc1`, which Rob creates after approving this phase. | The README uses a `<release tag>` placeholder and says to use the same tag on both objects. TESTING.md names `v0.1.0-rc1`. |
+| 16.3 | Setup instructions are text only, with no screenshots. Field names come from the Civis help articles or the API spec. Unconfirmed labels carry "(label to confirm)" and go on the TESTING.md checklist. | Five labels are marked: the container script git credential field, Disk Space, the Parameter Name and Type labels in Set Parameters, sharing a Custom Credential with the Robot user, and archiving a Service. TESTING.md item 1.3 checks each. Sources are listed below. |
+| 16.4 | Docker is approved. Pull both pinned images by digest (Docker Hub only). | Both images were pulled by digest on October 22, 2026, and their start commands and package versions were read inside them (section 8). |
+
+### Choices made in Phase 6
+
+| # | Choice | Why |
+|---|---|---|
+| 16.5 | `start_service.sh` runs `cd "$(dirname "$0")"` before `exec gunicorn ...`. Otherwise it is exactly the section 8 command. | The image's entrypoint already changes to the repo root; the `cd` makes the script work from any directory and costs nothing. |
+| 16.6 | The Flask image's PID 1 is `/bin/sh -c ./entrypoint.sh`, and `entrypoint.sh` runs `./start_service.sh` without `exec`. So a stop signal never reaches gunicorn: in the local smoke test, `docker stop` waited the full grace period and then killed the container (exit 137). Left as is. | It is fixed inside Civis's image, and changing it would mean building our own image. The app is read-only and keeps no state in the process, so a hard stop loses nothing. |
+| 16.7 | The test images may add only pytest and the packages it pulls in (`pytest`, `pluggy`, `iniconfig`, `pygments`, `packaging`). `docker/check_image.py` fails the build if any package that came with the image is removed or changes version, or if anything else is added. pytest is downloaded from PyPI during the local build only. | "The test images may add pytest, but nothing else may change." |
+| 16.8 | The Python version for each image is read from the "(Python X.Y.Z)" in its requirements file's header, and every `name==version` pin is compared with the installed package. The check runs during the build and again as a test inside each image (`CPVS_TEST_IMAGE`). | One source of truth for versions. |
+| 16.9 | The scanner image has no Flask, so the web app tests skip there (module skips in `test_app.py` and `test_local_time.py`, and a `needs_flask` mark in `test_security.py`) and run in the Service image. The Service image has no pandas or Node, so those few tests skip there. | Installing Flask into the scanner image would break 16.7. |
+| 16.10 | PyYAML 6.0.2 (read inside the Service image) is pinned in `requirements-service.txt`, and `.venv312` was updated to match. | It was marked unconfirmed in Phase 5. |
+| 16.11 | `.dockerignore` also leaves out `*.sqlite`, `*.db`, `*.log`, `*.png`, `.claude`, and editor folders. A test inside each image fails if `Context`, `.env` files, `.venv*`, `dry_run_output`, `Claude outputs`, `.git`, or `.pytest_cache` exist under `/app`. | Defense in depth for files that must never reach an image layer. |
+| 16.12 | The scanner's final log line is now `RUN run_id=... status=... objects_total=N objects_scanned=N api_calls=N`. `api_calls` is the request budget's count, so it includes every page of a list call and every call made through `BudgetedClient`. Table writes and the CSV upload use civis-python's helpers and are not counted (12.13). On a resumed run, the counts cover that run only, including its repeated inventory. | TESTING.md item 3.5 measures calls per object against section 5. A test checks the count equals the calls the synthetic client received. |
+| 16.13 | Proposed scanner job resources: CPU `1000` (one core), Memory `4096` MB, Disk Space `4` GB. **Awaiting Rob's approval.** | The request budget, not CPU, sets the speed (section 5), and the four threads mostly wait on the API. Memory: up to four objects in flight, each with up to 100 MB of repository text or 200,000 log lines, plus the GitHub file cache, which keeps each repository's files for the whole scan (12.5), plus pandas frames at checkpoints. Disk: up to four GitHub tarballs of up to 200 MB each in the temp folder at once. |
+| 16.14 | The README says to share the scanner job with Civis admins only. | Each scan saves the full report as a CSV run output on the job (no expiration), so anyone who can read the job can download it. SECURITY.md says the same. |
+| 16.15 | The README tells admins to remove the default group from the new Service's sharing. | Civis shares a new Service with the creator's default group automatically ("Civis Service Deployment"). |
+| 16.16 | The README asks admins to create both objects as the Robot user, or to transfer the scanner job to it ("Transfer Ownership" is documented for scripts, not Services). | The Service's API key belongs to its owner, and scans started from the app run as that user. |
+| 16.17 | The README says to clear `RUN_ID` after a resume. | The app starts the job with its saved parameters, so a leftover `RUN_ID` would make every later scan try to resume a finished run. |
+| 16.18 | The Service keeps Civis's default resources with one replica and the "On Demand" plan. | Nothing in the app needs more, and On Demand matches section 1.10. TESTING.md item 3.7 times the first page loads. |
+| 16.19 | "Remove the tool" archives both objects and drops the schema, and notes that the CSV run outputs stay with the archived job. | Run outputs are saved with no expiration (section 1), and Civis documents no way to delete a file. |
+
 ### Report-only frame rule (11.3)
 
 New Service setting `CIVIS_FRAME_ANCESTORS_REPORT_ONLY`, `true` or `false` (case is ignored; blank or unset means `false`). Any other value stops the app at start, like a bad `CIVIS_FRAME_ANCESTORS`. When it is `true`, the enforced `Content-Security-Policy` keeps every directive except `frame-ancestors`, and the frame rule is sent alone in `Content-Security-Policy-Report-Only`. There is no `report-uri` or `report-to`, so nothing is sent anywhere; the browser shows the warning in its console. It is a setup aid for the first live test and is turned off once the frame rule is confirmed, because while it is on, other sites could frame the app.
@@ -574,3 +624,22 @@ Browser support, checked October 22, 2026:
 - Firefox: Mozilla bug 1380755, "Support frame-ancestors in Content-Security-Policy-Report-Only," fixed in Firefox 58 (examines and reports, does not block).
 - Chrome and Edge (Chromium): honor it and report violations, as stated in Mozilla bug 1380755 and WebKit bug 271377 and checked by web-platform-tests.
 - **Safari does not.** WebKit bug 271377 (open since March 21, 2024): Safari logs "The Content Security Policy directive 'frame-ancestors' is ignored when delivered in a report-only policy." So the report-only check in TESTING.md uses Chrome, Edge, or Firefox.
+
+### Sources for the setup steps (read October 22, 2026)
+
+Field labels come from these public Civis help articles at support.civisanalytics.com, read through the help center's public article feed. No Civis instance or Civis API was contacted.
+
+- "Container Scripts" (article 218200643): **Code** menu, **Scripts**, **New Script**, **Container**; Docker Image Name, Docker Image Tag, GitHub Repository URL, GitHub Repository Reference, Command, CPU, Memory.
+- "Script Parameters" (article 37891904188301): **Set Parameters**, **Add**, Input Display Name, Input Helper Text, Required, Default Value; types String, Integer, Database, Custom Credential; the environment variables each type sets; reserved names, including `DATABASE`.
+- "Welcome To Scripts" (article 360050939391): cancelling a run (the "x" next to the spinner in the Run Log) and run outputs in Run History.
+- "Civis Service Deployment" (article 360001335031): **Publish** menu, **Service Deployment**; the Docker section (Image Name, Tag); the Git Connection section (Repository, Branch, Path); **Start Deployment**, **Update Deployment**, **View Report**; **Multischedule** with On Demand; sleep after an hour without viewers; automatic sharing with the default group.
+- "Advanced Services" (article 360004026012): **Environment Variables**, visible to anyone with read access; `CIVIS_SERVICE_HEALTH_PATH`; `CIVIS_SERVICE_PORT` 3838; credentials under **Security and Access**, **Credentials**, set as environment variables.
+- "Archive" (article 8273655115917) and "Transfer Ownership" (article 8300594652813): the file box icon; transfer documented for scripts but not Services.
+- Release notes 2018: the container script "Disk Space" field (named only there, so marked "label to confirm").
+- civis-python 2.10.0 API spec (bundled with the package in `.venv`): `requiredResources` units (CPU shares, 1,000 per core; memory in MB; disk in GB), `gitCredentialId` on container scripts only, and no git credential on Services.
+
+### Public-release readiness (October 22, 2026)
+
+- **gitleaks 8.30.1 over the full git history:** 33 commits scanned, no leaks found. One fake test value from Phase 3 stays allowlisted in `.gitleaksignore` (13.3). History was not changed.
+- **detect-secrets 1.5.0 over the working tree:** all 117 tracked files scanned, 0 findings. Fake secrets in tests carry inline allow comments.
+- **Before Rob makes the repository public:** turn on GitHub private vulnerability reporting (13.6). Then create the `v0.1.0-rc1` tag for the first live test (16.2).

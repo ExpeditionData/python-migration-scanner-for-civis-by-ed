@@ -112,6 +112,9 @@ can see, including private objects. Treat them as internal and confidential.
   decide who can read the schema.
 - **Share the web app with Civis admins only.** Anyone who can open the app sees
   everything the scanning user can see. The app's landing page says this too.
+- **Share the scanner job with Civis admins only.** Each scan saves the full
+  report as a CSV file on the job's run, so anyone who can read the job can
+  download it.
 - **Downloading results is your choice.** The app's "Download CSV" button saves
   the full report to the viewer's computer. At that point the data is outside
   Civis, under your organization's own policies. Whether admins use the button

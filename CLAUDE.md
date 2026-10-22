@@ -47,7 +47,12 @@ be made public at any time.
 ## Git workflow
 
 - Default branch is `main`. Remote is `origin`
-  (`ExpeditionData/civis-python-version-search`, private).
+  (`ExpeditionData/civis-python-version-search`). The repository is private
+  until the public release. Rob changes its visibility himself; never change it
+  from a session. Live tests run only after it is public, because both Civis
+  objects clone it with no git credential.
+- Releases are git tags (the first live test uses `v0.1.0-rc1`). Rob creates
+  tags; never create one from a session.
 - Commit after each completed step, with a clear message that says what changed
   and why.
 - Before every commit, review the staged files (`git diff --cached --name-only`
@@ -82,7 +87,9 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   the most recent run log; writes results to the user's schema plus a CSV run
   output. Uses the `get_*` civis method names so it also runs on civis v3.
 - **Web app.** Runs on `civisanalytics/civis-services-flask:0.1.0` (Python
-  3.12.11, Flask 3.1.1, gunicorn 22.0.0, civis 2.7.1) with no installs at start.
+  3.12.11, Flask 3.1.1, gunicorn 22.0.0, civis 2.7.1, PyYAML 6.0.2) with no
+  installs at start. The image's `/entrypoint.sh` runs `start_service.sh` from
+  the repo root, which execs gunicorn on port 3838 with 2 workers.
   It only runs the scanner job the admin created (`SCANNER_JOB_ID`), using the
   job's saved parameters. It never creates or edits scripts. Shared with Civis
   admins only.
@@ -98,9 +105,11 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
 - **Status.** Phases 2 to 5 are done: the scanner (rules, engine,
   inventory, code retrieval, log scan, request budget, output, checkpoints,
   resume, dry runs) and the Flask app (Overview, Scan history, Inventory,
-  Findings and checklist, scan status API, local preview). Phase 6 (Civis
-  deployment, README setup, TESTING.md) is next. Implementation choices not in
-  the approved plan are in docs/PLAN.md sections 10 to 14.
+  Findings and checklist, scan status API, local preview). Phase 6 is built
+  and waiting for Rob's approval: `start_service.sh`, the Docker test images,
+  the report-only frame rule, README setup steps, and TESTING.md. Phase 7 is
+  the first live test, following TESTING.md. Implementation choices not in
+  the approved plan are in docs/PLAN.md sections 10 to 16.
 - **App flow.** `app/__init__.create_app` -> `app/services.py` (Civis or local
   data layer) -> `app/pages.py` routes -> `app/views.py` (pure shaping) ->
   `app/templates/`. Data layer: `app/backends/civis_backend.py` (civis 2.7.1
@@ -123,7 +132,11 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   `process.process_item` per object (retrieval, engine, logs) ->
   `checkpoint.Checkpointer` -> `output` sinks. Every Civis API call goes
   through `ratelimit.BudgetedClient`; every other HTTP call goes through
-  `retrieval/http.SafeHttp` and its host allow list.
+  `retrieval/http.SafeHttp` and its host allow list. The final `RUN` log line
+  adds `objects_total`, `objects_scanned`, and `api_calls`, so calls per
+  object can be measured in a live test.
+- **Live test.** TESTING.md is the checklist for the first live test. Records
+  are pass or fail and aggregate counts only.
 
 Constraints to keep in mind when writing code:
 
