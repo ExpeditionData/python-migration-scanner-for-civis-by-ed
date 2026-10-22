@@ -264,6 +264,7 @@ def test_dry_run_end_to_end(tmp_path, log_stream):
     logged = log_stream.getvalue()
     assert "PROGRESS phase=code objects_done=23 objects_total=23" in logged
     assert re.search(r"RUN run_id=run-\d{8}T\d{6}Z-[0-9a-f]{6} status=succeeded", logged)
+    assert logged.splitlines()[-1].endswith(f" objects_total=23 objects_scanned=23 api_calls={result.api_calls}")
 
     report = next(tmp_path.glob("*.csv")).read_bytes()
     database = (tmp_path / "results.sqlite").read_bytes()
@@ -271,6 +272,37 @@ def test_dry_run_end_to_end(tmp_path, log_stream):
         assert secret.encode() not in report
         assert secret.encode() not in database
         assert secret not in logged
+
+
+def test_final_log_line_counts_every_civis_api_call(tmp_path, log_stream, monkeypatch):
+    """Calls per object are measured in Phase 7 from the final RUN line, so the count must be exact."""
+    import scanner.synthetic as synthetic
+
+    clients = []
+
+    class CountedClient(synthetic.FakeClient):
+        def __init__(self, data):
+            super().__init__(data)
+            clients.append(self)
+
+    monkeypatch.setattr(synthetic, "FakeClient", CountedClient)
+    result = dry_run(tmp_path, now=NOW)
+    sent = len(clients[0].calls)
+    assert sent > result.objects  # Inventory, detail, and log calls: more than one per object.
+    assert result.api_calls == sent
+    final = log_stream.getvalue().splitlines()[-1]
+    assert final == f"RUN run_id={result.run_id} status=succeeded objects_total=23 objects_scanned=23 api_calls={sent}"
+
+
+def test_resumed_run_counts_only_its_own_calls_and_objects(tmp_path, log_stream):
+    with pytest.raises(SimulatedStop):
+        dry_run(tmp_path, now=NOW, stop_after=10, checkpoint_objects=5)
+    run_id = re.search(r"RUN run_id=(\S+) status=running", log_stream.getvalue()).group(1)
+    result = dry_run(tmp_path, now=NOW, run_id=run_id)
+    final = log_stream.getvalue().splitlines()[-1]
+    scanned = int(re.search(r"objects_scanned=(\d+)", final).group(1))
+    assert final.startswith(f"RUN run_id={run_id} status=succeeded objects_total=23 ")
+    assert 0 < scanned < 23 and final.endswith(f" api_calls={result.api_calls}")
 
 
 def test_rescan_adds_only_new_open_checklist_rows(tmp_path):

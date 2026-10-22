@@ -9,7 +9,9 @@ Steps:
    checkpoint every 500 objects or 10 minutes, with PROGRESS log lines.
 4. Write coverage summary rows and new "open" checklist rows.
 5. Save the CSV report as a run output (with no expiration).
-6. Apply the retention setting, then record the final run status.
+6. Apply the retention setting, then record the final run status. The final
+   log line also gives the object count and the number of Civis API calls, so
+   calls per object can be measured (docs/PLAN.md section 5).
 
 If the tables cannot be written, the scan keeps going, still saves the CSV
 report, and ends with status "tables_failed". Every API call to Civis goes
@@ -60,6 +62,7 @@ class RunResult:
     objects: int = 0
     findings: int = 0
     skipped_as_done: int = 0
+    api_calls: int = 0
     tables_ok: bool = True
     report_saved: bool = False
     statuses: dict[str, int] = field(default_factory=dict)
@@ -215,7 +218,8 @@ def run_scan(
     tables.run("scan_runs", lambda: sink.append(SCAN_RUNS, run_id, [status_row(final, now())]))
     if final == "succeeded" and not tables.ok:
         final = "tables_failed"
-    scan_log.run_status(run_id, final)
+    result.api_calls = budget.requests
+    scan_log.run_status(run_id, final, objects_total=total, objects_scanned=len(todo), api_calls=budget.requests)
 
     result.status = final
     result.tables_ok = tables.ok

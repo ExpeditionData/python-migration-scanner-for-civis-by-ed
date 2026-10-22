@@ -18,7 +18,13 @@ Line formats (parsed by the web app to show progress):
     OUTPUT_FAILED error=CivisAPIError
     FATAL error=KeyError
     TABLE_WRITE_FAILED table=findings error=CivisAPIError status=403
-    RUN run_id=run-20261013T120000Z-a1b2c3 status=succeeded
+    RUN run_id=run-20261013T120000Z-a1b2c3 status=running
+    RUN run_id=run-20261013T120000Z-a1b2c3 status=succeeded objects_total=2000 objects_scanned=2000 api_calls=6120
+
+The final RUN line carries the run's counts. api_calls is every Civis API
+request the scanner sent through its request budget (scanner/ratelimit.py),
+including each page of a list call. Table writes and the CSV upload use
+civis-python's own helpers and are not counted (docs/PLAN.md 12.13).
 """
 
 from __future__ import annotations
@@ -122,10 +128,14 @@ def table_write_failed(table: str, exc: BaseException) -> None:
     _logger.error("TABLE_WRITE_FAILED table=%s error=%s%s", table, _error_name(exc), suffix)
 
 
-def run_status(run_id: str, status: str) -> None:
+def run_status(run_id: str, status: str, *, objects_total: int | None = None,
+               objects_scanned: int | None = None, api_calls: int | None = None) -> None:
+    """The run's status. The final line also gives object and Civis API call counts."""
     if status not in RUN_STATUSES or not isinstance(run_id, str) or not _RUN_ID.match(run_id):
         raise ValueError("invalid run status line")
-    _logger.info("RUN run_id=%s status=%s", run_id, status)
+    counts = [("objects_total", objects_total), ("objects_scanned", objects_scanned), ("api_calls", api_calls)]
+    suffix = "".join(f" {name}={_count(value, name)}" for name, value in counts if value is not None)
+    _logger.info("RUN run_id=%s status=%s%s", run_id, status, suffix)
 
 
 def output_failed(exc: BaseException) -> None:

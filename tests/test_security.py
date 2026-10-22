@@ -146,11 +146,15 @@ def test_scanner_log_lines_are_structured(scanner_log):
     scan_log.progress("code", 420, 2000)
     scan_log.phase("inventory", "done")
     scan_log.object_error(ObjectType.CONTAINER_SCRIPT, 201, FakeAPIError(f"denied for {FAKE_EMAIL} key {FAKE_API_KEY}"))
+    scan_log.run_status("run-1", "running")
+    scan_log.run_status("run-1", "succeeded", objects_total=2000, objects_scanned=1500, api_calls=6120)
     lines = scanner_log.getvalue().splitlines()
     assert lines == [
         "PROGRESS phase=code objects_done=420 objects_total=2000",
         "PHASE name=inventory state=done",
         "OBJECT_ERROR object_type=container_script object_id=201 error=FakeAPIError status=403",
+        "RUN run_id=run-1 status=running",
+        "RUN run_id=run-1 status=succeeded objects_total=2000 objects_scanned=1500 api_calls=6120",
     ]
 
 
@@ -162,6 +166,10 @@ def test_scanner_log_lines_are_structured(scanner_log):
         lambda: scan_log.findings_count(f"CV3-X {FAKE_EMAIL}", 1),
         lambda: scan_log.object_error("not_a_type", 1, ValueError()),
         lambda: scan_log.object_error(ObjectType.NOTEBOOK, f"{FAKE_EMAIL}", ValueError()),
+        lambda: scan_log.run_status("run-1", "succeeded", api_calls=f"{FAKE_PASSWORD}"),
+        lambda: scan_log.run_status("run-1", "succeeded", api_calls=-1),
+        lambda: scan_log.run_status("run-1", "succeeded", objects_total=True),
+        lambda: scan_log.run_status(f"run-1 {FAKE_EMAIL}", "succeeded", api_calls=1),
     ],
 )
 def test_scanner_log_rejects_free_text(call):

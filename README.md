@@ -158,7 +158,8 @@ the scan sees only what that person can see.
 
 **Resuming a stopped scan.** If a scan stops partway (for example, it was
 cancelled or hit the 5-day limit for container scripts), set `RUN_ID` to the
-run ID from the run log's first line (`RUN run_id=...`) and run the job again
+run ID from the `RUN run_id=... status=running` line near the top of its run
+log and run the job again
 from its page. It skips the objects it already finished. **Clear `RUN_ID`
 afterward**, because the web app starts the job with its saved parameters.
 
@@ -269,6 +270,7 @@ were pulled by digest and checked again on October 22, 2026.
 
 - **Setup and test commands:** see [CLAUDE.md](CLAUDE.md).
 - **Design and decisions:** see [docs/PLAN.md](docs/PLAN.md).
+- **Live test checklist:** see [TESTING.md](TESTING.md).
 - **Unit tests** use synthetic data only and make no Civis or network calls.
   They also run inside both pinned images (see CLAUDE.md).
 - **Dry run.** `python -m scanner --dry-run --out dry_run_output` runs the whole
