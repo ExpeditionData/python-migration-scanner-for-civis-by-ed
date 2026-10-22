@@ -128,8 +128,13 @@ class Progress:
     last_id: int | None = None
 
     def feed(self, lines: list[LogLine]) -> None:
-        for line in lines:
-            self.last_id = max(self.last_id or 0, line.id)
+        """Apply new log lines, oldest first. Lines already fed are skipped, so two
+        requests polling at once cannot apply the same lines twice or move progress
+        back to an older line."""
+        for line in sorted(lines, key=lambda item: item.id):
+            if self.last_id is not None and line.id <= self.last_id:
+                continue
+            self.last_id = line.id
             match = _LINE.match((line.message or "").strip())
             if not match:
                 continue

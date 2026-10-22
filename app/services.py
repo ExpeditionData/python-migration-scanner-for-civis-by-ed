@@ -2,6 +2,12 @@
 
 Inside Civis, a new civis APIClient is made for each request, because Civis
 rotates the Service's API key when it wakes and when it is redeployed.
+
+Each gunicorn worker process has its own Services object (its own cache,
+progress, and locks). Requests inside a worker run in threads, so shared state
+here is guarded by locks: ``progress_lock`` for parsed scan progress and
+``start_lock`` so two requests in one worker cannot both pass the "no scan is
+running" check and start two scans.
 """
 
 from __future__ import annotations
@@ -27,6 +33,7 @@ class Services:
     local_user: str | None = None
     progress: dict[int, Progress] = field(default_factory=dict)
     progress_lock: threading.Lock = field(default_factory=threading.Lock)
+    start_lock: threading.Lock = field(default_factory=threading.Lock)
 
     def jobs(self) -> Jobs | None:
         return self.jobs_provider() if self.jobs_provider else None

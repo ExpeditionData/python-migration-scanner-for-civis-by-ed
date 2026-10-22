@@ -278,8 +278,26 @@ docker diff cpvs-smoke
 docker rm -f cpvs-smoke
 ```
 
-Expected: `200`, a log with "Listening at: http://0.0.0.0:3838" and two
-workers, and no `site-packages` paths in `docker diff`.
+Expected: `200`, a log with "Listening at: http://0.0.0.0:3838", "Using
+worker: gthread", and two workers, and no `site-packages` paths in `docker diff`.
+
+Held-request check: start a second container that points civis at a local
+listener that accepts and never answers, so page loads hang the way a stuck
+Civis query would. Nothing is added to the shipped app; the listener and the
+held requests run through `docker exec`. The API key is a fake value for this
+check only.
+
+```
+docker run -d --name cpvs-hold --network none -w / -e APP_DIR=/app -e REPO_PATH_DIR= -e FLASK_SECRET_KEY=smoke-test-only-not-a-real-secret-key -e CIVIS_API_KEY=smoke-test-fake-key -e CIVIS_API_ENDPOINT=http://127.0.0.1:8099/ -e SCANNER_JOB_ID=1 -e RESULTS_DATABASE=smoke -e RESULTS_SCHEMA=smoke cpvs-service-test /bin/sh -c ./entrypoint.sh
+docker exec -d cpvs-hold python -c "import socket; s=socket.socket(); s.bind(('127.0.0.1', 8099)); s.listen(50); held=[s.accept()[0] for _ in range(50)]"
+docker exec -d cpvs-hold python -c "import urllib.request as u, threading as t; [t.Thread(target=u.urlopen, args=('http://127.0.0.1:3838' + p,), kwargs={'timeout': 400}).start() for p in ('/', '/inventory')]"
+docker exec cpvs-hold python -c "import urllib.request as u; print(u.urlopen('http://127.0.0.1:3838/healthz', timeout=10).status)"
+docker logs cpvs-hold
+docker rm -f cpvs-hold
+```
+
+Run the `/healthz` line after 35 seconds and again after 125 seconds. Expected:
+`200` each time, right away, and no "WORKER TIMEOUT" in the log.
 
 ## Keeping docs current
 

@@ -54,7 +54,10 @@ def test_start_service_runs_gunicorn_and_installs_nothing():
     lines = [line.strip() for line in START.read_text(encoding="utf-8").splitlines()]
     code = [line for line in lines if line and not line.startswith("#")]
     assert "set -euo pipefail" in code
-    assert code[-1] == 'exec gunicorn --bind "0.0.0.0:${CIVIS_SERVICE_PORT:-3838}" --workers 2 "app:create_app()"'
+    assert code[-1] == (
+        'exec gunicorn --bind "0.0.0.0:${CIVIS_SERVICE_PORT:-3838}" '
+        '--worker-class gthread --workers 2 --threads 4 --timeout 120 "app:create_app()"'
+    )
     assert not re.search(r"\b(pip3?|install|uv|apt|apt-get|curl|wget)\b", " ".join(code))
 
 

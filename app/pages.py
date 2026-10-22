@@ -292,9 +292,10 @@ def start_scan():
     if jobs is None:
         return redirect(url_for("pages.scan", notice="no-job"))
     try:
-        if any(run.active for run in jobs.runs(limit=10)):
-            return redirect(url_for("pages.scan", notice="busy"))
-        jobs.start()
+        with svc.start_lock:  # One check-then-start at a time in this worker.
+            if any(run.active for run in jobs.runs(limit=10)):
+                return redirect(url_for("pages.scan", notice="busy"))
+            jobs.start()
     except Exception:
         return redirect(url_for("pages.scan", notice="start-failed"))
     return redirect(url_for("pages.scan", notice="started"))

@@ -11,6 +11,9 @@ from __future__ import annotations
 import html
 import json
 import re
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -463,6 +466,96 @@ def test_cache_reads_each_finished_run_once():
     cache.save_checklist("run-1", [], "x", NOW)
     cache.checklist()
     assert store.calls == 3  # Saving clears the checklist cache at once.
+
+
+# --- Thread safety (gunicorn gthread workers) -----------------------------------------------
+
+
+def test_concurrent_first_loads_start_one_query_per_table():
+    started = threading.Event()
+    release = threading.Event()
+
+    class SlowStore:
+        def __init__(self):
+            self.calls = 0
+
+        def rows(self, table, run_id):
+            self.calls += 1
+            started.set()
+            release.wait(5)
+            return [{"run_id": run_id, "table": table}]
+
+    store = SlowStore()
+    cache = CachedResults(lambda: store)
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(cache.rows, "findings", "run-1") for _ in range(4)]
+        assert started.wait(5)
+        release.set()
+        results = [f.result(5) for f in futures]
+    assert store.calls == 1 and cache.reads == 1
+    assert all(r is results[0] for r in results)
+
+
+def test_a_checklist_load_from_before_a_save_is_not_kept():
+    loading = threading.Event()
+    release = threading.Event()
+
+    class Store:
+        def __init__(self):
+            self.version = "before save"
+            self.slow = True
+
+        def checklist(self):
+            value = [self.version]
+            if self.slow:
+                self.slow = False
+                loading.set()
+                release.wait(5)
+            return value
+
+        def save_checklist(self, *args):
+            self.version = "after save"
+
+    store = Store()
+    cache = CachedResults(lambda: store)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        early = pool.submit(cache.checklist)  # Starts reading before the save ...
+        assert loading.wait(5)
+        cache.save_checklist("run-1", [], "x", NOW)  # ... and finishes after it.
+        release.set()
+        assert early.result(5) == ["before save"]
+    assert cache.checklist() == ["after save"]  # The older read was not cached.
+
+
+def test_progress_ignores_lines_it_has_already_seen():
+    progress = Progress()
+    newer = [LogLine(n, f"PROGRESS phase=code objects_done={n * 10} objects_total=100", None) for n in (1, 2, 3, 4)]
+    older = newer[:2]
+    progress.feed(list(reversed(newer)))  # Order does not matter.
+    progress.feed(older)  # A slower request applies older lines afterward.
+    assert (progress.done, progress.last_id) == (40, 4)
+
+
+def test_concurrent_run_scan_posts_in_one_worker_start_one_scan(preview, monkeypatch):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    app = make_app(preview, "failed")
+    jobs = app.extensions["cpvs"].jobs()
+    original_runs = jobs.runs
+
+    def slow_runs(*args, **kwargs):
+        result = original_runs(*args, **kwargs)
+        time.sleep(0.2)  # Widens the window between the check and the start.
+        return result
+
+    monkeypatch.setattr(type(jobs), "runs", lambda self, *a, **k: slow_runs(*a, **k))
+    token = csrf(app)
+
+    def post(_):
+        return app.test_client().post("/scan/start", data={"csrf_token": token}).headers["Location"]
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        notices = sorted(location.rsplit("=", 1)[1] for location in pool.map(post, range(4)))
+    assert notices == ["busy", "busy", "busy", "started"]
 
 
 # --- Pure helpers ----------------------------------------------------------------------------

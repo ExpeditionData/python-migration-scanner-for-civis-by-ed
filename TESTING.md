@@ -205,10 +205,12 @@ finish the step the way the interface allows and record the difference.
 ### 3.7 First page loads after a scan
 
 - **Steps:** Right after the scan, open Overview, Inventory, and Findings for
-  the first time and time each.
+  the first time and time each. Each of the Service's two worker processes
+  keeps its own cache, so a page may be slow once per worker.
 - **Expected:** Each page loads. The first load reads the result tables, so it
-  can take longer than later loads.
-- **Record:** seconds per page; any blank page or error code.
+  can take longer than later loads. The Service stays healthy while it loads.
+- **Record:** seconds per page; the slowest first page load in seconds; whether
+  any page load failed or timed out (yes or no, with the error code if shown).
 
 ## 4. Facts to confirm (PLAN.md "confirm in Phase 7")
 
@@ -379,7 +381,7 @@ Item  Result (pass/fail/skipped)  Counts or note
       scanned=  partly scanned=  not scanned=  affected=  advisory=  findings=
 3.5   calls per object=  minutes per 100 objects=  github_tarball_requests=  github_cache_evictions=
 3.6   other lines=   error types: (type and count)
-3.7   seconds: overview=  inventory=  findings=
+3.7   seconds: overview=  inventory=  findings=  slowest=   any failed or timed out: yes/no
 4.1   python3=  custom=  notebooks=  services=  workflows=  dbt=
 4.2   notebooks scanned=  refused for host=   host shape (if any):
 4.3   missing schema state:   restored:
