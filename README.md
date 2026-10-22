@@ -101,8 +101,10 @@ You need:
 
 ### Create the scanner job
 
-1. Sign in as the Robot user if you can. Otherwise, create the job yourself and
-   transfer ownership of it to the Robot user afterward (Transfer Ownership).
+1. Sign in as the Robot user if you can, and make every later change to the
+   job the same way (see "Who the job runs as" below). Otherwise, create the
+   job yourself and transfer ownership of it to the Robot user afterward
+   (Transfer Ownership).
 2. From the **Code** menu, select **Scripts**, click **New Script**, and choose
    **Container**.
 3. Fill in the script settings:
@@ -151,17 +153,26 @@ You need:
    (`.../spa/#/scripts/containers/<ID>`).
 7. Share the job with Civis admins only. Do not schedule it.
 
-**Who the job runs as.** A container script runs with the Civis API key of the
-user who runs it. Start scans from the web app, so they run as the Service's
-owner (the Robot user). If someone starts the job from its own page instead,
-the scan sees only what that person can see.
+**Who the job runs as.** The scan sees only what the user it runs as can see.
+Civis's help describes that user two ways: as the user who runs the script, and
+as the user who last updated it. Until this is confirmed, set things up so both
+give the same answer:
+
+- Create and edit the scanner job while signed in as the Robot user.
+- Start scans with **Run scan** in the web app, which starts them through the
+  Service's owner (the Robot user). Do not start the job from its own page.
 
 **Resuming a stopped scan.** If a scan stops partway (for example, it was
-cancelled or hit the 5-day limit for container scripts), set `RUN_ID` to the
-run ID from the `RUN run_id=... status=running` line near the top of its run
-log and run the job again
-from its page. It skips the objects it already finished. **Clear `RUN_ID`
-afterward**, because the web app starts the job with its saved parameters.
+cancelled or hit the 5-day limit for container scripts):
+
+1. Sign in as the Robot user if you can. On the scanner job, set `RUN_ID` to
+   the run ID from the `RUN run_id=... status=running` line near the top of
+   the stopped run's log, and save.
+2. Click **Run scan** in the web app. The scan skips the objects it already
+   finished.
+3. When it finishes, clear `RUN_ID` the same way (signed in as the Robot user)
+   and save. The web app starts the job with its saved parameters, so a
+   leftover `RUN_ID` would make every later scan try to resume a finished run.
 
 ### Create the Service
 
@@ -232,8 +243,9 @@ whoever supports your setup.
 
 1. Read the release notes for the new tag. They say whether a parameter or an
    environment variable was added or changed.
-2. On the scanner job, change **GitHub Repository Reference** to the new tag
-   and save. The next scan uses it.
+2. Sign in as the Robot user if you can, since changing the tag also updates
+   the job (see "Who the job runs as"). On the scanner job, change **GitHub
+   Repository Reference** to the new tag and save. The next scan uses it.
 3. On the Service, change **Branch** to the same tag, save, and click
    **Update Deployment**.
 4. Run a new scan. Earlier scans and checklist statuses are kept.
