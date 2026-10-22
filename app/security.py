@@ -6,6 +6,11 @@ platform.civisanalytics.com, served from a different site. So:
 - The frame rule allows 'self' and the Civis Platform origin only. No
   X-Frame-Options header is sent, because it has no allow-list form and would
   block Civis from showing the app.
+- During setup, CIVIS_FRAME_ANCESTORS_REPORT_ONLY=true moves only the frame
+  rule into a Content-Security-Policy-Report-Only header, so a wrong rule shows
+  a browser console warning instead of a blank page. Every other directive is
+  still enforced. There is no report endpoint. Chrome, Edge, and Firefox (58
+  and later) honor frame-ancestors in a report-only header; Safari ignores it.
 - The app sets no cookies of its own. A cookie inside a cross-site iframe is a
   third-party cookie and is often blocked. CSRF tokens are therefore stateless:
   an HMAC over the viewer's Civis user ID and a timestamp, sent in a form field
@@ -45,21 +50,35 @@ def frame_ancestors(value: str | None = None) -> str:
     return " ".join(["'self'", *origins])
 
 
-def content_security_policy(ancestors: str) -> str:
-    return "; ".join(
-        [
-            "default-src 'self'",
-            "script-src 'self'",
-            "style-src 'self'",
-            "img-src 'self' data:",
-            "font-src 'self'",
-            "connect-src 'self'",
-            "object-src 'none'",
-            "base-uri 'none'",
-            "form-action 'self'",
-            f"frame-ancestors {ancestors}",
-        ]
-    )
+def frame_ancestors_report_only(value: str | None = None) -> bool:
+    """True when CIVIS_FRAME_ANCESTORS_REPORT_ONLY is "true". Blank or unset is off.
+    Anything other than true or false is rejected, so a typo cannot silently turn
+    the frame rule off."""
+    raw = value if value is not None else os.environ.get("CIVIS_FRAME_ANCESTORS_REPORT_ONLY", "")
+    text = raw.strip().lower()
+    if text in ("", "false"):
+        return False
+    if text == "true":
+        return True
+    raise ValueError("CIVIS_FRAME_ANCESTORS_REPORT_ONLY must be true or false")
+
+
+def content_security_policy(ancestors: str | None) -> str:
+    """The enforced policy. With ``ancestors`` None, the frame rule is left out (report-only mode)."""
+    directives = [
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self'",
+        "img-src 'self' data:",
+        "font-src 'self'",
+        "connect-src 'self'",
+        "object-src 'none'",
+        "base-uri 'none'",
+        "form-action 'self'",
+    ]
+    if ancestors is not None:
+        directives.append(f"frame-ancestors {ancestors}")
+    return "; ".join(directives)
 
 
 class EscapingJSONProvider(DefaultJSONProvider):
@@ -119,7 +138,10 @@ def csrf_token_is_valid(app: Flask, token: str | None, now: float | None = None)
 
 
 def init_app(app: Flask) -> None:
-    csp = content_security_policy(frame_ancestors(app.config.get("FRAME_ANCESTORS")))
+    ancestors = frame_ancestors(app.config.get("FRAME_ANCESTORS"))
+    report_only = frame_ancestors_report_only(app.config.get("FRAME_ANCESTORS_REPORT_ONLY"))
+    csp = content_security_policy(None if report_only else ancestors)
+    csp_report_only = f"frame-ancestors {ancestors}" if report_only else None
 
     @app.before_request
     def _check_csrf():
@@ -136,6 +158,8 @@ def init_app(app: Flask) -> None:
     @app.after_request
     def _security_headers(response):
         response.headers["Content-Security-Policy"] = csp
+        if csp_report_only:
+            response.headers["Content-Security-Policy-Report-Only"] = csp_report_only
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
         response.headers["Cache-Control"] = "no-store"

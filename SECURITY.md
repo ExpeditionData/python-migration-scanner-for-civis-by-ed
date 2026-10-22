@@ -162,6 +162,12 @@ DELETE FROM results_schema.scan_runs WHERE run_id IN ('<run_id>');
   `platform.civisanalytics.com`. The app allows framing only by itself and by
   that address, so other websites cannot embed it. You can change the list with
   the `CIVIS_FRAME_ANCESTORS` setting.
+  - **Setup aid.** While you set up the app, you can set
+    `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` to `true`. The browser then reports a
+    wrong framing rule as a console warning instead of showing a blank page.
+    Every other protection on this list stays on, and no report is sent
+    anywhere. Set it back to `false` (or remove it) once the app shows
+    correctly inside Civis. While it is on, other websites could embed the app.
 - **Request forgery protection.** Every form submission needs a token tied to
   the viewer's Civis user ID. Requests from other websites are refused. The app
   sets no cookies of its own.

@@ -521,6 +521,7 @@ How each object runs:
 | `RESULTS_SCHEMA` | The results schema. Must be a plain SQL identifier. |
 | `RESULTS_CREDENTIAL_ID` | Optional database credential ID. Blank uses the Service owner's default credential. |
 | `CIVIS_PLATFORM_URL`, `CIVIS_FRAME_ANCESTORS` | Optional, as before (sections 10.14 and 11.3). |
+| `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` | Optional, `true` or `false` (default). Added in Phase 6 as a setup aid (section 16). |
 
 ### Choices
 
@@ -557,3 +558,19 @@ How each object runs:
 | 15.5 | Table header cells inside the body (row headers such as object types on the Overview) keep the body style; only column headers get the navy fill. | The mockup's navy fill is for column headers. |
 | 15.6 | The logo SVG is a clean copy of Expedition Data's logo: no metadata element and no namespace other than SVG. A content-credentials record that was added when the file was saved locally was removed at Rob's direction on October 14, 2026. A test fails if the logo has a script, foreignObject, image, href, event handler, metadata element, or any non-SVG namespace. | The logo must be inert and carry nothing but the artwork. |
 
+
+---
+
+## 16. Phase 6: deployment files, setup, and test plan (October 22, 2026)
+
+### Report-only frame rule (11.3)
+
+New Service setting `CIVIS_FRAME_ANCESTORS_REPORT_ONLY`, `true` or `false` (case is ignored; blank or unset means `false`). Any other value stops the app at start, like a bad `CIVIS_FRAME_ANCESTORS`. When it is `true`, the enforced `Content-Security-Policy` keeps every directive except `frame-ancestors`, and the frame rule is sent alone in `Content-Security-Policy-Report-Only`. There is no `report-uri` or `report-to`, so nothing is sent anywhere; the browser shows the warning in its console. It is a setup aid for the first live test and is turned off once the frame rule is confirmed, because while it is on, other sites could frame the app.
+
+Browser support, checked October 22, 2026:
+
+- MDN, "Content-Security-Policy-Report-Only" (last modified March 22, 2026): the header "supports all Content-Security-Policy directives except `sandbox`, which is ignored."
+- W3C, Content Security Policy Level 3 (Working Draft, September 16, 2026): section 4.2.5 checks every policy on a navigation response, reports each violation, and blocks only when the policy's disposition is "enforce". Section 6.3.2 excludes `sandbox` from report-only policies; `frame-ancestors` (6.4.2) has no such exclusion.
+- Firefox: Mozilla bug 1380755, "Support frame-ancestors in Content-Security-Policy-Report-Only," fixed in Firefox 58 (examines and reports, does not block).
+- Chrome and Edge (Chromium): honor it and report violations, as stated in Mozilla bug 1380755 and WebKit bug 271377 and checked by web-platform-tests.
+- **Safari does not.** WebKit bug 271377 (open since March 21, 2024): Safari logs "The Content Security Policy directive 'frame-ancestors' is ignored when delivered in a report-only policy." So the report-only check in TESTING.md uses Chrome, Edge, or Firefox.

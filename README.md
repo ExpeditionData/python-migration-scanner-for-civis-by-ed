@@ -51,6 +51,10 @@ Read [SECURITY.md](SECURITY.md) before you install the tool. In short:
   by hand, use the SQL in [SECURITY.md](SECURITY.md#keeping-and-deleting-results).
 - **Downloads.** "Download CSV" in the web app saves the full report to the
   viewer's computer, outside Civis. Decide whether your admins should use it.
+- **Framing check during setup.** The Service setting
+  `CIVIS_FRAME_ANCESTORS_REPORT_ONLY=true` turns a wrong framing rule into a
+  browser console warning instead of a blank page. Turn it off once the app
+  shows correctly inside Civis.
 
 ## Pinned Docker images
 

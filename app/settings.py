@@ -8,6 +8,7 @@
 | RESULTS_CREDENTIAL_ID | Optional. Database credential ID; the Service owner's default credential is used if blank. |
 | CIVIS_PLATFORM_URL | Optional. Base URL for links to Civis objects. |
 | CIVIS_FRAME_ANCESTORS | Optional. Origins allowed to frame the app. |
+| CIVIS_FRAME_ANCESTORS_REPORT_ONLY | Optional, true or false (default false). Setup aid: report the frame rule instead of enforcing it. |
 
 None of these are secrets; Service environment variables are visible to anyone
 who can read the Service.

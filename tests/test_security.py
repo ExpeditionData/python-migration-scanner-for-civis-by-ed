@@ -21,7 +21,13 @@ try:
     from flask import render_template_string
 
     from app import create_app
-    from app.security import csrf_token_is_valid, frame_ancestors, generate_csrf_token, safe_href
+    from app.security import (
+        csrf_token_is_valid,
+        frame_ancestors,
+        frame_ancestors_report_only,
+        generate_csrf_token,
+        safe_href,
+    )
 except ModuleNotFoundError:  # The scanner image has no Flask. The web app tests run in the Service image.
     create_app = None
 from common import retention, schema, sql
@@ -394,6 +400,57 @@ def test_frame_ancestors_setting_rejects_unsafe_values():
     for bad in ("*", "http://example.test", "https://x.test; script-src *", "'unsafe-inline'"):
         with pytest.raises(ValueError):
             frame_ancestors(bad)
+
+
+OTHER_DIRECTIVES = [
+    "default-src 'self'", "script-src 'self'", "style-src 'self'", "img-src 'self' data:", "font-src 'self'",
+    "connect-src 'self'", "object-src 'none'", "base-uri 'none'", "form-action 'self'",
+]
+
+
+def _headers_with(monkeypatch, **env):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    for name in ("CIVIS_FRAME_ANCESTORS", "CIVIS_FRAME_ANCESTORS_REPORT_ONLY"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    app = create_app({"SECRET_KEY": "x" * 40, "TESTING": True})
+    return app.test_client().get("/healthz").headers
+
+
+@needs_flask
+@pytest.mark.parametrize("env", [{}, {"CIVIS_FRAME_ANCESTORS_REPORT_ONLY": ""},
+                                 {"CIVIS_FRAME_ANCESTORS_REPORT_ONLY": "false"}])
+def test_frame_rule_is_enforced_by_default(monkeypatch, env):
+    headers = _headers_with(monkeypatch, **env)
+    assert headers["Content-Security-Policy"].endswith("; frame-ancestors 'self' https://platform.civisanalytics.com")
+    assert "Content-Security-Policy-Report-Only" not in headers
+
+
+@needs_flask
+@pytest.mark.parametrize("value", ["true", "TRUE", " True "])
+def test_report_only_moves_only_the_frame_rule(monkeypatch, value):
+    headers = _headers_with(monkeypatch, CIVIS_FRAME_ANCESTORS_REPORT_ONLY=value,
+                            CIVIS_FRAME_ANCESTORS="https://platform.civisanalytics.com https://*.civisanalytics.com")
+    enforced = headers["Content-Security-Policy"]
+    assert enforced.split("; ") == OTHER_DIRECTIVES
+    assert "frame-ancestors" not in enforced
+    assert headers["Content-Security-Policy-Report-Only"] == (
+        "frame-ancestors 'self' https://platform.civisanalytics.com https://*.civisanalytics.com"
+    )
+    assert "report-uri" not in headers["Content-Security-Policy-Report-Only"]
+    assert "report-to" not in headers["Content-Security-Policy-Report-Only"]
+    assert "X-Frame-Options" not in headers
+
+
+@needs_flask
+@pytest.mark.parametrize("bad", ["1", "0", "yes", "no", "on", "off", "enabled", "true; script-src *", "t"])
+def test_report_only_setting_rejects_anything_but_true_or_false(monkeypatch, bad):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    monkeypatch.setenv("CIVIS_FRAME_ANCESTORS_REPORT_ONLY", bad)
+    with pytest.raises(ValueError, match="must be true or false"):
+        create_app({"SECRET_KEY": "x" * 40, "TESTING": True})
+    assert not frame_ancestors_report_only("false") and frame_ancestors_report_only("true")
 
 
 @needs_flask
