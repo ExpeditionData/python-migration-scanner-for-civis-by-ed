@@ -16,6 +16,9 @@ from pathlib import Path
 
 import pytest
 
+# The scanner image has no Flask. These tests run in the Service image instead.
+pytest.importorskip("flask", reason="Flask is not in this image (the scanner image)")
+
 from app import create_app
 from app import local as local_mode
 from app import views

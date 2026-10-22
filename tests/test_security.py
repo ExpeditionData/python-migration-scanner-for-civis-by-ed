@@ -16,10 +16,14 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
-from flask import render_template_string
 
-from app import create_app
-from app.security import csrf_token_is_valid, frame_ancestors, generate_csrf_token, safe_href
+try:
+    from flask import render_template_string
+
+    from app import create_app
+    from app.security import csrf_token_is_valid, frame_ancestors, generate_csrf_token, safe_href
+except ModuleNotFoundError:  # The scanner image has no Flask. The web app tests run in the Service image.
+    create_app = None
 from common import retention, schema, sql
 from common.models import CivisObject, Impact, ObjectType, WorkflowRef
 from common.redact import REDACTED, RedactingFilter, redact, safe_error
@@ -28,6 +32,7 @@ from scanner.engine import Engine
 from scanner.retrieval.tempdir import private_tempdir
 
 ROOT = Path(__file__).resolve().parent.parent
+needs_flask = pytest.mark.skipif(create_app is None, reason="Flask is not in this image (the scanner image)")
 
 FAKE_PASSWORD = "Tr0ub4dor-fake-pw-9431"  # pragma: allowlist secret  gitleaks:allow
 FAKE_EMAIL = "pat.donor@example.org"
@@ -331,6 +336,7 @@ def app(monkeypatch):
 SCRIPT_NAME = "<script>alert('owned')</script><img src=x onerror=alert(1)>"
 
 
+@needs_flask
 def test_object_named_with_script_tag_renders_as_text(app):
     with app.test_request_context("/"):
         html = render_template_string(
@@ -342,6 +348,7 @@ def test_object_named_with_script_tag_renders_as_text(app):
     assert 'href="#"' in html
 
 
+@needs_flask
 def test_values_from_civis_are_escaped_in_json(app):
     with app.app_context():
         body = app.json.dumps({"name": SCRIPT_NAME, "owner": "a & b"})
@@ -351,6 +358,7 @@ def test_values_from_civis_are_escaped_in_json(app):
     assert b"<script>" not in response.get_data()
 
 
+@needs_flask
 @pytest.mark.parametrize(
     "url, expected",
     [
@@ -365,6 +373,7 @@ def test_safe_href(url, expected):
     assert safe_href(url) == expected
 
 
+@needs_flask
 def test_security_headers(app):
     response = app.test_client().get("/")
     assert response.status_code == 200
@@ -379,6 +388,7 @@ def test_security_headers(app):
     assert "For Civis admins only" in response.get_data(as_text=True)
 
 
+@needs_flask
 def test_frame_ancestors_setting_rejects_unsafe_values():
     assert frame_ancestors("https://platform.civisanalytics.com https://*.civisanalytics.com").startswith("'self' ")
     for bad in ("*", "http://example.test", "https://x.test; script-src *", "'unsafe-inline'"):
@@ -386,6 +396,7 @@ def test_frame_ancestors_setting_rejects_unsafe_values():
             frame_ancestors(bad)
 
 
+@needs_flask
 def test_csrf_is_required_on_every_post(app):
     client = app.test_client()
     viewer = {"Civis-User-Id": "5"}
@@ -401,6 +412,7 @@ def test_csrf_is_required_on_every_post(app):
     assert client.post("/test-post", data={"csrf_token": token}, headers=cross).status_code == 403
 
 
+@needs_flask
 def test_csrf_tokens_expire(app):
     with app.test_request_context("/", headers={"Civis-User-Id": "5"}):
         old = generate_csrf_token(app, now=1_000_000)
@@ -409,6 +421,7 @@ def test_csrf_tokens_expire(app):
         assert not csrf_token_is_valid(app, "garbage", now=1_000_000)
 
 
+@needs_flask
 def test_debug_mode_is_always_off(monkeypatch):
     monkeypatch.delenv("FLASK_DEBUG", raising=False)
     app = create_app({"SECRET_KEY": "x" * 40, "DEBUG": True})
@@ -418,6 +431,7 @@ def test_debug_mode_is_always_off(monkeypatch):
         create_app({"SECRET_KEY": "x" * 40})
 
 
+@needs_flask
 def test_secret_key_is_derived_from_the_service_api_key(monkeypatch):
     monkeypatch.delenv("FLASK_DEBUG", raising=False)
     monkeypatch.delenv("FLASK_SECRET_KEY", raising=False)

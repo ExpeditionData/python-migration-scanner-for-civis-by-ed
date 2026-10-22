@@ -224,6 +224,46 @@ Run the full suite on both Python versions before every commit:
   of hostile object names, security headers, the concurrent-run guard, the
   batched checklist save, the empty and error states, text contrast, and local
   preview mode.
+- `tests/test_deploy.py` checks `start_service.sh` (executable bit, LF endings,
+  no installs), the Dockerfiles, `.dockerignore`, and `docker/check_image.py`.
+  Two of its tests run only inside the test images.
+
+### Tests inside the pinned images (Docker)
+
+The images in `docker/` are for local testing only. Each build fails if the
+image's Python or package versions differ from `requirements-scanner.txt` or
+`requirements-service.txt`, or if adding pytest changes any package that came
+with the image. `.dockerignore` keeps `Context/`, `.env` files, virtual
+environments, dry-run output, `.git`, and caches out of the build. Pull by
+digest first (Docker Hub only); the builds also download pytest from PyPI.
+
+```
+docker pull civisanalytics/datascience-python@sha256:d6903fdcf6b13801417621ad7522c09a16e1d2c01d11eb398f75ad0f73d974ef
+docker pull civisanalytics/civis-services-flask@sha256:e8d7a631ab46598caa6735e2dd657763c95eb5c76af7a57510f3d2370f02a20f
+docker build -f docker/scanner.Dockerfile -t cpvs-scanner-test .
+docker build -f docker/service.Dockerfile -t cpvs-service-test .
+docker run --rm --network none cpvs-scanner-test
+docker run --rm --network none cpvs-service-test
+```
+
+The scanner image has no Flask, so the web app tests skip there and run in the
+Service image. The Service image has no pandas or Node, so those few tests skip.
+
+Smoke test of the Service: start it the way Civis does (the image's own
+`/entrypoint.sh`, which runs `start_service.sh`), with no network and no
+`CIVIS_API_KEY`, then check `/healthz` on port 3838, the log, and that no
+package files changed:
+
+```
+docker run -d --name cpvs-smoke --network none -w / -e APP_DIR=/app -e REPO_PATH_DIR= -e FLASK_SECRET_KEY=smoke-test-only-not-a-real-secret-key cpvs-service-test /bin/sh -c ./entrypoint.sh
+docker exec cpvs-smoke python -c "import urllib.request as u; print(u.urlopen('http://127.0.0.1:3838/healthz').status)"
+docker logs cpvs-smoke
+docker diff cpvs-smoke
+docker rm -f cpvs-smoke
+```
+
+Expected: `200`, a log with "Listening at: http://0.0.0.0:3838" and two
+workers, and no `site-packages` paths in `docker diff`.
 
 ## Keeping docs current
 

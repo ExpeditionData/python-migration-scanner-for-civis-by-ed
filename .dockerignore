@@ -1,0 +1,37 @@
+# Keeps private material, secrets, local environments, and caches out of the
+# Docker build context, so they can never reach an image layer.
+# tests/test_deploy.py checks these entries, and the test images check that
+# none of these paths exist inside them.
+
+# Private reference material
+Context
+
+# Secrets and local settings
+.env
+.env.*
+
+# Local virtual environments
+.venv
+.venv*
+
+# Local output and working files
+dry_run_output
+Claude outputs
+*.sqlite
+*.sqlite3
+*.db
+*.log
+*.png
+
+# Version control and editor folders
+.git
+.claude
+.vscode
+.idea
+
+# Caches
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
