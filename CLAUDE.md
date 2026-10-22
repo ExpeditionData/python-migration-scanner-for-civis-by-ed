@@ -89,7 +89,8 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
 - **Web app.** Runs on `civisanalytics/civis-services-flask:0.1.0` (Python
   3.12.11, Flask 3.1.1, gunicorn 22.0.0, civis 2.7.1, PyYAML 6.0.2) with no
   installs at start. The image's `/entrypoint.sh` runs `start_service.sh` from
-  the repo root, which execs gunicorn on port 3838 with 2 workers.
+  the repo root, which execs gunicorn on port 3838 with two gthread workers
+  of four threads each.
   It only runs the scanner job the admin created (`SCANNER_JOB_ID`), using the
   job's saved parameters. It never creates or edits scripts. Shared with Civis
   admins only.

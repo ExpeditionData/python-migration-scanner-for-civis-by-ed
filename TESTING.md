@@ -96,8 +96,9 @@ finish the step the way the interface allows and record the difference.
 ### 1.6 Nothing is installed at start
 
 - **Steps:** Open the Service's deployment log.
-- **Expected:** A gunicorn start ("Listening at: http://0.0.0.0:3838" and two
-  workers) and no "pip", "Collecting", or "Downloading" lines.
+- **Expected:** A gunicorn start ("Listening at: http://0.0.0.0:3838", "Using
+  worker: gthread", and two "Booting worker" lines) and no "pip",
+  "Collecting", or "Downloading" lines.
 - **Record:** pass or fail.
 
 ### 1.7 Sharing
@@ -155,9 +156,14 @@ finish the step the way the interface allows and record the difference.
 
 ### 3.2 The scan runs as the Robot user
 
-- **Steps:** On the scanner job's run, check who started it.
-- **Expected:** The Robot user (the Service's owner).
-- **Record:** yes or no. Do not record the user name.
+- **Steps:**
+  1. Main check: on the app's Scan history page, read the line "Started ...
+     as <user>" for this scan. The scanner fills it in from Civis
+     (`users.get_me`), so it shows the user the scan actually ran as. Read it
+     before another scan starts, because the line shows the newest scan.
+  2. Second check: on the scanner job's run in Civis, check who started it.
+- **Expected:** Both show the Robot user (the Service's owner).
+- **Record:** yes or no for each check. Do not record the user name.
 
 ### 3.3 Progress
 
@@ -321,17 +327,25 @@ finish the step the way the interface allows and record the difference.
      the "x" next to the spinner.
   2. Copy the `run_id=` value from the `RUN run_id=... status=running` line
      near the top of that run's log. It is a generated ID, not client data.
-  3. Set the job's `RUN_ID` parameter to it, save, and click **Run scan** in
-     the app.
-  4. When it finishes, clear `RUN_ID` and save.
+  3. Sign in as yourself, not the Robot user. Set the job's `RUN_ID`
+     parameter to the run ID, save, then click **Run scan** in the app.
+  4. When it finishes, read the Scan history page's "Started ... as <user>"
+     line for the resumed run. Then clear `RUN_ID`, signed in as the Robot
+     user if you can (otherwise as yourself), and save.
+  5. Click **Run scan** in the app again and, when it starts, read the same
+     line for this next run.
 - **Expected:** The resumed run succeeds. Its last log line shows
   `objects_scanned` lower than `objects_total`. The Inventory total matches the
   earlier full scan. The next **Run scan** starts a new run.
 - **Record:** pass or fail; `objects_total`, `objects_scanned`, and `api_calls`
-  for the resumed run; whether the resumed run and the next run still ran as
-  the Robot user (yes or no). Civis's "Welcome To Scripts" article calls the
-  script runner "the user that last updated a script", so editing `RUN_ID`
-  might change who the job runs as.
+  for the resumed run; yes or no: the Scan history page shows the Robot user
+  for the resumed run; yes or no: it shows the Robot user for the next run;
+  and who was signed in for each edit (step 3: Robot user or not; step 4:
+  Robot user or not). No names.
+- **What it means:** Civis's help describes the runner two ways. If the resumed
+  run shows the person who edited `RUN_ID` in step 3, the rule is "the user who
+  last updated it". If it shows the Robot user, the rule is "the user who runs
+  it". The next run checks the same rule after the step 4 edit.
 
 ### 5.5 Service sleep and wake
 
@@ -375,7 +389,7 @@ Item  Result (pass/fail/skipped)  Counts or note
 2.2
 2.3   seen/not seen
 3.1   guard:
-3.2   ran as Robot user: yes/no
+3.2   Scan history shows Robot user: yes/no   job run started by Robot user: yes/no
 3.3
 3.4   status=  minutes=  objects_total=  objects_scanned=  api_calls=
       scanned=  partly scanned=  not scanned=  affected=  advisory=  findings=
@@ -393,6 +407,8 @@ Item  Result (pass/fail/skipped)  Counts or note
 5.2
 5.3   rows=
 5.4   objects_total=  objects_scanned=  api_calls=
+      step 3 edit by Robot user: yes/no   resumed run shows Robot user: yes/no
+      step 4 edit by Robot user: yes/no   next run shows Robot user: yes/no
 5.5   minutes to wake=
 5.6
 

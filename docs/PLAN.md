@@ -674,4 +674,4 @@ On the organization's GitHub Free plan, private vulnerability reporting and rule
    - Tag protections: **Restrict updates** (no one can move a tag), **Restrict deletions**, and **Block force pushes**.
    - Leave **Restrict creations** off, so new release tags can still be created.
    - Leave the bypass list empty, so not even an admin can move or delete a release tag without first changing the ruleset.
-4. **Create `v0.1.0-rc1`** from the commit on `main` that includes the October 22, 2026 Phase 6 follow-up (the commit that added this checklist), push it, and confirm on GitHub that the ruleset blocks deleting it.
+4. **Create `v0.1.0-rc1`** from the newest commit on `main` after the Phase 6 follow-ups, and push it. Then confirm the ruleset: `git push origin :refs/tags/v0.1.0-rc1` must be rejected. If the delete goes through, recreate the tag on the same commit, push it again, and fix the ruleset before going further.

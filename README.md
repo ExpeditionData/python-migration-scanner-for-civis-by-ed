@@ -104,7 +104,9 @@ You need:
 1. Sign in as the Robot user if you can, and make every later change to the
    job the same way (see "Who the job runs as" below). Otherwise, create the
    job yourself and transfer ownership of it to the Robot user afterward
-   (Transfer Ownership).
+   (Transfer Ownership). If Civis runs a job as the user who last updated it,
+   a job you created or edited yourself runs as you, not the Robot user; see
+   "Who the job runs as".
 2. From the **Code** menu, select **Scripts**, click **New Script**, and choose
    **Container**.
 3. Fill in the script settings:
