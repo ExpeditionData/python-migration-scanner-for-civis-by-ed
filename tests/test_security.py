@@ -457,7 +457,7 @@ def test_report_only_moves_only_the_frame_rule(monkeypatch, value):
 def test_report_only_setting_rejects_anything_but_true_or_false(monkeypatch, bad):
     monkeypatch.delenv("FLASK_DEBUG", raising=False)
     monkeypatch.setenv("CIVIS_FRAME_ANCESTORS_REPORT_ONLY", bad)
-    with pytest.raises(ValueError, match="must be true or false"):
+    with pytest.raises(ValueError, match=r"^CIVIS_FRAME_ANCESTORS_REPORT_ONLY must be true or false$"):
         create_app({"SECRET_KEY": "x" * 40, "TESTING": True})
     assert not frame_ancestors_report_only("false") and frame_ancestors_report_only("true")
 
