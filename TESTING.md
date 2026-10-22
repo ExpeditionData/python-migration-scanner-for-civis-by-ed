@@ -319,7 +319,10 @@ finish the step the way the interface allows and record the difference.
   `objects_scanned` lower than `objects_total`. The Inventory total matches the
   earlier full scan. The next **Run scan** starts a new run.
 - **Record:** pass or fail; `objects_total`, `objects_scanned`, and `api_calls`
-  for the resumed run.
+  for the resumed run; whether the resumed run and the next run still ran as
+  the Robot user (yes or no). Civis's "Welcome To Scripts" article calls the
+  script runner "the user that last updated a script", so editing `RUN_ID`
+  might change who the job runs as.
 
 ### 5.5 Service sleep and wake
 
