@@ -170,6 +170,7 @@ def test_scanner_log_lines_are_structured(scanner_log):
         lambda: scan_log.run_status("run-1", "succeeded", api_calls=-1),
         lambda: scan_log.run_status("run-1", "succeeded", objects_total=True),
         lambda: scan_log.run_status(f"run-1 {FAKE_EMAIL}", "succeeded", api_calls=1),
+        lambda: scan_log.run_status("run-1", "succeeded", note=1),
     ],
 )
 def test_scanner_log_rejects_free_text(call):

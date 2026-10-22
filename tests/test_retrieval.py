@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import io
 import json
+import sys
 import tarfile
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -250,6 +251,104 @@ def test_repo_download_is_cached_and_the_tarball_is_deleted(tmp_path, synthetic)
     assert list(tmp_path.iterdir()) == []  # Tarball removed right after reading.
     api_calls = [u for u, _ in session.requests if "api.github.com" in u]
     assert api_calls == ["https://api.github.com/repos/example-org/example-etl/tarball/v1.2.0"]
+
+
+# --- Repository cache cap (least recently used) ------------------------------------------------
+
+
+def _cache_repos(session, sizes: dict[str, int]) -> dict[str, dict[str, str]]:
+    """Add synthetic repositories, each with one Python file of ``lines`` short lines."""
+    files = {}
+    for name, lines in sizes.items():
+        files[name] = {"pkg/mod.py": f"# {name}\n" + "x = 1\n" * lines}
+        session.github[f"example-org/{name}"] = {"refs": {"main": files[name]}}
+    return files
+
+
+def _repo_bytes(files: dict[str, str]) -> int:
+    return sum(sys.getsizeof(text) for text in files.values())
+
+
+def _url(name: str) -> str:
+    return f"github.com/example-org/{name}.git"
+
+
+def test_cache_evicts_the_least_recently_used_repo(tmp_path, synthetic):
+    _, session = synthetic
+    files = _cache_repos(session, {"cache-a": 100, "cache-b": 100, "cache-c": 100})
+    one = _repo_bytes(files["cache-a"])
+    repos = gh.GitHubRepos(SafeHttp(session), "synthetic-github-token", tmp_path, max_cache_bytes=2 * one + 10)
+    repos.files(_url("cache-a"), "main")
+    repos.files(_url("cache-b"), "main")
+    repos.files(_url("cache-a"), "main")  # Now cache-b is the least recently used.
+    repos.files(_url("cache-c"), "main")
+    assert [key[1] for key in repos.cached_keys()] == ["cache-a", "cache-c"]
+    assert repos.evictions == 1 and repos.downloads == 3
+    assert repos.cache_bytes == repos.peak_cache_bytes == 2 * one
+
+
+def test_an_evicted_repo_is_downloaded_again(tmp_path, synthetic):
+    _, session = synthetic
+    files = _cache_repos(session, {"cache-a": 100, "cache-b": 100})
+    one = _repo_bytes(files["cache-a"])
+    repos = gh.GitHubRepos(SafeHttp(session), "synthetic-github-token", tmp_path, max_cache_bytes=one + 10)
+    first = repos.files(_url("cache-a"), "main")
+    repos.files(_url("cache-b"), "main")  # Evicts cache-a.
+    again = repos.files(_url("cache-a"), "main")
+    assert again is not first and again.files == first.files == files["cache-a"]
+    assert repos.downloads == 3 and repos.evictions == 2
+    tarballs = [u for u, _ in session.requests if u == "https://api.github.com/repos/example-org/cache-a/tarball/main"]
+    assert len(tarballs) == 2
+
+
+def test_eviction_never_takes_files_from_an_object_still_using_them(tmp_path, synthetic):
+    _, session = synthetic
+    files = _cache_repos(session, {"cache-a": 100, "cache-b": 100, "cache-c": 100})
+    one = _repo_bytes(files["cache-a"])
+    repos = gh.GitHubRepos(SafeHttp(session), "synthetic-github-token", tmp_path, max_cache_bytes=one + 10)
+    in_use = repos.files(_url("cache-a"), "main")  # An object starts scanning cache-a ...
+    repos.files(_url("cache-b"), "main")  # ... while other objects evict it from the cache.
+    repos.files(_url("cache-c"), "main")
+    assert ("example-org", "cache-a", "main") not in repos.cached_keys()
+    assert in_use.files == files["cache-a"] and in_use.text_bytes == one
+    selection = gh.select_files(in_use, "pkg/mod.py")
+    assert selection.files == [("pkg/mod.py", files["cache-a"]["pkg/mod.py"])]
+
+
+def test_cache_bytes_never_go_over_the_cap(tmp_path, synthetic):
+    _, session = synthetic
+    sizes = {f"cache-{n}": lines for n, lines in enumerate([50, 400, 120, 900, 30, 250])}
+    files = _cache_repos(session, sizes)
+    cap = _repo_bytes(files["cache-3"]) + _repo_bytes(files["cache-1"]) // 2
+    repos = gh.GitHubRepos(SafeHttp(session), "synthetic-github-token", tmp_path, max_cache_bytes=cap)
+    order = [3, 0, 1, 1, 5, 2, 3, 4, 0, 5, 1, 3, 2, 2, 4, 0, 3, 5, 1, 0]
+    for n in order:
+        repo = repos.files(_url(f"cache-{n}"), "main")
+        assert repo.files == files[f"cache-{n}"]
+        cached = [key[1] for key in repos.cached_keys()]
+        assert repos.cache_bytes == sum(_repo_bytes(files[name]) for name in cached) <= cap
+        assert cached[-1] == f"cache-{n}"  # The repo just used is the most recent.
+    assert repos.peak_cache_bytes <= cap and repos.evictions > 0
+
+
+def test_four_threads_share_the_capped_cache(tmp_path, synthetic):
+    _, session = synthetic
+    sizes = {f"cache-{n}": 60 + 40 * n for n in range(6)}
+    files = _cache_repos(session, sizes)
+    cap = 2 * max(_repo_bytes(f) for f in files.values())
+    repos = gh.GitHubRepos(SafeHttp(session), "synthetic-github-token", tmp_path, max_cache_bytes=cap)
+    names = [f"cache-{n % 6}" for n in (7 * i for i in range(120))]
+
+    def use(name: str) -> bool:
+        repo = repos.files(_url(name), "main")
+        assert repos.peak_cache_bytes <= cap
+        return repo.files == files[name]  # Still intact, even if evicted meanwhile.
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        assert all(pool.map(use, names))
+    assert repos.cache_bytes <= cap and repos.peak_cache_bytes <= cap
+    assert repos.evictions > 0 and repos.downloads == repos.evictions + len(repos.cached_keys())
+    assert list(tmp_path.iterdir()) == []  # Every tarball was deleted.
 
 
 def test_repo_failures_become_reasons(tmp_path, synthetic):

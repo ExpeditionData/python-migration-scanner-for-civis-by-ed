@@ -77,9 +77,13 @@ finish the step the way the interface allows and record the difference.
 ### 1.4 Scanner resources
 
 - **Steps:** Use the README values (CPU `1000`, Memory `4096`, Disk Space `4`).
-  After the first scan (item 3.4), check the run for memory or disk errors.
-- **Expected:** No out-of-memory or disk-full failure.
-- **Record:** pass or fail; peak memory if Civis shows it.
+  After the first scan (item 3.4), check the run for memory or disk errors, and
+  read the GitHub counts on the last line of its run log.
+- **Expected:** No out-of-memory or disk-full failure. `github_cache_peak_bytes`
+  is at most 1073741824 (the 1 GB cache cap).
+- **Record:** pass or fail; peak memory if Civis shows it;
+  `github_tarball_requests`, `github_cache_peak_bytes`, and
+  `github_cache_evictions`.
 
 ### 1.5 Create the Service
 
@@ -166,7 +170,8 @@ finish the step the way the interface allows and record the difference.
 
 - **Steps:** When the scan finishes, read the last line of the scanner job's
   run log. It has the form
-  `RUN run_id=... status=succeeded objects_total=N objects_scanned=N api_calls=N`.
+  `RUN run_id=... status=succeeded objects_total=N objects_scanned=N api_calls=N
+  github_tarball_requests=N github_cache_peak_bytes=N github_cache_evictions=N`.
   Then read the counts on the Overview page.
 - **Expected:** Status `succeeded`; Overview counts match the run log.
 - **Record:** status; minutes from start to finish; `objects_total`,
@@ -181,7 +186,9 @@ finish the step the way the interface allows and record the difference.
 - **Expected:** About 3 to 4 per object (section 5 estimates 3, plus about 1
   for each Python script, PLAN.md 10.4). At the default budget, about 20
   minutes per 500 objects.
-- **Record:** calls per object; minutes per 100 objects.
+- **Record:** calls per object; minutes per 100 objects;
+  `github_tarball_requests` and `github_cache_evictions` (GitHub requests do
+  not count against the Civis limit, but evictions mean repeat downloads).
 
 ### 3.6 The run log holds only structured lines
 
@@ -357,7 +364,7 @@ Item  Result (pass/fail/skipped)  Counts or note
 1.1
 1.2   URL typed: yes/no
 1.3   a=  b=  c=  d=  e=   (matches, or the label shown)
-1.4   peak memory:
+1.4   peak memory:   github_tarball_requests=  github_cache_peak_bytes=  github_cache_evictions=
 1.5   minutes to start:
 1.6
 1.7   Service:  job:
@@ -370,7 +377,7 @@ Item  Result (pass/fail/skipped)  Counts or note
 3.3
 3.4   status=  minutes=  objects_total=  objects_scanned=  api_calls=
       scanned=  partly scanned=  not scanned=  affected=  advisory=  findings=
-3.5   calls per object=  minutes per 100 objects=
+3.5   calls per object=  minutes per 100 objects=  github_tarball_requests=  github_cache_evictions=
 3.6   other lines=   error types: (type and count)
 3.7   seconds: overview=  inventory=  findings=
 4.1   python3=  custom=  notebooks=  services=  workflows=  dbt=

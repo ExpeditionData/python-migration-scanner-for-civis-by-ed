@@ -10,8 +10,9 @@ Steps:
 4. Write coverage summary rows and new "open" checklist rows.
 5. Save the CSV report as a run output (with no expiration).
 6. Apply the retention setting, then record the final run status. The final
-   log line also gives the object count and the number of Civis API calls, so
-   calls per object can be measured (docs/PLAN.md section 5).
+   log line also gives the object count, the number of Civis API calls (so
+   calls per object can be measured, docs/PLAN.md section 5), and the GitHub
+   tarball requests, peak cache size, and cache evictions.
 
 If the tables cannot be written, the scan keeps going, still saves the CSV
 report, and ends with status "tables_failed". Every API call to Civis goes
@@ -154,11 +155,12 @@ def run_scan(
     checkpointer = Checkpointer(sink if tables.ok else None, run_id, checkpoint_objects, checkpoint_seconds, monotonic)
     with private_tempdir() as workdir:
         http = SafeHttp(http_session)
+        repos = GitHubRepos(http, config.github_token, workdir)
         deps = ScanDeps(
             engine=engine,
             client=civis,
             http=http,
-            repos=GitHubRepos(http, config.github_token, workdir),
+            repos=repos,
             lookback_days=config.lookback_days,
             now=now(),
         )
@@ -219,7 +221,11 @@ def run_scan(
     if final == "succeeded" and not tables.ok:
         final = "tables_failed"
     result.api_calls = budget.requests
-    scan_log.run_status(run_id, final, objects_total=total, objects_scanned=len(todo), api_calls=budget.requests)
+    scan_log.run_status(
+        run_id, final, objects_total=total, objects_scanned=len(todo), api_calls=budget.requests,
+        github_tarball_requests=repos.downloads, github_cache_peak_bytes=repos.peak_cache_bytes,
+        github_cache_evictions=repos.evictions,
+    )
 
     result.status = final
     result.tables_ok = tables.ok

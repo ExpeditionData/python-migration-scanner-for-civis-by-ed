@@ -264,7 +264,7 @@ def test_dry_run_end_to_end(tmp_path, log_stream):
     logged = log_stream.getvalue()
     assert "PROGRESS phase=code objects_done=23 objects_total=23" in logged
     assert re.search(r"RUN run_id=run-\d{8}T\d{6}Z-[0-9a-f]{6} status=succeeded", logged)
-    assert logged.splitlines()[-1].endswith(f" objects_total=23 objects_scanned=23 api_calls={result.api_calls}")
+    assert f" objects_total=23 objects_scanned=23 api_calls={result.api_calls} " in logged.splitlines()[-1]
 
     report = next(tmp_path.glob("*.csv")).read_bytes()
     database = (tmp_path / "results.sqlite").read_bytes()
@@ -277,21 +277,34 @@ def test_dry_run_end_to_end(tmp_path, log_stream):
 def test_final_log_line_counts_every_civis_api_call(tmp_path, log_stream, monkeypatch):
     """Calls per object are measured in Phase 7 from the final RUN line, so the count must be exact."""
     import scanner.synthetic as synthetic
+    from scanner.retrieval.github import CACHE_MAX_BYTES
 
-    clients = []
+    clients, sessions = [], []
 
     class CountedClient(synthetic.FakeClient):
         def __init__(self, data):
             super().__init__(data)
             clients.append(self)
 
+    class CountedSession(synthetic.SyntheticSession):
+        def __init__(self, data):
+            super().__init__(data)
+            sessions.append(self)
+
     monkeypatch.setattr(synthetic, "FakeClient", CountedClient)
+    monkeypatch.setattr(synthetic, "SyntheticSession", CountedSession)
     result = dry_run(tmp_path, now=NOW)
     sent = len(clients[0].calls)
+    tarballs = len([url for url, _ in sessions[0].requests if url.startswith("https://api.github.com/")])
     assert sent > result.objects  # Inventory, detail, and log calls: more than one per object.
     assert result.api_calls == sent
     final = log_stream.getvalue().splitlines()[-1]
-    assert final == f"RUN run_id={result.run_id} status=succeeded objects_total=23 objects_scanned=23 api_calls={sent}"
+    counts = re.fullmatch(
+        rf"RUN run_id={result.run_id} status=succeeded objects_total=23 objects_scanned=23 api_calls={sent} "
+        rf"github_tarball_requests={tarballs} github_cache_peak_bytes=(\d+) github_cache_evictions=0",
+        final,
+    )
+    assert counts and tarballs > 0 and 0 < int(counts.group(1)) <= CACHE_MAX_BYTES
 
 
 def test_resumed_run_counts_only_its_own_calls_and_objects(tmp_path, log_stream):
@@ -302,7 +315,7 @@ def test_resumed_run_counts_only_its_own_calls_and_objects(tmp_path, log_stream)
     final = log_stream.getvalue().splitlines()[-1]
     scanned = int(re.search(r"objects_scanned=(\d+)", final).group(1))
     assert final.startswith(f"RUN run_id={run_id} status=succeeded objects_total=23 ")
-    assert 0 < scanned < 23 and final.endswith(f" api_calls={result.api_calls}")
+    assert 0 < scanned < 23 and f" api_calls={result.api_calls} " in final
 
 
 def test_rescan_adds_only_new_open_checklist_rows(tmp_path):

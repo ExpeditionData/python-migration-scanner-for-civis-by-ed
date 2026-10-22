@@ -133,8 +133,11 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   `checkpoint.Checkpointer` -> `output` sinks. Every Civis API call goes
   through `ratelimit.BudgetedClient`; every other HTTP call goes through
   `retrieval/http.SafeHttp` and its host allow list. The final `RUN` log line
-  adds `objects_total`, `objects_scanned`, and `api_calls`, so calls per
-  object can be measured in a live test.
+  adds `objects_total`, `objects_scanned`, `api_calls`,
+  `github_tarball_requests`, `github_cache_peak_bytes`, and
+  `github_cache_evictions`, so calls per object and memory use can be measured
+  in a live test. The GitHub file cache is capped at 1 GB of text
+  (`CACHE_MAX_BYTES`) with least-recently-used eviction.
 - **Live test.** TESTING.md is the checklist for the first live test. Records
   are pass or fail and aggregate counts only.
 

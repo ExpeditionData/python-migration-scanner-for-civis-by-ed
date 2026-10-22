@@ -1,6 +1,12 @@
 """Read code from the client's own GitHub repositories.
 
-One REST API tarball request per repository and ref, cached for the whole scan.
+One REST API tarball request per repository and ref. The kept files are cached
+in memory, up to CACHE_MAX_BYTES of text across all repositories; when a new
+repository would go over, the least recently used repository and ref is
+dropped from the cache, and downloaded again if another object needs it.
+Dropping an entry only removes the cache's reference: an object that is still
+scanning that repository keeps its own reference until it finishes.
+
 The tarball is streamed to a file inside the scan's private temp directory
 (SECURITY.md requirement 3), the needed files are read into memory, and the
 tarball is deleted right away. Nothing is extracted to disk, so a malicious
@@ -18,9 +24,11 @@ no more requests are sent until GitHub's reset time.
 from __future__ import annotations
 
 import itertools
+import sys
 import tarfile
 import threading
 import time
+from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -32,6 +40,11 @@ from scanner.retrieval.http import GITHUB_HOSTS, FetchError, SafeHttp
 TARBALL_MAX_BYTES = 200 * 1024 * 1024
 MAX_FILE_BYTES = 2 * 1024 * 1024
 MAX_REPO_TEXT_BYTES = 100 * 1024 * 1024
+# The cache's limit on kept file text, counted as the in-memory size of the
+# decoded strings (sys.getsizeof), which is at least the raw file size. One
+# repository's text is capped at MAX_REPO_TEXT_BYTES of raw bytes, at most
+# about 400 MB as Python strings, so any single repository always fits.
+CACHE_MAX_BYTES = 1024 * 1024 * 1024
 DEFAULT_FILE_CAP = 500
 DEPENDENCY_KINDS = ("requirements", "pyproject", "dockerfile")
 KEPT_KINDS = ("python", "notebook", *DEPENDENCY_KINDS)
@@ -97,6 +110,15 @@ class RepoFiles:
     files: dict[str, str] = field(default_factory=dict)  # In memory only.
     skipped_large: int = 0
     truncated: bool = False
+    text_bytes: int = 0  # In-memory size of the kept text, counted against CACHE_MAX_BYTES.
+
+
+class _Pending:
+    """One download in progress. Threads that need the same repository wait for its result."""
+
+    def __init__(self):
+        self.event = threading.Event()
+        self.result: RepoFiles | RepoUnavailable | None = None
 
 
 @dataclass
@@ -106,7 +128,13 @@ class Selection:
 
 
 class GitHubRepos:
-    """Cache of repository files for one scan. Thread-safe; each repo is downloaded once."""
+    """Cache of repository files for one scan. Thread-safe.
+
+    Each repository and ref is downloaded once while it stays in the cache.
+    Kept text is capped at ``max_cache_bytes`` with least-recently-used
+    eviction. Failures are small and are kept for the whole scan, except rate
+    limits, which are retried after GitHub's reset time.
+    """
 
     def __init__(
         self,
@@ -114,50 +142,81 @@ class GitHubRepos:
         token: str | None,
         workdir: Path,
         clock: Callable[[], float] = time.time,
+        max_cache_bytes: int = CACHE_MAX_BYTES,
     ):
         self._http = http
         self._token = token or None
         self._workdir = workdir
         self._clock = clock
+        self._max_bytes = max_cache_bytes
         self._lock = threading.Lock()
-        self._results: dict[tuple, RepoFiles | RepoUnavailable] = {}
-        self._pending: dict[tuple, threading.Event] = {}
+        self._cache: OrderedDict[tuple, RepoFiles] = OrderedDict()  # Oldest use first.
+        self._failures: dict[tuple, RepoUnavailable] = {}
+        self._pending: dict[tuple, _Pending] = {}
         self._blocked_until = 0.0
         self._counter = itertools.count(1)
-        self.downloads = 0
+        self.downloads = 0  # GitHub tarball requests, including failed ones.
+        self.cache_bytes = 0
+        self.peak_cache_bytes = 0
+        self.evictions = 0
 
     def files(self, repo_url: str | None, ref: str | None) -> RepoFiles:
         address = parse_github_url(repo_url)
         if not self._token:
             raise RepoUnavailable(NO_TOKEN)
         key = (address.owner.lower(), address.name.lower(), ref or "")
-        while True:
+        with self._lock:
+            cached = self._cache.get(key)
+            if cached is not None:
+                self._cache.move_to_end(key)
+                return cached
+            failure = self._failures.get(key)
+            if failure is not None:
+                raise failure
+            pending = self._pending.get(key)
+            downloader = pending is None
+            if downloader:
+                pending = self._pending[key] = _Pending()
+        if downloader:
+            try:
+                result = self._download(address, ref)
+            except RepoUnavailable as exc:
+                result = exc
             with self._lock:
-                if key in self._results:
-                    result = self._results[key]
-                    break
-                event = self._pending.get(key)
-                if event is None:
-                    event = self._pending[key] = threading.Event()
-                    owner = True
-                else:
-                    owner = False
-            if owner:
-                try:
-                    result = self._download(address, ref)
-                except RepoUnavailable as exc:
-                    result = exc
-                with self._lock:
-                    # Rate limits are not cached per repo, so the repo is retried after the reset.
-                    if not (isinstance(result, RepoUnavailable) and result.reason == RATE_LIMITED):
-                        self._results[key] = result
-                    self._pending.pop(key, None)
-                event.set()
-                break
-            event.wait()
+                if isinstance(result, RepoFiles):
+                    self._keep(key, result)
+                elif result.reason != RATE_LIMITED:
+                    # Rate limits are not kept, so the repo is retried after the reset.
+                    self._failures[key] = result
+                pending.result = result
+                del self._pending[key]
+            pending.event.set()
+        else:
+            # The result is handed over directly, so a waiter never needs the cache entry,
+            # which another thread may already have evicted.
+            pending.event.wait()
+            result = pending.result
         if isinstance(result, RepoUnavailable):
             raise result
         return result
+
+    def cached_keys(self) -> list[tuple]:
+        """Cached repository and ref keys, least recently used first."""
+        with self._lock:
+            return list(self._cache)
+
+    def _keep(self, key: tuple, repo: RepoFiles) -> None:
+        """Add a repository to the cache, evicting the least recently used ones to stay under the cap.
+        Called with the lock held. Eviction drops only the cache's reference."""
+        if repo.text_bytes > self._max_bytes:
+            return  # Cannot happen with MAX_REPO_TEXT_BYTES; never cache something over the cap.
+        while self._cache and self.cache_bytes + repo.text_bytes > self._max_bytes:
+            _, oldest = self._cache.popitem(last=False)
+            self.cache_bytes -= oldest.text_bytes
+            self.evictions += 1
+        self._cache[key] = repo
+        self.cache_bytes += repo.text_bytes
+        self.peak_cache_bytes = max(self.peak_cache_bytes, self.cache_bytes)
 
     def _download(self, address: RepoAddress, ref: str | None) -> RepoFiles:
         if self._clock() < self._blocked_until:
@@ -171,8 +230,9 @@ class GitHubRepos:
             "X-GitHub-Api-Version": "2022-11-28",
         }
         path = self._workdir / f"repo-{next(self._counter)}.tar.gz"
-        try:
+        with self._lock:
             self.downloads += 1
+        try:
             self._http.get(url, allowed_hosts=GITHUB_HOSTS, max_bytes=TARBALL_MAX_BYTES, headers=headers, to_path=path)
             return _read_archive(path)
         except FetchError as exc:
@@ -228,7 +288,9 @@ def _read_archive(path: Path) -> RepoFiles:
                     continue
                 data = handle.read(MAX_FILE_BYTES + 1)
                 total += len(data)
-                result.files[relative] = data.decode("utf-8", errors="replace")
+                text = data.decode("utf-8", errors="replace")
+                result.files[relative] = text
+                result.text_bytes += sys.getsizeof(text)
     except (tarfile.TarError, OSError, EOFError):
         raise RepoUnavailable(UNREADABLE_ARCHIVE) from None
     return result

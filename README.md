@@ -134,7 +134,7 @@ You need:
    | `RESULTS_SCHEMA` | String | Yes | (none) | The dedicated results schema. Letters, numbers, and underscores only. |
    | `GITHUB` | Custom Credential | No | (none) | Optional GitHub token for your own repositories. |
    | `LOOKBACK_DAYS` | Integer | No | `200` | Read the most recent run log only for objects that ran in this many days (1 to 3,650). |
-   | `MAX_CONCURRENCY` | Integer | No | `4` | Worker threads (1 to 16). |
+   | `MAX_CONCURRENCY` | Integer | No | `4` | Worker threads (1 to 16). For each thread above 4, add 512 MB to **Memory**. |
    | `REQUEST_BUDGET` | Integer | No | `500` | Civis API requests per 5 minutes (10 to 1,000). Civis allows 1,000 per user, shared with the web app and any other jobs that run as the Robot user. |
    | `RETENTION_DAYS` | Integer | No | (blank) | Blank or 0 keeps every scan. A number deletes scans older than that many days. The newest scan is never deleted. |
    | `RUN_ID` | String | No | (blank) | Blank starts a new scan. A run ID resumes that scan (see below). |
