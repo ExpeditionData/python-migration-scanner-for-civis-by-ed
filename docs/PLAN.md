@@ -359,6 +359,15 @@ How each object runs:
 - **Requirements files.** They record the versions inside each image, so tests run against the same versions.
 - **Image digests.** Recorded in the README on October 13, 2026 (linux/amd64): `datascience-python:9.1.1` is `sha256:d6903fdcf6b13801417621ad7522c09a16e1d2c01d11eb398f75ad0f73d974ef`, and `civis-services-flask:0.1.0` is `sha256:e8d7a631ab46598caa6735e2dd657763c95eb5c76af7a57510f3d2370f02a20f`.
 
+**How the Flask image starts (checked October 22, 2026, from the image pulled by digest).**
+
+- `docker image inspect` shows no `ENTRYPOINT`, `CMD ["/bin/sh", "-c", "./entrypoint.sh"]`, no working directory (so `/`), and the root user.
+- The image's `/entrypoint.sh` (fixed in the image) is a bash script that runs `set -e`, then `cd "${APP_DIR}/${REPO_PATH_DIR}"`, exits with an error if `start_service.sh` is missing there, and otherwise runs `./start_service.sh`. Civis sets `APP_DIR` to the clone folder and `REPO_PATH_DIR` to the Service's path, which we leave blank.
+- So `start_service.sh` sits at the repo root, is run directly (not through `sh`), and needs a shebang, the executable bit, and LF line endings. `tests/test_deploy.py` checks all three.
+- The image also has a `/requirements.txt` (`flask~=3.0`, `gunicorn~=22.0`, `civis~=2.2`) that it does not install itself. Our start script installs nothing.
+- Installed versions: Python 3.12.11, pip 25.2, Flask 3.1.1, gunicorn 22.0.0, civis 2.7.1, PyYAML 6.0.2, requests 2.32.4, on Debian 12. PyYAML 6.0.2 was unconfirmed before and is now pinned in `requirements-service.txt`.
+- The scanner image (`datascience-python:9.1.1`) has `CMD ["python3"]`, runs as root, and has Python 3.14.6, civis 2.10.0, pandas 3.0.5, PyYAML 6.0.3, and requests 2.34.2. It has no Flask, so the web app tests skip inside it and run in the Service image instead.
+
 ---
 
 ## 9. Decisions and additional requirements
