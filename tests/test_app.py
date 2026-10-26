@@ -204,7 +204,7 @@ def test_every_post_needs_a_csrf_token(app, url):
 
 def test_run_scan_refuses_while_a_run_is_active(app):
     client = app.test_client()
-    jobs = app.extensions["cpvs"].jobs()
+    jobs = app.extensions["pmsc"].jobs()
     before = len(jobs.runs())
     response = client.post("/scan/start", data={"csrf_token": csrf(app)})
     assert response.status_code == 302 and response.headers["Location"].endswith("/scan?notice=busy")
@@ -219,7 +219,7 @@ def test_run_scan_starts_once_then_refuses_while_queued(preview, monkeypatch):
     client = app.test_client()
     first = client.post("/scan/start", data={"csrf_token": csrf(app)})
     assert first.headers["Location"].endswith("/scan?notice=started")
-    assert app.extensions["cpvs"].jobs().runs()[0].state == "queued"
+    assert app.extensions["pmsc"].jobs().runs()[0].state == "queued"
     second = client.post("/scan/start", data={"csrf_token": csrf(app)})
     assert second.headers["Location"].endswith("/scan?notice=busy")
 
@@ -233,7 +233,7 @@ def _form_rows(app, query="status=all"):
 
 
 def test_checklist_save_is_one_batched_write(app, monkeypatch):
-    results = app.extensions["cpvs"].results
+    results = app.extensions["pmsc"].results
     calls = []
     original = results.save_checklist
 
@@ -262,7 +262,7 @@ def test_checklist_save_is_one_batched_write(app, monkeypatch):
 
 
 def test_checklist_save_rejects_values_that_are_not_allowed(app, monkeypatch):
-    results = app.extensions["cpvs"].results
+    results = app.extensions["pmsc"].results
     monkeypatch.setattr(results, "save_checklist", lambda *a, **k: pytest.fail("must not save"))
     object_id, rule_id, status = _form_rows(app)[0]
     for bad in ({f"s:{object_id}:{rule_id}": "deleted"}, {f"s:{object_id}:NOT-A-RULE": "fixed"},
@@ -539,7 +539,7 @@ def test_progress_ignores_lines_it_has_already_seen():
 def test_concurrent_run_scan_posts_in_one_worker_start_one_scan(preview, monkeypatch):
     monkeypatch.delenv("FLASK_DEBUG", raising=False)
     app = make_app(preview, "failed")
-    jobs = app.extensions["cpvs"].jobs()
+    jobs = app.extensions["pmsc"].jobs()
     original_runs = jobs.runs
 
     def slow_runs(*args, **kwargs):

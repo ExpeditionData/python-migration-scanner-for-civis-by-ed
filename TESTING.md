@@ -247,7 +247,7 @@ finish the step the way the interface allows and record the difference.
 
 - **Steps:** Item 1.8 checked the "No scan yet" state. Now set the Service's
   `RESULTS_SCHEMA` to a schema that does not exist (for example
-  `cpvs_no_such_schema`), click **Update Deployment**, and open the app. Then
+  `pmsc_no_such_schema`), click **Update Deployment**, and open the app. Then
   set it back and update again.
 - **Expected:** "The results schema does not exist yet". After setting it
   back, the results show again.

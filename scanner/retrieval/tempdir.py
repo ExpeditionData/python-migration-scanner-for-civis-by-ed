@@ -16,7 +16,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-PREFIX = "cpvs-"
+PREFIX = "pmsc-"
 
 
 def _make_writable_and_retry(func, path, _exc) -> None:

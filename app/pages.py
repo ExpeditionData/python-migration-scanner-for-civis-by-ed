@@ -38,7 +38,7 @@ FILTER_KEYS = {
 
 
 def services() -> Services:
-    return current_app.extensions["cpvs"]
+    return current_app.extensions["pmsc"]
 
 
 def viewer_name() -> str | None:

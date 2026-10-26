@@ -189,7 +189,7 @@ def build_preview(out: Path, now: datetime | None = None) -> dict:
     out.mkdir(parents=True, exist_ok=True)
     for name in ("results.sqlite", LOCAL_JOBS_FILE):
         (out / name).unlink(missing_ok=True)
-    for old in out.glob("civis-python-version-search-*.csv"):
+    for old in out.glob("python-migration-scanner-*.csv"):
         old.unlink()
 
     logger = scan_log.configure()
@@ -210,7 +210,7 @@ def build_preview(out: Path, now: datetime | None = None) -> dict:
                 out, data=preview_instance(fixed, start), civis_job_id=PREVIEW_JOB_ID, civis_run_id=civis_run_id,
                 clock=_ticking(start, 2.0), stop_after=stop_after, checkpoint_objects=10,
             )
-            outputs[str(civis_run_id)] = f"civis-python-version-search-{result.run_id}.csv"
+            outputs[str(civis_run_id)] = f"python-migration-scanner-{result.run_id}.csv"
         except SimulatedStop:
             pass
         finally:

@@ -109,7 +109,7 @@ Notes:
 **Conclusion: one repo with three Python packages (`scanner`, `app`, `common`). Both Civis objects clone the same repo to `/app` and run from there.**
 
 ```
-civis-python-version-search/
+python-migration-scanner-for-civis-by-ed/
   scanner/                  Container script entry point: python -m scanner
     __main__.py             Reads job parameters, runs a live scan or a dry run
     config.py               Job parameters from environment variables
@@ -600,7 +600,7 @@ How each object runs:
 | 16.5 | `start_service.sh` runs `cd "$(dirname "$0")"` before `exec gunicorn ...`. Otherwise it is exactly the section 8 command. | The image's entrypoint already changes to the repo root; the `cd` makes the script work from any directory and costs nothing. |
 | 16.6 | The Flask image's PID 1 is `/bin/sh -c ./entrypoint.sh`, and `entrypoint.sh` runs `./start_service.sh` without `exec`. So a stop signal never reaches gunicorn: in the local smoke test, `docker stop` waited the full grace period and then killed the container (exit 137). Left as is. | It is fixed inside Civis's image, and changing it would mean building our own image. The app is read-only and keeps no state in the process, so a hard stop loses nothing. |
 | 16.7 | The test images may add only pytest and the packages it pulls in (`pytest`, `pluggy`, `iniconfig`, `pygments`, `packaging`). `docker/check_image.py` fails the build if any package that came with the image is removed or changes version, or if anything else is added. pytest is downloaded from PyPI during the local build only. | "The test images may add pytest, but nothing else may change." |
-| 16.8 | The Python version for each image is read from the "(Python X.Y.Z)" in its requirements file's header, and every `name==version` pin is compared with the installed package. The check runs during the build and again as a test inside each image (`CPVS_TEST_IMAGE`). | One source of truth for versions. |
+| 16.8 | The Python version for each image is read from the "(Python X.Y.Z)" in its requirements file's header, and every `name==version` pin is compared with the installed package. The check runs during the build and again as a test inside each image (`PMSC_TEST_IMAGE`). | One source of truth for versions. |
 | 16.9 | The scanner image has no Flask, so the web app tests skip there (module skips in `test_app.py` and `test_local_time.py`, and a `needs_flask` mark in `test_security.py`) and run in the Service image. The Service image has no pandas or Node, so those few tests skip there. | Installing Flask into the scanner image would break 16.7. |
 | 16.10 | PyYAML 6.0.2 (read inside the Service image) is pinned in `requirements-service.txt`, and `.venv312` was updated to match. | It was marked unconfirmed in Phase 5. |
 | 16.11 | `.dockerignore` also leaves out `*.sqlite`, `*.db`, `*.log`, `*.png`, `.claude`, and editor folders. A test inside each image fails if `Context`, `.env` files, `.venv*`, `dry_run_output`, `Claude outputs`, `.git`, or `.pytest_cache` exist under `/app`. | Defense in depth for files that must never reach an image layer. |

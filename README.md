@@ -115,7 +115,7 @@ You need:
    |---|---|
    | **Docker Image Name** | `civisanalytics/datascience-python` |
    | **Docker Image Tag** | `9.1.1` |
-   | **GitHub Repository URL** | `https://github.com/ExpeditionData/civis-python-version-search.git` |
+   | **GitHub Repository URL** | `https://github.com/ExpeditionData/python-migration-scanner-for-civis-by-ed.git` |
    | **GitHub Repository Reference** | `<release tag>` |
    | Git credential (label to confirm) | Leave blank. The repository is public. |
    | **Command** | `cd /app && python -m scanner` |
@@ -185,7 +185,7 @@ cancelled or hit the 5-day limit for container scripts):
    - **Image Name:** `civisanalytics/civis-services-flask`
    - **Tag:** `0.1.0`
 4. In the **Git Connection** section:
-   - **Repository:** `https://github.com/ExpeditionData/civis-python-version-search.git`
+   - **Repository:** `https://github.com/ExpeditionData/python-migration-scanner-for-civis-by-ed.git`
    - **Branch:** `<release tag>` (the same tag as the scanner job)
    - **Path:** leave blank.
 5. Under **Environment Variables**, add these key and value pairs, then click

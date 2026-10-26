@@ -115,7 +115,7 @@ def _viewer_id() -> str:
 def _csrf_key(app: Flask) -> bytes:
     secret = app.config["SECRET_KEY"]
     secret = secret.encode() if isinstance(secret, str) else secret
-    return hmac.new(secret, b"civis-python-version-search/csrf/v1", hashlib.sha256).digest()
+    return hmac.new(secret, b"python-migration-scanner-for-civis-by-ed/csrf/v1", hashlib.sha256).digest()
 
 
 def generate_csrf_token(app: Flask, now: float | None = None) -> str:

@@ -144,9 +144,9 @@ def test_change_check_allows_only_pytest_and_its_dependencies():
     ]
 
 
-# --- Inside the test images only (CPVS_TEST_IMAGE is set by the Dockerfiles) ------------------
+# --- Inside the test images only (PMSC_TEST_IMAGE is set by the Dockerfiles) ------------------
 
-IN_IMAGE = os.environ.get("CPVS_TEST_IMAGE")
+IN_IMAGE = os.environ.get("PMSC_TEST_IMAGE")
 in_image_only = pytest.mark.skipif(IN_IMAGE not in IMAGES, reason="runs only inside the local test images")
 
 

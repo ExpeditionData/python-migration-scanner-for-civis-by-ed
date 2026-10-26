@@ -7,16 +7,16 @@ FROM civisanalytics/civis-services-flask@sha256:e8d7a631ab46598caa6735e2dd657763
 # 1. Fail if the image's Python or package versions differ from requirements-service.txt.
 # 2. Add pytest (the same pin as requirements-dev-service.txt) and nothing else.
 # 3. Fail if any package that came with the image changed version.
-COPY requirements-service.txt docker/check_image.py /tmp/cpvs-build/
+COPY requirements-service.txt docker/check_image.py /tmp/pmsc-build/
 RUN set -eu; \
-    cd /tmp/cpvs-build; \
+    cd /tmp/pmsc-build; \
     python check_image.py versions requirements-service.txt; \
     pip freeze --all > before.txt; \
     pip install --no-cache-dir --disable-pip-version-check pytest==9.1.1; \
     pip freeze --all > after.txt; \
     python check_image.py unchanged before.txt after.txt; \
     cd /; \
-    rm -rf /tmp/cpvs-build
+    rm -rf /tmp/pmsc-build
 
 # Civis clones the repo to /app. .dockerignore keeps Context/, .env files,
 # virtual environments, dry-run output, .git, and caches out of this copy.
@@ -24,6 +24,6 @@ RUN set -eu; \
 # the smoke test in CLAUDE.md runs it with APP_DIR=/app.
 WORKDIR /app
 COPY . /app
-ENV CPVS_TEST_IMAGE=service \
+ENV PMSC_TEST_IMAGE=service \
     PYTHONDONTWRITEBYTECODE=1
 CMD ["python", "-m", "pytest", "-p", "no:cacheprovider"]

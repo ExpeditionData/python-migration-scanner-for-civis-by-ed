@@ -197,7 +197,7 @@ def run_scan(
         scan_log.findings_count(rule_id, count)
 
     try:
-        outputs.save_csv(f"civis-python-version-search-{run_id}.csv", report_csv(all_objects, all_findings, engine.rules))
+        outputs.save_csv(f"python-migration-scanner-{run_id}.csv", report_csv(all_objects, all_findings, engine.rules))
         result.report_saved = True
     except Exception as exc:
         scan_log.output_failed(exc)

@@ -47,7 +47,7 @@ be made public at any time.
 ## Git workflow
 
 - Default branch is `main`. Remote is `origin`
-  (`ExpeditionData/civis-python-version-search`). The repository is private
+  (`ExpeditionData/python-migration-scanner-for-civis-by-ed`). The repository is private
   until the public release. Rob changes its visibility himself; never change it
   from a session. Live tests run only after it is public, because both Civis
   objects clone it with no git credential.
@@ -257,10 +257,10 @@ digest first (Docker Hub only); the builds also download pytest from PyPI.
 ```
 docker pull civisanalytics/datascience-python@sha256:d6903fdcf6b13801417621ad7522c09a16e1d2c01d11eb398f75ad0f73d974ef
 docker pull civisanalytics/civis-services-flask@sha256:e8d7a631ab46598caa6735e2dd657763c95eb5c76af7a57510f3d2370f02a20f
-docker build -f docker/scanner.Dockerfile -t cpvs-scanner-test .
-docker build -f docker/service.Dockerfile -t cpvs-service-test .
-docker run --rm --network none cpvs-scanner-test
-docker run --rm --network none cpvs-service-test
+docker build -f docker/scanner.Dockerfile -t pmsc-scanner-test .
+docker build -f docker/service.Dockerfile -t pmsc-service-test .
+docker run --rm --network none pmsc-scanner-test
+docker run --rm --network none pmsc-service-test
 ```
 
 The scanner image has no Flask, so the web app tests skip there and run in the
@@ -272,11 +272,11 @@ Smoke test of the Service: start it the way Civis does (the image's own
 package files changed:
 
 ```
-docker run -d --name cpvs-smoke --network none -w / -e APP_DIR=/app -e REPO_PATH_DIR= -e FLASK_SECRET_KEY=smoke-test-only-not-a-real-secret-key cpvs-service-test /bin/sh -c ./entrypoint.sh
-docker exec cpvs-smoke python -c "import urllib.request as u; print(u.urlopen('http://127.0.0.1:3838/healthz').status)"
-docker logs cpvs-smoke
-docker diff cpvs-smoke
-docker rm -f cpvs-smoke
+docker run -d --name pmsc-smoke --network none -w / -e APP_DIR=/app -e REPO_PATH_DIR= -e FLASK_SECRET_KEY=smoke-test-only-not-a-real-secret-key pmsc-service-test /bin/sh -c ./entrypoint.sh
+docker exec pmsc-smoke python -c "import urllib.request as u; print(u.urlopen('http://127.0.0.1:3838/healthz').status)"
+docker logs pmsc-smoke
+docker diff pmsc-smoke
+docker rm -f pmsc-smoke
 ```
 
 Expected: `200`, a log with "Listening at: http://0.0.0.0:3838", "Using
@@ -289,12 +289,12 @@ held requests run through `docker exec`. The API key is a fake value for this
 check only.
 
 ```
-docker run -d --name cpvs-hold --network none -w / -e APP_DIR=/app -e REPO_PATH_DIR= -e FLASK_SECRET_KEY=smoke-test-only-not-a-real-secret-key -e CIVIS_API_KEY=smoke-test-fake-key -e CIVIS_API_ENDPOINT=http://127.0.0.1:8099/ -e SCANNER_JOB_ID=1 -e RESULTS_DATABASE=smoke -e RESULTS_SCHEMA=smoke cpvs-service-test /bin/sh -c ./entrypoint.sh
-docker exec -d cpvs-hold python -c "import socket; s=socket.socket(); s.bind(('127.0.0.1', 8099)); s.listen(50); held=[s.accept()[0] for _ in range(50)]"
-docker exec -d cpvs-hold python -c "import urllib.request as u, threading as t; [t.Thread(target=u.urlopen, args=('http://127.0.0.1:3838' + p,), kwargs={'timeout': 400}).start() for p in ('/', '/inventory')]"
-docker exec cpvs-hold python -c "import urllib.request as u; print(u.urlopen('http://127.0.0.1:3838/healthz', timeout=10).status)"
-docker logs cpvs-hold
-docker rm -f cpvs-hold
+docker run -d --name pmsc-hold --network none -w / -e APP_DIR=/app -e REPO_PATH_DIR= -e FLASK_SECRET_KEY=smoke-test-only-not-a-real-secret-key -e CIVIS_API_KEY=smoke-test-fake-key -e CIVIS_API_ENDPOINT=http://127.0.0.1:8099/ -e SCANNER_JOB_ID=1 -e RESULTS_DATABASE=smoke -e RESULTS_SCHEMA=smoke pmsc-service-test /bin/sh -c ./entrypoint.sh
+docker exec -d pmsc-hold python -c "import socket; s=socket.socket(); s.bind(('127.0.0.1', 8099)); s.listen(50); held=[s.accept()[0] for _ in range(50)]"
+docker exec -d pmsc-hold python -c "import urllib.request as u, threading as t; [t.Thread(target=u.urlopen, args=('http://127.0.0.1:3838' + p,), kwargs={'timeout': 400}).start() for p in ('/', '/inventory')]"
+docker exec pmsc-hold python -c "import urllib.request as u; print(u.urlopen('http://127.0.0.1:3838/healthz', timeout=10).status)"
+docker logs pmsc-hold
+docker rm -f pmsc-hold
 ```
 
 Run the `/healthz` line after 35 seconds and again after 125 seconds. Expected:

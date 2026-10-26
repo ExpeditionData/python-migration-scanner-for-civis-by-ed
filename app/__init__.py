@@ -41,7 +41,7 @@ def _secret_key() -> str | None:
         return explicit
     api_key = os.environ.get("CIVIS_API_KEY", "")
     if api_key:
-        return hmac.new(api_key.encode(), b"civis-python-version-search/flask-secret/v1", hashlib.sha256).hexdigest()
+        return hmac.new(api_key.encode(), b"python-migration-scanner-for-civis-by-ed/flask-secret/v1", hashlib.sha256).hexdigest()
     return None
 
 
@@ -73,7 +73,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         from app.settings import Settings
 
         services = civis_services(Settings.from_env())
-    app.extensions["cpvs"] = services
+    app.extensions["pmsc"] = services
 
     security.init_app(app)
     app.register_blueprint(pages.bp)
