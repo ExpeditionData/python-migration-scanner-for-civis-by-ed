@@ -318,4 +318,4 @@ were pulled by digest and checked again on October 22, 2026.
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) and
 [NOTICE](NOTICE).
 
-The Expedition Data name and logo are trademarks of Expedition Data LLC. They are not licensed under the Apache License 2.0.
+The Expedition Data name and logo are trademarks of Expedition Data LLC and are not licensed under the Apache License 2.0. Civis and Civis Platform are trademarks of Civis Analytics; Expedition Data LLC is not affiliated with Civis Analytics.

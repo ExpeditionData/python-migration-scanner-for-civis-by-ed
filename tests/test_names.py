@@ -58,3 +58,28 @@ def test_the_new_name_leads_in_the_readme_notice_and_security_page():
     security = re.sub(r"\s+", " ", (ROOT / "SECURITY.md").read_text(encoding="utf-8"))
     assert full in security
     assert security.index("Python Migration Scanner") == security.index(full)  # The first mention is the full name.
+
+
+TRADEMARKS = (
+    "The Expedition Data name and logo are trademarks of Expedition Data LLC and are not licensed under the "
+    "Apache License 2.0. Civis and Civis Platform are trademarks of Civis Analytics; Expedition Data LLC is not "
+    "affiliated with Civis Analytics."
+)
+
+
+def test_notice_is_the_reviewed_text_and_keeps_the_fonts_paragraph():
+    notice = (ROOT / "NOTICE").read_text(encoding="utf-8")
+    assert notice.startswith(
+        "Python Migration Scanner for Civis Platform by Expedition Data\n"
+        "Copyright 2026 Expedition Data LLC.\n\n"
+        "This product includes software developed by Expedition Data LLC.\n\n"
+        "Licensed under the Apache License, Version 2.0. See the LICENSE file for the full license text.\n\n"
+        + TRADEMARKS + "\n\n"
+        "This product includes fonts licensed under the SIL Open Font License,\n"
+    )
+
+
+def test_readme_license_section_has_the_trademark_sentences():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    license_section = " ".join(readme[readme.index("## License"):].split())
+    assert TRADEMARKS in license_section
