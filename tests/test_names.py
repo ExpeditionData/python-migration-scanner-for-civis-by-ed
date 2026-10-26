@@ -14,6 +14,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 OLD_PRODUCT = re.compile(r"\s+".join(["Civis", "Python", "Version", "Search"]), re.IGNORECASE)
 OLD_SLUG = re.compile("-".join(["civis", "python", "version", "search"]), re.IGNORECASE)
@@ -93,4 +95,15 @@ REVIEW_WORDS = re.compile(
 
 def test_no_file_says_who_checked_the_legal_texts():
     found = sorted({name for name, text in _text_files() if REVIEW_WORDS.search(text)})
+    assert found == []
+
+
+def test_no_commit_message_says_who_checked_the_legal_texts():
+    """Commit messages become public with the repository, so they follow the same rule as the files."""
+    if not (ROOT / ".git").exists() or shutil.which("git") is None:
+        pytest.skip("no git history here (for example, in the Docker test images)")
+    log = subprocess.run(
+        ["git", "log", "--format=%B", "HEAD"], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", check=True,
+    ).stdout
+    found = sorted({match.group(0) for match in REVIEW_WORDS.finditer(log)})
     assert found == []
