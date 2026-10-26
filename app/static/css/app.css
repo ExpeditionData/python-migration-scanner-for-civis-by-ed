@@ -383,11 +383,12 @@ select.status-select.changed { border-color: var(--primary); border-width: 2px; 
 
 .site-footer { margin-top: auto; border-top: 1px solid var(--border); background: var(--surface); }
 .footer-inner { gap: 8px 24px; font-size: 13px; color: var(--muted); }
+.footer-notice { max-width: 1200px; margin: 0 auto; padding: 0 24px 14px; font-size: 13px; color: var(--muted); }
 
 /* Phone width: the logo, divider, and app name stay on one row if they fit, the
    nav wraps below, and wide tables scroll inside their box. */
 @media (max-width: 640px) {
-  .header-inner, .footer-inner, .page { padding-left: 16px; padding-right: 16px; }
+  .header-inner, .footer-inner, .footer-notice, .page { padding-left: 16px; padding-right: 16px; }
   .brand { width: 100%; }
   .signed-in { margin-left: 0; width: 100%; }
   .main-nav { width: 100%; }

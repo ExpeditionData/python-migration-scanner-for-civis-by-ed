@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from common import retention, sql
+from common.disclaimer import DISCLAIMER, NON_AFFILIATION
 from common.rule_loader import RuleSet
 from common.schema import CHECKLIST_STATUS, COVERAGE, FINDINGS, OBJECTS, SCAN_RUNS, TABLES, Table
 
@@ -289,6 +290,7 @@ def _parse_timestamp(value: Any) -> datetime:
 # CSV report and run outputs
 # ---------------------------------------------------------------------------
 
+REPORT_NOTICE_LINES = 2  # The disclaimer and the non-affiliation statement come before the column names.
 REPORT_COLUMNS = [
     "row_type", "object_id", "object_type", "object_name", "object_url", "owner_name", "owner_active",
     "impact", "uses_default_image", "docker_image_name", "docker_image_tag", "scan_status", "scan_note",
@@ -307,7 +309,10 @@ def _cell(value: Any) -> Any:
 def report_csv(objects: list[dict], findings: list[dict], rules: RuleSet) -> bytes:
     """One row per finding, plus one row for every object with no findings.
 
-    Every inventoried object appears at least once, with its scan status.
+    Every inventoried object appears at least once, with its scan status. The
+    file starts with REPORT_NOTICE_LINES notice lines (the disclaimer, then the
+    non-affiliation statement), each one quoted cell, written as is: the
+    formula guard applies to data cells only. The column names are on line 3.
     """
     by_object: dict[int, list[dict]] = {}
     for finding in findings:
@@ -315,6 +320,9 @@ def report_csv(objects: list[dict], findings: list[dict], rules: RuleSet) -> byt
     titles = {r.id: r.title for r in rules}
 
     buffer = io.StringIO()
+    notices = csv.writer(buffer, quoting=csv.QUOTE_ALL)
+    notices.writerow([DISCLAIMER])
+    notices.writerow([NON_AFFILIATION])
     writer = csv.DictWriter(buffer, fieldnames=REPORT_COLUMNS, extrasaction="ignore")
     writer.writeheader()
     for obj in sorted(objects, key=lambda o: (str(o["object_type"]), int(o["object_id"]))):

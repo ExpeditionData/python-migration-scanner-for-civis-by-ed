@@ -31,6 +31,7 @@ from app.backends.civis_backend import CivisJobs, CivisResults
 from app.security import generate_csrf_token
 from app.services import Services, local_services
 from app.settings import Settings
+from common.disclaimer import NON_AFFILIATION
 from common.rule_loader import load_rules
 from scanner.synthetic.preview import HOSTILE_NAME, build_preview
 
@@ -681,6 +682,16 @@ def test_every_page_has_the_logo_link_and_only_local_sources(app, url):
         r'<span class="brand-descriptor">for Civis Platform</span></a>',
         body,
     )
+
+
+@pytest.mark.parametrize("url, status", [(url, 200) for url in PAGES] + [("/no-such-page", 404)])
+def test_every_page_footer_has_the_non_affiliation_statement(app, url, status):
+    response = app.test_client().get(url)
+    assert response.status_code == status
+    body = response.get_data(as_text=True)
+    footer = body[body.index('<footer class="site-footer">'): body.index("</footer>")]
+    notice = re.search(r'<p class="footer-notice">(.*?)</p>', footer, re.DOTALL)
+    assert notice and " ".join(html.unescape(notice.group(1)).split()) == NON_AFFILIATION
 
 
 def test_logo_svg_is_inert_and_served_safely(app):

@@ -5,6 +5,7 @@ All runs use the synthetic instance and a local SQLite file. No network calls.
 
 from __future__ import annotations
 
+import codecs
 import csv
 import io
 import re
@@ -21,7 +22,17 @@ from scanner import scan_log
 from scanner.__main__ import SimulatedStop, dry_run, main
 from scanner.checkpoint import Checkpointer
 from scanner.config import ConfigError, ScanConfig
-from scanner.output import CivisRunOutputs, CivisSink, SqliteSink, TableWriteError, fit, report_csv
+from common.disclaimer import DISCLAIMER, NON_AFFILIATION
+from scanner.output import (
+    REPORT_COLUMNS,
+    REPORT_NOTICE_LINES,
+    CivisRunOutputs,
+    CivisSink,
+    SqliteSink,
+    TableWriteError,
+    fit,
+    report_csv,
+)
 from scanner.process import ObjectResult
 from scanner.runner import AlreadyFinished
 from common.models import CivisObject
@@ -29,6 +40,14 @@ from common.models import CivisObject
 NOW = datetime(2026, 10, 13, 12, 0, tzinfo=timezone.utc)
 FAKE_LOG_VALUES = ("Synthetic-Log-Pw-7731", "synthetic.member@example.org")
 FAKE_CODE = ("make_backend_factory", "select 1", "import civis")
+
+
+def report_rows(text: str) -> list[dict]:
+    """Data rows of a CSV report: skip the notice lines, then read the column names on line 3."""
+    stream = io.StringIO(text)
+    for _ in range(REPORT_NOTICE_LINES):
+        stream.readline()
+    return list(csv.DictReader(stream))
 
 
 def db(out: Path) -> sqlite3.Connection:
@@ -190,11 +209,25 @@ def test_report_csv_lists_every_object_and_blocks_formulas():
         {"object_id": 1, "rule_id": "CV3-ML", "file": "-x.py", "line_number": 3, "severity": "high",
          "confidence": "high", "source": "code", "fix_guidance": "Pin civis.", "impact": "affected"},
     ]
-    rows = list(csv.DictReader(io.StringIO(report_csv(objects, findings, load_rules()).decode("utf-8-sig"))))
+    rows = report_rows(report_csv(objects, findings, load_rules()).decode("utf-8-sig"))
     assert [(r["row_type"], r["object_id"]) for r in rows] == [("finding", "1"), ("object", "2")]
     assert rows[0]["object_name"].startswith("'=") and rows[0]["file"] == "'-x.py"
     assert rows[1]["object_name"] == "'+cmd" and rows[1]["scan_note"] == "'@risk"
     assert rows[0]["rule_title"] == "The civis.ml module is removed"
+
+
+def test_csv_report_starts_with_the_two_notice_lines():
+    objects = [{"object_id": 1, "object_type": "python_script", "name": "=cmd", "scan_status": "scanned"}]
+    data = report_csv(objects, [], load_rules())
+    assert data.startswith(codecs.BOM_UTF8) and data.count(codecs.BOM_UTF8) == 1  # The BOM is first, once.
+    text = data.decode("utf-8-sig")
+    lines = text.splitlines()
+    assert lines[0] == '"' + DISCLAIMER.replace('"', '""') + '"'  # One quoted cell, untouched by the formula guard.
+    assert lines[1] == '"' + NON_AFFILIATION.replace('"', '""') + '"'
+    records = list(csv.reader(io.StringIO(text)))
+    assert records[0] == [DISCLAIMER] and records[1] == [NON_AFFILIATION]
+    assert records[2] == REPORT_COLUMNS  # Column names on line 3.
+    assert report_rows(text)[0]["object_name"] == "'=cmd"  # Data cells keep the guard.
 
 
 def test_sqlite_retention_keeps_the_current_checklist_status(tmp_path):
@@ -354,7 +387,7 @@ def test_stop_partway_then_resume(tmp_path):
     assert conn.execute(finding_set).fetchall() == reference.execute(finding_set).fetchall()
     assert resumed.findings == complete.findings
     report = next(tmp_path.glob("*.csv")).read_text(encoding="utf-8-sig")
-    assert len({row["object_id"] for row in csv.DictReader(io.StringIO(report))}) == 23
+    assert len({row["object_id"] for row in report_rows(report)}) == 23
 
     with pytest.raises(AlreadyFinished):
         dry_run(tmp_path, now=NOW, run_id=run_id)
@@ -372,7 +405,7 @@ def test_table_failure_still_saves_the_csv(tmp_path, monkeypatch, log_stream):
     assert result.status == "tables_failed" and result.report_saved and not result.tables_ok
     assert "TABLE_WRITE_FAILED table=findings" in log_stream.getvalue()
     report = next(tmp_path.glob("*.csv")).read_text(encoding="utf-8-sig")
-    assert len({row["object_id"] for row in csv.DictReader(io.StringIO(report))}) == 23
+    assert len({row["object_id"] for row in report_rows(report)}) == 23
 
 
 def test_retention_deletes_old_runs_but_not_the_current_one(tmp_path):

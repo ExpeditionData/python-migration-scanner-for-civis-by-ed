@@ -3,7 +3,7 @@ import json
 import pytest
 
 from common import urls
-from common.disclaimer import DISCLAIMER
+from common.disclaimer import DISCLAIMER, NON_AFFILIATION
 from common.models import CivisObject, Finding, FindingSource, Impact, Level, ObjectType, WorkflowRef, workflows_json
 from common.version import __version__
 
@@ -38,6 +38,25 @@ def test_disclaimer_says_the_essentials():
     assert DISCLAIMER.endswith("This is not professional advice.")
     assert chr(0x2014) not in DISCLAIMER  # no em dashes
     assert not set(DISCLAIMER) & set("“”‘’")  # straight quotes only
+
+
+def test_non_affiliation_statement_is_the_reviewed_text():
+    assert NON_AFFILIATION == (
+        "This tool is independent and is not affiliated with, endorsed by, sponsored by, or supported by "
+        'Civis Analytics. "Civis" and "Civis Platform" are trademarks of Civis Analytics, used here only to '
+        "identify the platform this tool works with."
+    )
+
+
+def test_readme_opens_with_the_non_affiliation_statement():
+    from pathlib import Path
+
+    readme = (Path(__file__).resolve().parent.parent / "README.md").read_text(encoding="utf-8")
+    paragraphs = [" ".join(p.split()) for p in readme.split("\n\n")]
+    assert paragraphs[0].startswith("# Python Migration Scanner for Civis Platform by Expedition Data")
+    assert paragraphs[1] == NON_AFFILIATION  # Right under the title ...
+    flat = " ".join(readme.split())
+    assert flat.index(NON_AFFILIATION) < flat.index("**Disclaimer.**")  # ... and before the disclaimer.
 
 
 def test_disclaimer_fits_its_scan_runs_column():

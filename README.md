@@ -1,5 +1,10 @@
 # Python Migration Scanner for Civis Platform by Expedition Data
 
+This tool is independent and is not affiliated with, endorsed by, sponsored
+by, or supported by Civis Analytics. "Civis" and "Civis Platform" are
+trademarks of Civis Analytics, used here only to identify the platform this
+tool works with.
+
 A free, open-source tool that Civis Platform customers run inside their own
 Civis environment. It finds scripts, notebooks, workflows, Services, and
 container scripts affected by the February 2027 Civis default image update
@@ -239,6 +244,14 @@ cancelled or hit the 5-day limit for container scripts):
    Each change is saved with your Civis user name and the time.
 5. **Download CSV** saves the full report to your computer (see
    [Security and privacy](#security-and-privacy)).
+
+### The CSV report
+
+The CSV report starts with two notice lines: line 1 is the disclaimer and line
+2 is the non-affiliation statement. The column names are on line 3. When you
+load the file with code, skip the first two lines, for example
+`pandas.read_csv(path, skiprows=2, encoding="utf-8-sig")`. The result tables
+in your schema are the machine-readable copy of the same results.
 
 If the scan fails, open the scanner job's run log. It contains only progress
 counts, object IDs, rule IDs, and error types, so it is safe to share with

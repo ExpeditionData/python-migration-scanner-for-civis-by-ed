@@ -16,7 +16,7 @@ from app import views
 from app.backends.base import ChecklistSaveError, Progress, ResultsUnavailable
 from app.security import safe_href
 from app.services import Services
-from common.disclaimer import DISCLAIMER
+from common.disclaimer import DISCLAIMER, NON_AFFILIATION
 from common.models import ObjectType
 from common.rule_loader import load_rules
 from common.version import __version__
@@ -144,6 +144,7 @@ def base_context(active: str, situation: views.Situation) -> dict:
         "active": active,
         "viewer": viewer_name(),
         "disclaimer": DISCLAIMER,
+        "non_affiliation": NON_AFFILIATION,
         "version": __version__,
         "banners": banners(situation),
         "situation": situation,
@@ -374,11 +375,13 @@ def _progress(run) -> Progress | None:
 def not_found(_error):
     return render_template("error.html", title="Page not found",
                            body="That page or report could not be found.", viewer=viewer_name(),
-                           disclaimer=DISCLAIMER, version=__version__, banners=[], active=None), 404
+                           disclaimer=DISCLAIMER, non_affiliation=NON_AFFILIATION, version=__version__,
+                           banners=[], active=None), 404
 
 
 @bp.app_errorhandler(400)
 def bad_request(_error):
     return render_template("error.html", title="The request could not be accepted",
                            body="The form may have expired. Reload the page and try again.", viewer=viewer_name(),
-                           disclaimer=DISCLAIMER, version=__version__, banners=[], active=None), 400
+                           disclaimer=DISCLAIMER, non_affiliation=NON_AFFILIATION, version=__version__,
+                           banners=[], active=None), 400
