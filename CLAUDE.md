@@ -70,6 +70,13 @@ be made public at any time.
 - Month-first dates, for example "October 9, 2026" or "10/09/2026".
 - No em dashes. Use commas, periods, colons, or parentheses instead.
 - Plain, direct language. Short sentences. No marketing tone.
+- Reviewed legal text is used exactly as written, not reworded to this style:
+  `DISCLAIMER` and `NON_AFFILIATION` in `common/disclaimer.py` (and their
+  README copies), NOTICE, the README trademark sentences, and the "By design"
+  section of SECURITY.md. Change them only when Rob provides new text.
+- Describe the tool's behavior as design ("is designed to", "does not"), not as
+  a promise ("never"), in SECURITY.md, the README, and app text. "Never" is
+  fine in instructions to admins and in contributor rules.
 
 ## Architecture
 
@@ -107,9 +114,11 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   inventory, code retrieval, log scan, request budget, output, checkpoints,
   resume, dry runs) and the Flask app (Overview, Scan history, Inventory,
   Findings and checklist, scan status API, local preview). Phase 6 is built
-  and waiting for Rob's approval: `start_service.sh`, the Docker test images,
-  the report-only frame rule, README setup steps, and TESTING.md. Phase 7 is
-  the first live test, following TESTING.md. Implementation choices not in
+  and approved: `start_service.sh`, the Docker test images, the report-only
+  frame rule, README setup steps, and TESTING.md. On October 26, 2026 the
+  product and repository were renamed and the legal texts were updated
+  (docs/PLAN.md section 16). Phase 7 is the first live test, following
+  TESTING.md. Implementation choices not in
   the approved plan are in docs/PLAN.md sections 10 to 16.
 - **App flow.** `app/__init__.create_app` -> `app/services.py` (Civis or local
   data layer) -> `app/pages.py` routes -> `app/views.py` (pure shaping) ->

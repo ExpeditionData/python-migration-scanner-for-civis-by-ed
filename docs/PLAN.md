@@ -657,6 +657,50 @@ Field labels come from these public Civis help articles at support.civisanalytic
 - Release notes 2018: the container script "Disk Space" field (named only there, so marked "label to confirm").
 - civis-python 2.10.0 API spec (bundled with the package in `.venv`): `requiredResources` units (CPU shares, 1,000 per core; memory in MB; disk in GB), `gitCredentialId` on container scripts only, and no git credential on Services.
 
+### Attorney review and rename (October 26, 2026)
+
+**Conclusion: an attorney reviewed the release. Rob applied the feedback on October 26, 2026: a new product and repository name, a new disclaimer, a non-affiliation statement, a new NOTICE, and behavior statements written as design rather than promises. Behavior, routes, and data are unchanged, except that the CSV report gains two notice lines.**
+
+| # | Change | Why |
+|---|---|---|
+| 16.23 | **Rename.** The product, formerly "Civis Python Version Search", is now "Python Migration Scanner for Civis Platform by Expedition Data". The repository is `ExpeditionData/python-migration-scanner-for-civis-by-ed` (renamed on GitHub by Rob; the local folder keeps its name). The full name opens the README title, the first line of NOTICE, and the first mention in SECURITY.md; later mentions say "Python Migration Scanner" or "the tool". The app header shows "Python Migration Scanner" as the brand with a smaller "for Civis Platform" under it, beside the Expedition Data logo, and each browser tab reads "<Page> \| Python Migration Scanner for Civis Platform". The internal short prefix from the old name is now `pmsc` (Docker test image and container names, build temp folder, `PMSC_TEST_IMAGE`, the scanner's temp folder prefix, the Flask extension key, and a TESTING.md example). The CSV report is named `python-migration-scanner-<run_id>.csv`. The HMAC labels for the Flask secret and the CSRF key use the new repository name, which only invalidates outstanding CSRF tokens. `tests/test_names.py` fails if the old product name appears in any tracked file other than this one, or if the old repository name or prefix appears anywhere. | Our name leads; "Civis" appears only as a descriptor. The repo holds no Civis logo, icon, or color values: the only image is the Expedition Data logo, and the only icon is an inline warning triangle drawn in `base.html`. |
+| 16.24 | **Disclaimer and non-affiliation statement.** `DISCLAIMER` and the new `NON_AFFILIATION` in `common/disclaimer.py` hold the texts below. The disclaimer appears in the README, the banner on every page, the `scan_runs` table, and line 1 of the CSV report. The non-affiliation statement appears right under the README title, on its own line in every page footer (including error pages), and as line 2 of the CSV report. Each CSV notice line is one quoted cell written as is (the formula guard applies to data cells only), the UTF-8 byte order mark stays first, and the column names are on line 3 (`REPORT_NOTICE_LINES` in `scanner/output.py`). The README's "The CSV report" section says to skip the first two lines when loading the file with code, and that the result tables are the machine-readable copy. Tests check the exact texts in the README, every footer, and the first two CSV lines, and that the disclaimer fits its 2,048-byte column. | One change from the attorney's text is Rob's: "the Civis user the scan runs as" replaces "the user who runs it", because Phase 7 is still testing which user Civis runs a job as (16.22). |
+| 16.25 | **NOTICE and trademarks.** NOTICE opens with the text below, followed by the unchanged fonts paragraph. The README License section carries the same trademark sentences. Tests check both. | Our name and logo are not Apache-licensed, and Civis's trademarks are named as Civis Analytics'. |
+| 16.26 | **Behavior statements as design.** SECURITY.md opens with the "By design" section below (the notebook storage and scanner-run lines are Rob's additions to the attorney's example). Each bullet links to the code and tests that implement it. The rest of SECURITY.md, the README "Security and privacy" section, and app text describe design ("is designed to", "does not") instead of promising behavior; "How we build and test it" describes our practice; "Not a complete audit" became a pointer to the disclaimer; and "Expedition Data LLC reviews every report" became "Reports go privately to Expedition Data LLC." "Never" stays where it instructs admins (for example, "Never attach it to the Service") and in contributor rules. New tests back two bullets: `test_civis_writes_are_limited_to_the_scanner_job_and_the_results_schema` and `test_only_safe_http_sends_http_requests_and_only_to_the_allowed_hosts`. Another checks the reviewed text, and another fails if SECURITY.md names a test that does not exist. | A "never" about the tool's behavior reads as a promise, and a bug would make it false. Describing design and pointing to the code and tests is accurate. "Reports go privately" does not conflict with "no obligation to provide support". |
+
+**Disclaimer (`DISCLAIMER`):**
+
+> This tool is provided free and "as is," without warranty of any kind, under the Apache License 2.0. It scans for known patterns associated with the February 2027 Civis Platform update (Python 3.15 and civis-python v3). It is not a complete audit. It can miss affected code and can flag code that is not affected. Results depend on the permissions of the Civis user the scan runs as; objects that user cannot see are not scanned. Test every job before February 2027. Expedition Data LLC is not liable for any damages arising from use of this tool and has no obligation to provide support or updates. This is not professional advice.
+
+**Non-affiliation statement (`NON_AFFILIATION`):**
+
+> This tool is independent and is not affiliated with, endorsed by, sponsored by, or supported by Civis Analytics. "Civis" and "Civis Platform" are trademarks of Civis Analytics, used here only to identify the platform this tool works with.
+
+**NOTICE, before the fonts paragraph:**
+
+```text
+Python Migration Scanner for Civis Platform by Expedition Data
+Copyright 2026 Expedition Data LLC.
+
+This product includes software developed by Expedition Data LLC.
+
+Licensed under the Apache License, Version 2.0. See the LICENSE file for the full license text.
+
+The Expedition Data name and logo are trademarks of Expedition Data LLC and are not licensed under the Apache License 2.0. Civis and Civis Platform are trademarks of Civis Analytics; Expedition Data LLC is not affiliated with Civis Analytics.
+```
+
+**SECURITY.md, "By design":**
+
+> By design, this tool:
+>
+> - Reads Civis objects and does not modify them. The web app starts runs of the scanner job you created.
+> - Writes only to the schema you specify and to its own job run outputs
+> - Makes network calls only to the Civis API, to Civis file storage through the time-limited links the Civis API provides (to download notebook files), and, if you provide a token, to GitHub
+> - Sends no telemetry and no data to Expedition Data LLC
+> - Reports object IDs, rule IDs, file names, and line numbers, not code contents
+>
+> These statements describe intended behavior. The full source code is available for your review. See LICENSE for the warranty disclaimer.
+
 ### Public-release readiness (October 22, 2026)
 
 - **gitleaks 8.30.1 over the full git history:** 33 commits scanned, no leaks found. Rerun before this checklist was committed: 40 commits, no leaks found. One fake test value from Phase 3 stays allowlisted in `.gitleaksignore` (13.3). History was not changed.
@@ -674,4 +718,4 @@ On the organization's GitHub Free plan, private vulnerability reporting and rule
    - Tag protections: **Restrict updates** (no one can move a tag), **Restrict deletions**, and **Block force pushes**.
    - Leave **Restrict creations** off, so new release tags can still be created.
    - Leave the bypass list empty, so not even an admin can move or delete a release tag without first changing the ruleset.
-4. **Create `v0.1.0-rc1`** from the newest commit on `main` after the Phase 6 follow-ups, and push it. Then confirm the ruleset: `git push origin :refs/tags/v0.1.0-rc1` must be rejected. If the delete goes through, recreate the tag on the same commit, push it again, and fix the ruleset before going further.
+4. **Create `v0.1.0-rc1`** from the newest commit on `main` after the October 26, 2026 naming and notice changes, and push it. Then confirm the ruleset: `git push origin :refs/tags/v0.1.0-rc1` must be rejected. If the delete goes through, recreate the tag on the same commit, push it again, and fix the ruleset before going further.
