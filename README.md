@@ -12,12 +12,15 @@ It has two parts:
 - **A web app.** A Civis Service where admins start scans, review results, and
   track a fix checklist.
 
-> **Disclaimer.** This tool flags known code patterns that may break when Civis
-> Platform updates its default Python images in February 2027 (Python 3.14 to
-> 3.15, and civis-python v2 to v3). It is not a complete audit. It can miss
-> problems, and it can flag code that is fine. Test every job before February
-> 2027. The tool is provided under the Apache License 2.0, without warranty of
-> any kind.
+> **Disclaimer.** This tool is provided free and "as is," without warranty of
+> any kind, under the Apache License 2.0. It scans for known patterns
+> associated with the February 2027 Civis Platform update (Python 3.15 and
+> civis-python v3). It is not a complete audit. It can miss affected code and
+> can flag code that is not affected. Results depend on the permissions of the
+> Civis user the scan runs as; objects that user cannot see are not scanned.
+> Test every job before February 2027. Expedition Data LLC is not liable for
+> any damages arising from use of this tool and has no obligation to provide
+> support or updates. This is not professional advice.
 
 Setup takes about 30 minutes and is described in [Setup](#setup) below. Field
 names are the ones used in Civis help articles. Where a name could not be

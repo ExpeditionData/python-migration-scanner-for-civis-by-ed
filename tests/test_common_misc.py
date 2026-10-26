@@ -30,9 +30,21 @@ def test_object_url_requires_integer_id():
 
 
 def test_disclaimer_says_the_essentials():
-    assert "not a complete audit" in DISCLAIMER
+    assert DISCLAIMER.startswith('This tool is provided free and "as is," without warranty of any kind')
+    assert "It is not a complete audit." in DISCLAIMER
+    assert "Results depend on the permissions of the Civis user the scan runs as" in DISCLAIMER
     assert "Test every job before February 2027" in DISCLAIMER
+    assert "has no obligation to provide support or updates" in DISCLAIMER
+    assert DISCLAIMER.endswith("This is not professional advice.")
     assert chr(0x2014) not in DISCLAIMER  # no em dashes
+    assert not set(DISCLAIMER) & set("“”‘’")  # straight quotes only
+
+
+def test_disclaimer_fits_its_scan_runs_column():
+    from common.schema import SCAN_RUNS
+
+    column = next(c for c in SCAN_RUNS.columns if c.name == "disclaimer")
+    assert len(DISCLAIMER.encode("utf-8")) <= int(column.sql_type.split("(")[1].rstrip(")"))
 
 
 def test_version_is_semver():
