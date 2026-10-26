@@ -1,8 +1,9 @@
 """The disclaimer and the non-affiliation statement, used in the README, every
 report, and the web app.
 
-Change the wording here only, then copy it into the README. The texts were
-reviewed by counsel; do not reword them to match the house style.
+Change the wording here only, then copy it into the README. These are fixed
+legal texts: use them exactly as written, and do not reword them to match the
+house style.
 """
 
 DISCLAIMER = (

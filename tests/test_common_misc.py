@@ -40,7 +40,7 @@ def test_disclaimer_says_the_essentials():
     assert not set(DISCLAIMER) & set("“”‘’")  # straight quotes only
 
 
-def test_non_affiliation_statement_is_the_reviewed_text():
+def test_non_affiliation_statement_is_the_fixed_text():
     assert NON_AFFILIATION == (
         "This tool is independent and is not affiliated with, endorsed by, sponsored by, or supported by "
         'Civis Analytics. "Civis" and "Civis Platform" are trademarks of Civis Analytics, used here only to '

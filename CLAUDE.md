@@ -70,7 +70,7 @@ be made public at any time.
 - Month-first dates, for example "October 9, 2026" or "10/09/2026".
 - No em dashes. Use commas, periods, colons, or parentheses instead.
 - Plain, direct language. Short sentences. No marketing tone.
-- Reviewed legal text is used exactly as written, not reworded to this style:
+- Fixed legal text is used exactly as written, not reworded to this style:
   `DISCLAIMER` and `NON_AFFILIATION` in `common/disclaimer.py` (and their
   README copies), NOTICE, the README trademark sentences, and the "By design"
   section of SECURITY.md. Change them only when Rob provides new text.

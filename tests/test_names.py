@@ -67,7 +67,7 @@ TRADEMARKS = (
 )
 
 
-def test_notice_is_the_reviewed_text_and_keeps_the_fonts_paragraph():
+def test_notice_is_the_fixed_text_and_keeps_the_fonts_paragraph():
     notice = (ROOT / "NOTICE").read_text(encoding="utf-8")
     assert notice.startswith(
         "Python Migration Scanner for Civis Platform by Expedition Data\n"
@@ -83,3 +83,14 @@ def test_readme_license_section_has_the_trademark_sentences():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     license_section = " ".join(readme[readme.index("## License"):].split())
     assert TRADEMARKS in license_section
+
+
+# Words that would say who checked the legal texts. Built from parts so this file does not match itself.
+REVIEW_WORDS = re.compile(
+    "|".join(["att" + "orney", "coun" + "sel", "law" + "yer", r"legal\s+re" + "view"]), re.IGNORECASE
+)
+
+
+def test_no_file_says_who_checked_the_legal_texts():
+    found = sorted({name for name, text in _text_files() if REVIEW_WORDS.search(text)})
+    assert found == []

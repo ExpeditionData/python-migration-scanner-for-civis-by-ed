@@ -362,7 +362,7 @@ def test_only_safe_http_sends_http_requests_and_only_to_the_allowed_hosts():
     assert hosts == {"GITHUB_HOSTS", "CIVIS_FILE_HOSTS"}
 
 
-def test_security_page_states_the_reviewed_by_design_text():
+def test_security_page_states_the_fixed_by_design_text():
     text = " ".join(re.sub(r"\*\*|\[|\]\([^)]*\)", "", (ROOT / "SECURITY.md").read_text(encoding="utf-8")).split())
     for sentence in (
         "By design, this tool:",
