@@ -6,7 +6,7 @@
 <div class="page-head">
   <div>
     <h1>Findings and checklist</h1>
-    <p class="subtitle">Each finding shows the file, line, and rule. Code is never shown, since scripts can contain passwords.</p>
+    <p class="subtitle">Each finding shows the file, line, and rule. Code is not shown, since scripts can contain passwords.</p>
   </div>
   {% if not empty %}
   <div class="actions">
@@ -120,6 +120,6 @@
     {{ pager(page, "pages.findings", filters, "findings") }}
   </section>
 </form>
-<p class="note">Status changes are saved with your Civis user name and the time. A new scan never overwrites a status your team has set.{% if not can_save %} Saving is turned off because the app cannot see your Civis user name.{% endif %}</p>
+<p class="note">Status changes are saved with your Civis user name and the time. A new scan does not overwrite a status your team has set.{% if not can_save %} Saving is turned off because the app cannot see your Civis user name.{% endif %}</p>
 {% endif %}
 {% endblock %}

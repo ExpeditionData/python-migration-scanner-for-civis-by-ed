@@ -34,19 +34,24 @@ confirm)".
 
 ## Security and privacy
 
-Read [SECURITY.md](SECURITY.md) before you install the tool. In short:
+Read [SECURITY.md](SECURITY.md) before you install the tool. It links each
+statement below to the code and tests that implement it. By design:
 
-- **Stays inside Civis.** Everything runs inside your Civis environment, and the
-  tool sends nothing out of it.
-- **Read-only.** The tool reads your Civis objects but never changes them.
-- **No code stored.** For each finding, the tool records the object ID, rule ID,
-  file name, and line number. It never stores code, log text, or notebook output.
+- **Runs inside Civis.** Both parts are designed to run inside your Civis
+  environment. The tool sends no telemetry and no data to Expedition Data LLC.
+- **Read-only on your objects.** The tool reads your Civis objects and does not
+  modify them. The web app starts runs of the scanner job you created.
+- **Locations, not code.** For each finding, the tool records the object ID,
+  rule ID, file name, and line number, not code, log text, or notebook output.
+
+These statements describe intended behavior. The full source code is available
+for your review.
 
 ### Setup guidance for admins
 
 - **Run as the Robot user.** The scanner sees only what its user can see.
 - **Use a dedicated results schema.** Choose a schema used only for this tool,
-  and grant read access to Civis admins only. The tool never runs `GRANT`
+  and grant read access to Civis admins only. The tool does not run `GRANT`
   statements.
 - **Share the web app with Civis admins only.** Anyone who can open it sees the
   names, owners, and links of every object the scanning user can see, including
@@ -71,10 +76,10 @@ Read [SECURITY.md](SECURITY.md) before you install the tool. In short:
 
 ## Setup
 
-Both parts run code from this repository at a **release tag**, never from
-`main`. In the steps below, replace `<release tag>` with the newest release
-listed on this repository's Releases page, for example `v1.0.0`. Use the same
-tag for both parts.
+Point both parts at a **release tag** of this repository, never at `main`. In
+the steps below, replace `<release tag>` with the newest release listed on
+this repository's Releases page, for example `v1.0.0`. Use the same tag for
+both parts.
 
 ### Before you start
 
@@ -88,7 +93,7 @@ You need:
    API key belongs to the Service's owner, and scans started from the app run
    as that user, so the Robot user should own the Service too.
 3. **A dedicated results schema**, created by a database admin. The scanner
-   never creates schemas. The user behind the scanner's database credential
+   does not create schemas. The user behind the scanner's database credential
    needs to create tables in the schema and to select, insert, and delete rows
    in them (delete is used only by `RETENTION_DAYS`). Grant read access to
    Civis admins only. The scanner creates its five tables on the first run.
@@ -148,7 +153,7 @@ You need:
    | `LOOKBACK_DAYS` | Integer | No | `200` | Read the most recent run log only for objects that ran in this many days (1 to 3,650). |
    | `MAX_CONCURRENCY` | Integer | No | `4` | Worker threads (1 to 16). For each thread above 4, add 512 MB to **Memory**. |
    | `REQUEST_BUDGET` | Integer | No | `500` | Civis API requests per 5 minutes (10 to 1,000). Civis allows 1,000 per user, shared with the web app and any other jobs that run as the Robot user. |
-   | `RETENTION_DAYS` | Integer | No | (blank) | Blank or 0 keeps every scan. A number deletes scans older than that many days. The newest scan is never deleted. |
+   | `RETENTION_DAYS` | Integer | No | (blank) | Blank or 0 keeps every scan. A number deletes scans older than that many days. The newest scan is not deleted. |
    | `RUN_ID` | String | No | (blank) | Blank starts a new scan. A run ID resumes that scan (see below). |
 
    Click **Add** after each parameter, then **Save**. The names must match
@@ -253,9 +258,9 @@ load the file with code, skip the first two lines, for example
 `pandas.read_csv(path, skiprows=2, encoding="utf-8-sig")`. The result tables
 in your schema are the machine-readable copy of the same results.
 
-If the scan fails, open the scanner job's run log. It contains only progress
-counts, object IDs, rule IDs, and error types, so it is safe to share with
-whoever supports your setup.
+If the scan fails, open the scanner job's run log. It is designed to contain
+only progress counts, object IDs, rule IDs, and error types. Read it before you
+share it with whoever supports your setup.
 
 ### Update to a new release
 
@@ -284,7 +289,8 @@ Always change both parts to the same tag.
 
 ## Pinned Docker images
 
-The tool runs only on these exact images and installs nothing at run time. To
+The tool is designed to run only on these exact images and to install nothing
+at run time. To
 confirm an image has not changed, compare its digest with the one below, for
 example with `docker pull <image>@<digest>`.
 
@@ -305,7 +311,7 @@ were pulled by digest and checked again on October 22, 2026.
   They also run inside both pinned images (see CLAUDE.md).
 - **Dry run.** `python -m scanner --dry-run --out dry_run_output` runs the whole
   scanner on made-up data and writes a local SQLite file and CSV report. It
-  never contacts Civis or GitHub.
+  does not contact Civis or GitHub.
 - **Local app preview.** `python -m scanner --dry-run --preview --out dry_run_output`,
   then `python -m app.local --results dry_run_output`, and open
   http://127.0.0.1:8050. It shows made-up data only, listens on this machine

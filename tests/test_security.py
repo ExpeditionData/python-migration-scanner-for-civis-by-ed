@@ -5,6 +5,7 @@ All secrets, emails, and names below are fake and made up for these tests.
 
 from __future__ import annotations
 
+import ast
 import csv
 import io
 import json
@@ -295,6 +296,95 @@ def test_app_never_reads_a_github_token():
         if p.is_file() and p.suffix in (".py", ".html", ".js") and pattern.search(p.read_text(encoding="utf-8"))
     ]
     assert offenders == []
+
+
+# --- By design: what the tool writes and contacts (SECURITY.md) ---------------------------
+
+CODE_PACKAGES = ("scanner", "app", "common")
+# The made-up Civis client and HTTP session used by dry runs and tests; they make no calls.
+FAKES = ("scanner/synthetic/",)
+
+
+def _code_files():
+    for package in CODE_PACKAGES:
+        for path in sorted((ROOT / package).rglob("*.py")):
+            rel = path.relative_to(ROOT).as_posix()
+            if not rel.startswith(FAKES):
+                yield rel, ast.parse(path.read_text(encoding="utf-8"))
+
+
+def test_civis_writes_are_limited_to_the_scanner_job_and_the_results_schema():
+    """Reads Civis objects and does not modify them; writes only to the results schema and the
+    scanner job's run outputs. Every Civis API write and every civis.io write is listed here."""
+    allowed = {
+        # The web app starts runs of the scanner job the admin created.
+        ("post_containers_runs", "app/backends/civis_backend.py"),
+        # The scanner attaches its CSV report to its own run.
+        ("post_containers_runs_outputs", "scanner/output.py"),
+        ("file_to_civis", "scanner/output.py"),
+        # Result tables in the schema the admin chose (create, insert, retention deletes).
+        ("query_civis", "scanner/output.py"),
+        ("dataframe_to_civis", "scanner/output.py"),
+        # The checklist save: one INSERT into the results schema.
+        ("query_civis", "app/backends/civis_backend.py"),
+        # RETENTION_DAYS: the scanner's own result sink deletes expired runs from the results
+        # schema, using the DELETE statements common/retention.py builds for that schema.
+        ("delete_runs", "scanner/runner.py"),
+        ("delete_runs_sql", "scanner/output.py"),
+    }
+    write = re.compile(r"^(post|put|patch|delete)_|^(query_civis|dataframe_to_civis|file_to_civis|civis_to_file)$")
+    found = set()
+    for rel, tree in _code_files():
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and write.search(node.func.attr):
+                found.add((node.func.attr, rel))
+    assert found == allowed
+
+
+def test_only_safe_http_sends_http_requests_and_only_to_the_allowed_hosts():
+    """Network calls go only to the Civis API (through civis-python), Civis file storage, and GitHub.
+    No other module imports an HTTP or socket client, so there is no path for telemetry."""
+    clients = {"requests", "httpx", "aiohttp", "urllib3", "http.client", "urllib.request", "socket", "smtplib", "ftplib"}
+    importers = set()
+    hosts = set()
+    for rel, tree in _code_files():
+        for node in ast.walk(tree):
+            names = []
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                names = [node.module] + [f"{node.module}.{alias.name}" for alias in node.names]
+            if any(name in clients or name.split(".")[0] in clients - {"http", "urllib"} for name in names):
+                importers.add(rel)
+            if isinstance(node, ast.keyword) and node.arg == "allowed_hosts" and isinstance(node.value, ast.Name):
+                hosts.add(node.value.id)
+    assert importers == {"scanner/retrieval/http.py"}
+    assert hosts == {"GITHUB_HOSTS", "CIVIS_FILE_HOSTS"}
+
+
+def test_security_page_states_the_reviewed_by_design_text():
+    text = " ".join(re.sub(r"\*\*|\[|\]\([^)]*\)", "", (ROOT / "SECURITY.md").read_text(encoding="utf-8")).split())
+    for sentence in (
+        "By design, this tool:",
+        "Reads Civis objects and does not modify them. The web app starts runs of the scanner job you created.",
+        "Writes only to the schema you specify and to its own job run outputs",
+        "Makes network calls only to the Civis API, to Civis file storage through the time-limited links the "
+        "Civis API provides (to download notebook files), and, if you provide a token, to GitHub",
+        "Sends no telemetry and no data to Expedition Data LLC",
+        "Reports object IDs, rule IDs, file names, and line numbers, not code contents",
+        "These statements describe intended behavior. The full source code is available for your review. "
+        "See LICENSE for the warranty disclaimer.",
+        "Reports go privately to Expedition Data LLC.",
+    ):
+        assert sentence in text, sentence
+
+
+def test_every_test_named_in_the_security_page_exists():
+    named = set(re.findall(r"`(test_[a-z0-9_]+)`", (ROOT / "SECURITY.md").read_text(encoding="utf-8")))
+    defined = set()
+    for path in (ROOT / "tests").glob("test_*.py"):
+        defined |= set(re.findall(r"^def (test_[a-z0-9_]+)\(", path.read_text(encoding="utf-8"), re.MULTILINE))
+    assert named and named <= defined, sorted(named - defined)
 
 
 # --- 8. The scanner never grants access -------------------------------------------------

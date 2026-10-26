@@ -86,7 +86,8 @@ def test_pages_render_with_navigation_banner_and_footer(app, url, heading, nav):
     assert f"<h1>{heading}</h1>" in body
     assert f'class="active" aria-current="page">{nav}</a>' in body
     assert "It is not a complete audit." in body and "For Civis admins only." in body
-    assert "Runs inside your Civis environment. No data leaves Civis." in body
+    assert "Designed to run inside your Civis environment." in body
+    assert "No data leaves Civis" not in body
     assert 'href="#main"' in body  # Skip link for keyboard users.
 
 
