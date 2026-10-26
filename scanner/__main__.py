@@ -114,7 +114,7 @@ def live_run() -> RunResult:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="python -m scanner", description="Civis Python Version Search scanner")
+    parser = argparse.ArgumentParser(prog="python -m scanner", description="Python Migration Scanner for Civis Platform: scanner job")
     parser.add_argument("--dry-run", action="store_true", help="scan the synthetic instance and write to a local folder")
     parser.add_argument("--out", type=Path, default=Path("dry_run_output"), help="dry run output folder")
     parser.add_argument("--run-id", help="dry run: resume this run ID")

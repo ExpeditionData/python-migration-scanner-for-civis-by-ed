@@ -4,8 +4,8 @@ Guidance for Claude Code when working in this repository.
 
 ## Project summary
 
-Civis Python Version Search is a free, open-source tool that Civis Platform
-customers run inside their own Civis environment. It finds scripts, notebooks,
+Python Migration Scanner for Civis Platform by Expedition Data is a free, open-source tool that
+Civis Platform customers run inside their own Civis environment. It finds scripts, notebooks,
 workflows, Services, and container scripts affected by the February 2027 Civis
 default image update (Python 3.14 to 3.15, civis-python v2 to v3). A scanner
 job (a Civis container script) inventories objects, reads their code and recent

@@ -1,7 +1,7 @@
 # First live test
 
-A step-by-step checklist for the first live test of Civis Python Version
-Search inside a **test organization's** Civis environment. It checks the
+A step-by-step checklist for the first live test of Python Migration Scanner
+inside a **test organization's** Civis environment. It checks the
 README setup and every fact that could not be confirmed from documentation
 (docs/PLAN.md marks these "confirm in Phase 7").
 
@@ -368,7 +368,7 @@ Copy this template, fill it in, and send it. Counts and redacted error types
 only.
 
 ```
-Civis Python Version Search: first live test results
+Python Migration Scanner: first live test results
 Release tag: v0.1.0-rc1
 Date (MM/DD/YYYY):
 Browser:

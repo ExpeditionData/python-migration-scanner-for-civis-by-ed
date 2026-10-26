@@ -676,7 +676,11 @@ def test_every_page_has_the_logo_link_and_only_local_sources(app, url):
     assert len(brand) == 2
     assert all(h.startswith("https://platform.civisanalytics.com/spa/#/") for h in external if h not in brand)
     assert '<span class="brand-divider" aria-hidden="true"></span>' in body
-    assert re.search(r'<a class="brand-name" href="/">Civis Python Version Search</a>', body)
+    assert re.search(
+        r'<a class="brand-name" href="/"><span class="brand-title">Python Migration Scanner</span> '
+        r'<span class="brand-descriptor">for Civis Platform</span></a>',
+        body,
+    )
 
 
 def test_logo_svg_is_inert_and_served_safely(app):

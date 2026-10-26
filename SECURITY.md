@@ -1,7 +1,7 @@
 # Security and privacy
 
-This page is for Civis Platform customers deciding whether to run Civis Python
-Version Search in their own Civis environment. It explains what the tool reads,
+This page is for Civis Platform customers deciding whether to run
+Python Migration Scanner for Civis Platform by Expedition Data in their own Civis environment. It explains what the tool reads,
 what it stores, where data goes, and how to set it up safely.
 
 **In short:**

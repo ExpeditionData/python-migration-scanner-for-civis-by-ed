@@ -1,4 +1,4 @@
-# Build Plan: Civis Python Version Search
+# Build Plan: Python Migration Scanner for Civis Platform by Expedition Data
 
 Status: **approved October 9, 2026.** Written the same day, after checking the build brief against current documentation. The decisions on every open question are recorded in section 9. Where this plan and the build brief differ, this plan wins.
 

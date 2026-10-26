@@ -1,4 +1,4 @@
-/* Civis Python Version Search, in Expedition Data's style.
+/* Python Migration Scanner for Civis Platform, in Expedition Data's style.
    Served from the app itself: no CDN links, no inline styles, no inline scripts
    (see the Content-Security-Policy in app/security.py).
 
@@ -133,7 +133,9 @@ a:hover { color: var(--primary-hover); text-decoration-thickness: 2px; }
 .brand-logo { display: inline-flex; border-radius: 4px; }
 .brand-logo img { display: block; height: 40px; width: auto; }
 .brand-divider { width: 1px; height: 34px; background: var(--border); }
-.brand-name { font-weight: 700; font-size: 19px; color: var(--primary); text-decoration: none; }
+.brand-name { display: inline-flex; flex-direction: column; line-height: 1.15; color: var(--primary); text-decoration: none; }
+.brand-title { font-weight: 700; font-size: 19px; }
+.brand-descriptor { font-weight: 400; font-size: 13px; color: var(--muted); }
 .brand-name:hover { color: var(--primary-hover); text-decoration: underline; text-decoration-color: var(--accent); }
 
 .main-nav { display: flex; flex-wrap: wrap; gap: 4px; }

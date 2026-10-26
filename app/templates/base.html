@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Overview{% endblock %} | Civis Python Version Search</title>
+  <title>{% block title %}Overview{% endblock %} | Python Migration Scanner for Civis Platform</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
   <script src="{{ url_for('static', filename='js/local-time.js') }}" defer></script>
   {% block scripts %}{% endblock %}
@@ -16,7 +16,7 @@
         <div class="brand">
           <a class="brand-logo" href="https://www.expedition-data.com/" target="_blank" rel="noopener noreferrer"><img src="{{ url_for('static', filename='img/expedition-data-logo.svg') }}" alt="Expedition Data website (opens in a new tab)" width="149" height="40"></a>
           <span class="brand-divider" aria-hidden="true"></span>
-          <a class="brand-name" href="{{ url_for('pages.overview') }}">Civis Python Version Search</a>
+          <a class="brand-name" href="{{ url_for('pages.overview') }}"><span class="brand-title">Python Migration Scanner</span> <span class="brand-descriptor">for Civis Platform</span></a>
         </div>
         <nav aria-label="Main" class="main-nav">
           {% for key, label, endpoint in [("overview", "Overview", "pages.overview"), ("inventory", "Inventory", "pages.inventory"), ("findings", "Findings", "pages.findings"), ("scan", "Scan history", "pages.scan")] %}

@@ -1,4 +1,4 @@
-# Civis Python Version Search
+# Python Migration Scanner for Civis Platform by Expedition Data
 
 A free, open-source tool that Civis Platform customers run inside their own
 Civis environment. It finds scripts, notebooks, workflows, Services, and
