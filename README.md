@@ -5,6 +5,8 @@ by, or supported by Civis Analytics. "Civis" and "Civis Platform" are
 trademarks of Civis Analytics, used here only to identify the platform this
 tool works with.
 
+**Status: release candidate.** This version is still being tested in Civis Platform. Wait for the v0.1.0 release before you use it.
+
 A free, open-source tool that Civis Platform customers run inside their own
 Civis environment. It finds scripts, notebooks, workflows, Services, and
 container scripts affected by the February 2027 Civis default image update
