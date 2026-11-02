@@ -11,6 +11,7 @@ Line formats (parsed by the web app to show progress):
 
     PROGRESS phase=code objects_done=420 objects_total=2000
     OBJECT_ERROR object_type=python_script object_id=107 error=CivisAPIError status=403
+    CIVIS_GIT_FAILED object_type=python_script object_id=109 error=CivisAPIError status=403
     PARSE_ERROR object_type=notebook object_id=401 error=JSONDecodeError
     FINDINGS rule_id=CV3-USE-PANDAS count=12
     PHASE name=inventory state=done
@@ -97,6 +98,16 @@ def object_error(object_type: ObjectType | str, object_id: int, exc: BaseExcepti
     suffix = f" status={status}" if isinstance(status, int) and not isinstance(status, bool) else ""
     _logger.warning(
         "OBJECT_ERROR object_type=%s object_id=%d error=%s%s",
+        _object_type(object_type), _count(object_id, "object_id"), _error_name(exc), suffix,
+    )
+
+
+def civis_git_failed(object_type: ObjectType | str, object_id: int, exc: BaseException) -> None:
+    """An item's own git file could not be read through Civis. Error type and HTTP status only."""
+    status = getattr(exc, "status_code", None)
+    suffix = f" status={status}" if isinstance(status, int) and not isinstance(status, bool) else ""
+    _logger.warning(
+        "CIVIS_GIT_FAILED object_type=%s object_id=%d error=%s%s",
         _object_type(object_type), _count(object_id, "object_id"), _error_name(exc), suffix,
     )
 

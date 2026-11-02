@@ -43,6 +43,7 @@ from scanner.inventory.users import scanning_user
 from scanner.output import ResultSink, TableWriteError, report_csv
 from scanner.process import ObjectResult, ScanDeps, process_item
 from scanner.ratelimit import BudgetedClient, RequestBudget
+from scanner.retrieval.civis_git import CivisGitFiles
 from scanner.retrieval.github import GitHubRepos
 from scanner.retrieval.http import SafeHttp
 from scanner.retrieval.tempdir import private_tempdir
@@ -129,6 +130,7 @@ def run_scan(
     budget = budget or RequestBudget(config.request_budget, 300.0)
     civis = BudgetedClient(client, budget)
     user_id, user_name = scanning_user(civis)
+    civis_git = CivisGitFiles(civis)
 
     def status_row(status: str, finished_at: datetime | None) -> dict:
         return {
@@ -163,6 +165,7 @@ def run_scan(
             repos=repos,
             lookback_days=config.lookback_days,
             now=now(),
+            civis_git=civis_git,
         )
         done = result.skipped_as_done
         last_progress = monotonic()

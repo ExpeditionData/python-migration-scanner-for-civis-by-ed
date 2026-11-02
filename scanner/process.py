@@ -7,6 +7,11 @@ Every object ends with a coverage status:
 - not_scanned: none of its code could be read (the reason says why and asks
   for a manual review).
 
+A git-backed Python script is read from GitHub when a token is attached. If
+there is no token, or GitHub cannot be read, the script's own file is read
+through the Civis API instead (scanner/retrieval/civis_git.py). That covers the
+one file, not the rest of the repository, so the script is "partial".
+
 Code and log text stay in memory for the length of this function.
 """
 
@@ -21,13 +26,18 @@ from scanner import scan_log
 from scanner.engine import Engine, Match, ScanResult
 from scanner.inventory.base import InventoryItem
 from scanner.logs import read_log
+from scanner.retrieval.civis_git import CivisGitFiles
 from scanner.retrieval.code import inline_units
-from scanner.retrieval.github import DEFAULT_FILE_CAP, GitHubRepos, RepoUnavailable, select_files
+from scanner.retrieval.github import DEFAULT_FILE_CAP, NO_TOKEN, GitHubRepos, RepoUnavailable, select_files
 from scanner.retrieval.http import SafeHttp
 from scanner.retrieval.notebooks import NotebookUnavailable, fetch_notebook
 
 MAX_NOTE_CHARS = 1000
 PARSE_NOTE = "Some code could not be parsed as Python 3, so it was checked with simpler text rules."
+CIVIS_FILE_ONLY = (
+    "Only the script's own file was checked, read through Civis. Other files in its repository "
+    "(other modules, requirements.txt, pyproject.toml, Dockerfile) were not checked"
+)
 
 
 @dataclass
@@ -39,6 +49,7 @@ class ScanDeps:
     lookback_days: int
     now: datetime
     file_cap: int = DEFAULT_FILE_CAP
+    civis_git: CivisGitFiles | None = None  # None: never read git files through Civis.
 
 
 @dataclass
@@ -110,7 +121,16 @@ def process_item(item: InventoryItem, deps: ScanDeps) -> ObjectResult:
                     take(result)
                     scanned = True
         except RepoUnavailable as exc:
-            problems.append(exc.reason)
+            text, civis_problem = _own_file_through_civis(item, deps)
+            if text is not None:
+                take(deps.engine.scan_python(text, obj.git_path or "script file"))
+                del text
+                scanned = True
+                problems.append(civis_file_note(exc.reason))
+            else:
+                problems.append(exc.reason)
+                if civis_problem:
+                    problems.append(civis_problem)
 
     # Most recent run log, or the Service's current deployment log.
     log = read_log(deps.client, obj, item.code.get("deployment_id"), deps.lookback_days, deps.now)
@@ -142,3 +162,18 @@ def process_item(item: InventoryItem, deps: ScanDeps) -> ObjectResult:
     if obj.scan_status is not ScanStatus.SCANNED:
         coverage.append(CoverageItem(obj.object_type, obj.object_id, note or "Not fully scanned."))
     return ObjectResult(obj, findings, coverage)
+
+
+def _own_file_through_civis(item: InventoryItem, deps: ScanDeps) -> tuple[str | None, str | None]:
+    """A git-backed Python script's own file, read through the Civis API. Other types have no endpoint."""
+    obj = item.obj
+    if deps.civis_git is None or obj.object_type is not ObjectType.PYTHON_SCRIPT:
+        return None, None
+    return deps.civis_git.read(obj.object_type, obj.object_id, obj.git_ref, item.code.get("git_ref_type"))
+
+
+def civis_file_note(github_reason: str) -> str:
+    """The note for a script read through Civis: what was not checked, and why GitHub was not used."""
+    if github_reason == NO_TOKEN:
+        return f"{CIVIS_FILE_ONLY} without a GitHub token."
+    return f"{CIVIS_FILE_ONLY}. {github_reason}"

@@ -8,6 +8,12 @@ real list endpoints return, so code that needs a detail-only field (such as
 Fixture conventions, per object:
 - "_listed": false  -> readable by ID, but not returned by list calls
 - "_error": 403     -> the detail call raises FakeAPIError(403)
+
+Git files served through Civis ("civis_git", keyed "python3/<id>" or
+"workflows/<id>"): "commits" is the list the commits endpoint returns, and
+"files" maps a full commit SHA to the file content (a shortened SHA finds it by
+prefix) or to {"content": ..., "size": ...} to set the reported size.
+"commits_error" or "file_error" makes that call raise FakeAPIError.
 """
 
 from __future__ import annotations
@@ -127,6 +133,12 @@ class FakeClient:
             return {"git_ref": None, "git_branch": None, "git_path": None, "git_repo": None, "pull_from_git": False}
         return git
 
+    def _scripts__list_python3_git_commits(self, object_id):
+        return self._git_commits(f"python3/{object_id}")
+
+    def _scripts__get_python3_git_commits(self, object_id, commit_hash):
+        return self._git_file(f"python3/{object_id}", commit_hash)
+
     def _scripts__get_containers(self, object_id):
         return self._get(self.data.get("containers", []), object_id)
 
@@ -135,6 +147,32 @@ class FakeClient:
 
     def _scripts__get_custom(self, object_id):
         return self._get(self.data.get("custom", []), object_id)
+
+    # -- git files read through Civis --------------------------------------
+
+    def _git_entry(self, key: str) -> dict:
+        entry = self.data.get("civis_git", {}).get(key)
+        if entry is None:
+            raise FakeAPIError(404)
+        return entry
+
+    def _git_commits(self, key: str) -> list[dict]:
+        entry = self._git_entry(key)
+        if entry.get("commits_error"):
+            raise FakeAPIError(entry["commits_error"])
+        return [dict(c) for c in entry.get("commits", [])]  # An array, as civis-python treats this path.
+
+    def _git_file(self, key: str, commit_hash: str) -> dict:
+        entry = self._git_entry(key)
+        if entry.get("file_error"):
+            raise FakeAPIError(entry["file_error"])
+        found = [v for sha, v in entry.get("files", {}).items() if sha.startswith(commit_hash)]
+        if len(found) != 1:
+            raise FakeAPIError(404)
+        file = found[0] if isinstance(found[0], dict) else {"content": found[0]}
+        content = file.get("content", "")
+        size = file.get("size", len(content.encode("utf-8")))
+        return {"content": content, "type": "file", "size": size, "file_hash": "0" * 40}
 
     # -- other endpoints ----------------------------------------------------
 
@@ -158,6 +196,12 @@ class FakeClient:
 
     def _workflows__get(self, object_id):
         return self._get(self.data.get("workflows", []), object_id)
+
+    def _workflows__list_git_commits(self, object_id):
+        return self._git_commits(f"workflows/{object_id}")
+
+    def _workflows__get_git_commits(self, object_id, commit_hash):
+        return self._git_file(f"workflows/{object_id}", commit_hash)
 
     def _jobs__get(self, job_id):
         return self._get(self.data.get("jobs", {}), job_id)

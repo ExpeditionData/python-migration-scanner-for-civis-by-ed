@@ -5,6 +5,8 @@ Everything runs against synthetic data. No network calls.
 
 from __future__ import annotations
 
+import base64
+import copy
 import io
 import json
 import sys
@@ -16,12 +18,14 @@ from pathlib import Path
 import pytest
 
 from common.models import Impact, ObjectType, ScanStatus
+from scanner import scan_log
 from scanner.engine import Engine
 from scanner.inventory import build_inventory
 from scanner.inventory.workflows import InlineTask
 from scanner.logs import in_lookback, read_log
-from scanner.process import PARSE_NOTE, ScanDeps, process_item
+from scanner.process import CIVIS_FILE_ONLY, PARSE_NOTE, ScanDeps, process_item
 from scanner.ratelimit import BudgetedClient, RequestBudget
+from scanner.retrieval import civis_git
 from scanner.retrieval import github as gh
 from scanner.retrieval.code import inline_units
 from scanner.retrieval.http import CIVIS_FILE_HOSTS, GITHUB_HOSTS, FetchError, SafeHttp, host_allowed
@@ -497,9 +501,9 @@ def test_log_errors_and_types_without_logs():
 # --- Per-object scanning against the synthetic instance -----------------------------------
 
 
-def scan_all(tmp_path, token="synthetic-github-token", workers=1):
+def scan_all(tmp_path, token="synthetic-github-token", workers=1, data=None):
     tmp_path.mkdir(parents=True, exist_ok=True)
-    client = FakeClient.from_fixture("synthetic_instance.json")
+    client = FakeClient(data) if data is not None else FakeClient.from_fixture("synthetic_instance.json")
     session = SyntheticSession(client.data)
     inventory = build_inventory(client)
     deps = ScanDeps(
@@ -509,6 +513,7 @@ def scan_all(tmp_path, token="synthetic-github-token", workers=1):
         repos=gh.GitHubRepos(SafeHttp(session), token, tmp_path),
         lookback_days=200,
         now=NOW,
+        civis_git=civis_git.CivisGitFiles(client),
     )
     with ThreadPoolExecutor(workers) as pool:
         results = list(pool.map(lambda item: process_item(item, deps), inventory.items))
@@ -645,3 +650,153 @@ def test_no_log_or_code_text_in_results(scanned):
     text = repr([(r.obj.to_row(), [f.to_row() for f in r.findings], r.coverage) for r in scanned.values()])
     for secret in ("Synthetic-Log-Pw-7731", "synthetic.member@example.org", "make_backend_factory", "select 1"):
         assert secret not in text
+
+
+# --- Git files read through Civis ---------------------------------------------------------
+
+SHA_A = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"  # pragma: allowlist secret  gitleaks:allow (a made-up commit SHA)
+SHA_B = "b2c3d4e5f60718293a4b5c6d7e8f9012345678a1"  # pragma: allowlist secret  gitleaks:allow (a made-up commit SHA)
+
+
+@pytest.fixture
+def git_log():
+    stream = io.StringIO()
+    logger = scan_log.configure(stream)
+    previous = logger.handlers[0].stream
+    logger.handlers[0].setStream(stream)
+    yield stream
+    logger.handlers[0].setStream(previous)
+
+
+def git_client(entry: dict, key: str = "python3/5") -> FakeClient:
+    return FakeClient({"civis_git": {key: entry}})
+
+
+def test_civis_git_uses_a_sha_ref_as_is():
+    client = git_client({"files": {SHA_A: "import civis\n"}})
+    reader = civis_git.CivisGitFiles(client)
+    assert reader.read(ObjectType.PYTHON_SCRIPT, 5, SHA_A[:7]) == ("import civis\n", None)
+    assert [n for n, _, _ in client.calls] == ["scripts.get_python3_git_commits"]
+    assert client.calls[0][1] == (5, SHA_A[:7])
+    assert (reader.reads, reader.failures) == (1, 0)
+
+
+def test_civis_git_reads_the_newest_commit_for_a_branch_or_tag():
+    commits = [
+        {"commit_hash": SHA_A, "author_name": "Example Analyst", "date": "2026-09-01T10:00:00Z", "message": "Older"},
+        {"commit_hash": SHA_B, "author_name": "Example Analyst", "date": "2026-10-01T10:00:00Z", "message": "Newer"},
+    ]
+    client = git_client({"commits": commits, "files": {SHA_A: "old = 1\n", SHA_B: "new = 1\n"}})
+    reader = civis_git.CivisGitFiles(client)
+    assert reader.read(ObjectType.PYTHON_SCRIPT, 5, "main", "branch") == ("new = 1\n", None)
+    assert reader.read(ObjectType.PYTHON_SCRIPT, 5, "v1.0.0", "tag") == ("new = 1\n", None)
+    assert [n for n, _, _ in client.calls].count("scripts.list_python3_git_commits") == 2
+
+
+def test_civis_git_accepts_one_commit_object_as_the_spec_describes():
+    class OneCommit(FakeClient):
+        def _scripts__list_python3_git_commits(self, object_id):
+            return {"commit_hash": SHA_B, "author_name": "Example Analyst", "date": "2026-10-01T10:00:00Z", "message": "x"}
+
+    client = OneCommit({"civis_git": {"python3/5": {"files": {SHA_B: "x = 1\n"}}}})
+    assert civis_git.CivisGitFiles(client).read(ObjectType.PYTHON_SCRIPT, 5, "main") == ("x = 1\n", None)
+
+
+def test_civis_git_workflow_endpoints():
+    client = git_client({"commits": [{"commit_hash": SHA_A, "date": "2026-10-01T10:00:00Z"}],
+                         "files": {SHA_A: "version: '2.0'\n"}}, key="workflows/9")
+    text, reason = civis_git.CivisGitFiles(client).read(ObjectType.WORKFLOW, 9, "main")
+    assert (text, reason) == ("version: '2.0'\n", None)
+    assert [n for n, _, _ in client.calls] == ["workflows.list_git_commits", "workflows.get_git_commits"]
+
+
+@pytest.mark.parametrize(
+    "entry, ref, ref_type, logged, reason",
+    [
+        ({"files": {SHA_A: "x = 1"}, "file_error": 403}, SHA_A, None,
+         "error=FakeAPIError status=403", " (HTTP 403)."),
+        ({"commits_error": 404}, "main", "branch", "error=FakeAPIError status=404", " (HTTP 404)."),
+        ({"commits": []}, "v2.0.0", "tag", "error=GitCommitNotFound",
+         ": its git reference is a tag, and Civis returned no commit for it."),
+        ({"commits": [{"commit_hash": "not-a-sha"}]}, "main", "branch", "error=GitCommitNotFound",
+         ": Civis returned no commit for its git branch."),
+        ({"files": {SHA_A: "   \n"}}, SHA_A, None, "error=GitFileEmpty", ": Civis returned an empty file."),
+        ({"files": {SHA_A: {"content": "x = 1\n", "size": gh.MAX_FILE_BYTES + 1}}}, SHA_A, None,
+         "error=GitFileTooLarge", ": the file is over 2 MB."),
+        ({"files": {SHA_A: "x = 1\n" * (gh.MAX_FILE_BYTES // 6 + 1)}}, SHA_A, None,
+         "error=GitFileTooLarge", ": the file is over 2 MB."),
+    ],
+)
+def test_civis_git_failures_give_a_reason_and_log_the_error_type_only(git_log, entry, ref, ref_type, logged, reason):
+    reader = civis_git.CivisGitFiles(git_client(entry))
+    text, why = reader.read(ObjectType.PYTHON_SCRIPT, 5, ref, ref_type)
+    assert text is None and why == "The script's own file could not be read through Civis" + reason
+    assert (reader.reads, reader.failures) == (0, 1)
+    assert git_log.getvalue() == f"CIVIS_GIT_FAILED object_type=python_script object_id=5 {logged}\n"
+
+
+def base64_lines(text: str) -> str:
+    raw = base64.b64encode(text.encode("utf-8")).decode("ascii")
+    return "\n".join(raw[i:i + 60] for i in range(0, len(raw), 60)) + "\n"
+
+
+def test_civis_git_decodes_base64_content_like_a_github_file():
+    code = "import civis\nclient = civis.APIClient()\n"
+    client = git_client({"files": {SHA_A: base64_lines(code), SHA_B: "pass\n"}})
+    reader = civis_git.CivisGitFiles(client)
+    assert reader.read(ObjectType.PYTHON_SCRIPT, 5, SHA_A)[0] == code
+    assert reader.read(ObjectType.PYTHON_SCRIPT, 5, SHA_B)[0] == "pass\n"  # Plain code is never decoded.
+
+
+def test_civis_git_method_names_are_the_same_in_civis_2_10_and_v3():
+    """civis-python names a GET "list_" when the response is an array. These paths are on its
+    array list, which v3 keeps (only the legacy-name list is removed at v3)."""
+    resources = pytest.importorskip("civis.resources._resources")
+    if not hasattr(resources, "GET_PATHS_WITH_ARRAY_RESPONSE"):
+        pytest.skip("this civis predates the list and get naming fix (the Service image)")
+    spec = json.loads((Path(resources.__file__).parent / "civis_api_spec.json").read_text(encoding="utf-8"))
+    for (endpoint, commits_method, file_method), base in (
+        (civis_git.ENDPOINTS[ObjectType.PYTHON_SCRIPT], "scripts/python3/{id}/git/commits"),
+        (civis_git.ENDPOINTS[ObjectType.WORKFLOW], "workflows/{id}/git/commits"),
+    ):
+        assert base in resources.GET_PATHS_WITH_ARRAY_RESPONSE
+        assert base not in resources.LEGACY_PATHS_WITH_LIST_NAME
+        assert base.split("/")[0] == endpoint
+        for path, expected in ((base, commits_method), (base + "/{commit_hash}", file_method)):
+            operation = spec["paths"]["/" + path]["get"]
+            for legacy in (True, False):
+                assert resources.parse_method_name("get", path, operation, use_legacy_names=legacy) == expected
+
+
+def no_token_data(**overrides) -> dict:
+    data = copy.deepcopy(FakeClient.from_fixture("synthetic_instance.json").data)
+    data.setdefault("civis_git", {})["python3/106"] = {
+        "commits": [{"commit_hash": SHA_A, "author_name": "Example Analyst", "date": "2026-10-01T10:00:00Z",
+                     "message": "Example change"}],
+        "files": {SHA_A: "import civis\nimport civis.parallel\n"},
+        **overrides,
+    }
+    return data
+
+
+def test_git_backed_script_without_a_token_is_read_through_civis(tmp_path):
+    results, client, session = scan_all(tmp_path, token=None, data=no_token_data())
+    result = results[106]
+    assert result.obj.scan_status is ScanStatus.PARTIAL
+    assert {(f.rule_id, f.file) for f in result.findings} == {("CV3-PARALLEL", "jobs/load.py")}
+    assert result.obj.scan_note == f"{CIVIS_FILE_ONLY} without a GitHub token."
+    assert client.called("scripts.get_python3_git_commits") == [((106, SHA_A), {})]
+    assert not any("github.com" in url for url, _ in session.requests)
+
+
+def test_git_backed_script_with_a_token_is_read_from_github_not_civis(tmp_path):
+    results, client, _ = scan_all(tmp_path, data=no_token_data())
+    assert results[106].obj.scan_status is ScanStatus.SCANNED
+    assert not [n for n, _, _ in client.calls if "git_commits" in n]
+
+
+def test_failed_civis_read_falls_back_to_the_github_reason(tmp_path):
+    results, _, _ = scan_all(tmp_path, token=None, data=no_token_data(file_error=403))
+    assert results[106].obj.scan_status is ScanStatus.NOT_SCANNED
+    assert results[106].findings == []
+    assert gh.NO_TOKEN in results[106].obj.scan_note and "(HTTP 403)" in results[106].obj.scan_note

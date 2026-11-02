@@ -3,7 +3,9 @@
 Endpoints (docs/PLAN.md section 2): scripts.list(type="python3"),
 scripts.get_python3, and scripts.get_python3_git. The detail response has no
 field that says whether a script is git-backed, so get_python3_git is called
-for every script.
+for every script. A git-backed script's own file can also be read through
+Civis without a GitHub token (scanner/retrieval/civis_git.py); that happens
+during the code scan, not here.
 """
 
 from __future__ import annotations
@@ -48,4 +50,5 @@ def python_item(ctx: InventoryContext, row: Any) -> InventoryItem:
         obj.git_repo = repo
         obj.git_ref = field_of(git, "git_ref") or field_of(git, "git_branch")
         obj.git_path = field_of(git, "git_path")
+        item.code["git_ref_type"] = field_of(git, "git_ref_type")
     return item
