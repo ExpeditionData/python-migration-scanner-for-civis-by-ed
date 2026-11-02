@@ -20,13 +20,16 @@ Line formats (parsed by the web app to show progress):
     FATAL error=KeyError
     TABLE_WRITE_FAILED table=findings error=CivisAPIError status=403
     RUN run_id=run-20261013T120000Z-a1b2c3 status=running
-    RUN run_id=run-20261013T120000Z-a1b2c3 status=succeeded objects_total=2000 objects_scanned=2000 api_calls=6120 github_tarball_requests=14 github_cache_peak_bytes=52428800 github_cache_evictions=0
+    RUN run_id=run-20261013T120000Z-a1b2c3 status=succeeded objects_total=2000 objects_scanned=2000 api_calls=6120 github_tarball_requests=14 github_cache_peak_bytes=52428800 github_cache_evictions=0 civis_git_reads=37 civis_git_failures=2
 
 The final RUN line carries the run's counts. api_calls is every Civis API
 request the scanner sent through its request budget (scanner/ratelimit.py),
 including each page of a list call. Table writes and the CSV upload use
 civis-python's own helpers and are not counted (docs/PLAN.md 12.13). The
 github_* counts come from the repository file cache (scanner/retrieval/github.py).
+civis_git_reads and civis_git_failures count the files read, and the reads that
+failed, through the Civis git endpoints (scanner/retrieval/civis_git.py); each
+failure also has a CIVIS_GIT_FAILED line.
 """
 
 from __future__ import annotations
@@ -141,7 +144,7 @@ def table_write_failed(table: str, exc: BaseException) -> None:
 
 
 RUN_COUNTS = ("objects_total", "objects_scanned", "api_calls", "github_tarball_requests",
-              "github_cache_peak_bytes", "github_cache_evictions")
+              "github_cache_peak_bytes", "github_cache_evictions", "civis_git_reads", "civis_git_failures")
 
 
 def run_status(run_id: str, status: str, **counts: int) -> None:

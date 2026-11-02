@@ -11,8 +11,9 @@ Steps:
 5. Save the CSV report as a run output (with no expiration).
 6. Apply the retention setting, then record the final run status. The final
    log line also gives the object count, the number of Civis API calls (so
-   calls per object can be measured, docs/PLAN.md section 5), and the GitHub
-   tarball requests, peak cache size, and cache evictions.
+   calls per object can be measured, docs/PLAN.md section 5), the GitHub
+   tarball requests, peak cache size, and cache evictions, and the files read
+   (and failed reads) through the Civis git endpoints.
 
 If the tables cannot be written, the scan keeps going, still saves the CSV
 report, and ends with status "tables_failed". Every API call to Civis goes
@@ -227,7 +228,8 @@ def run_scan(
     scan_log.run_status(
         run_id, final, objects_total=total, objects_scanned=len(todo), api_calls=budget.requests,
         github_tarball_requests=repos.downloads, github_cache_peak_bytes=repos.peak_cache_bytes,
-        github_cache_evictions=repos.evictions,
+        github_cache_evictions=repos.evictions, civis_git_reads=civis_git.reads,
+        civis_git_failures=civis_git.failures,
     )
 
     result.status = final

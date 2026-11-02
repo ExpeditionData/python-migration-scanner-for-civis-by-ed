@@ -45,11 +45,13 @@ def _configure_logging() -> None:
 def dry_run(out: Path, fixture: Path | None = None, now: datetime | None = None, run_id: str | None = None,
             checkpoint_objects: int = 500, stop_after: int | None = None, data: dict | None = None,
             civis_job_id: int | None = None, civis_run_id: int | None = None,
-            clock: Callable[[], datetime] | None = None) -> RunResult:
+            clock: Callable[[], datetime] | None = None,
+            github_token: str | None = "synthetic-github-token") -> RunResult:
     """Run the whole pipeline against the synthetic instance. No network calls.
 
     ``data`` replaces the synthetic instance file (used by the preview seeder),
-    and ``clock`` replaces the fixed ``now`` so runs can have a duration.
+    ``clock`` replaces the fixed ``now`` so runs can have a duration, and
+    ``github_token=None`` runs without a GitHub token, the normal setup.
     """
     from scanner.output import LocalRunOutputs, SqliteSink
     from scanner.synthetic import FIXTURES, FakeClient, SyntheticSession
@@ -63,7 +65,7 @@ def dry_run(out: Path, fixture: Path | None = None, now: datetime | None = None,
     if stop_after is not None:
         sink = _StopAfter(sink, stop_after)
     config = ScanConfig(
-        database="synthetic", schema=DRY_RUN_SCHEMA, github_token="synthetic-github-token",
+        database="synthetic", schema=DRY_RUN_SCHEMA, github_token=github_token,
         run_id=run_id, request_budget=1000, civis_job_id=civis_job_id, civis_run_id=civis_run_id,
     )
     fixed_now = now or datetime.now(timezone.utc)

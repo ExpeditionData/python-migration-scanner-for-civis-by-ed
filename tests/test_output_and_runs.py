@@ -331,13 +331,51 @@ def test_final_log_line_counts_every_civis_api_call(tmp_path, log_stream, monkey
     tarballs = len([url for url, _ in sessions[0].requests if url.startswith("https://api.github.com/")])
     assert sent > result.objects  # Inventory, detail, and log calls: more than one per object.
     assert result.api_calls == sent
-    final = log_stream.getvalue().splitlines()[-1]
+    logged = log_stream.getvalue()
+    reads, failures = civis_git_counts(clients[0], logged)
+    final = logged.splitlines()[-1]
     counts = re.fullmatch(
         rf"RUN run_id={result.run_id} status=succeeded objects_total=23 objects_scanned=23 api_calls={sent} "
-        rf"github_tarball_requests={tarballs} github_cache_peak_bytes=(\d+) github_cache_evictions=0",
+        rf"github_tarball_requests={tarballs} github_cache_peak_bytes=(\d+) github_cache_evictions=0 "
+        rf"civis_git_reads={reads} civis_git_failures={failures}",
         final,
     )
     assert counts and tarballs > 0 and 0 < int(counts.group(1)) <= CACHE_MAX_BYTES
+
+
+def civis_git_counts(client, logged: str) -> tuple[int, int]:
+    """Files the synthetic client was asked for through the Civis git endpoints. Each object
+    tried counts once: as a failure if it has a CIVIS_GIT_FAILED line, otherwise as a read."""
+    tried = {(name.split(".")[0], args[0]) for name, args, _ in client.calls if "git_commits" in name}
+    failed = {
+        ({"python_script": "scripts", "workflow": "workflows"}[t], int(i))
+        for t, i in re.findall(r"^CIVIS_GIT_FAILED object_type=(\w+) object_id=(\d+) ", logged, re.MULTILINE)
+    }
+    assert failed <= tried
+    return len(tried - failed), len(failed)
+
+
+def test_final_log_line_counts_civis_git_reads_without_a_token(tmp_path, log_stream, monkeypatch):
+    import scanner.synthetic as synthetic
+
+    clients = []
+
+    class CountedClient(synthetic.FakeClient):
+        def __init__(self, data):
+            super().__init__(data)
+            clients.append(self)
+
+    monkeypatch.setattr(synthetic, "FakeClient", CountedClient)
+    result = dry_run(tmp_path, now=NOW, github_token=None)
+    logged = log_stream.getvalue()
+    reads, failures = civis_git_counts(clients[0], logged)
+    assert reads + failures > 0
+    final = logged.splitlines()[-1]
+    assert final.endswith(
+        f" api_calls={len(clients[0].calls)} github_tarball_requests=0 github_cache_peak_bytes=0 "
+        f"github_cache_evictions=0 civis_git_reads={reads} civis_git_failures={failures}"
+    )
+    assert result.api_calls == len(clients[0].calls)
 
 
 def test_resumed_run_counts_only_its_own_calls_and_objects(tmp_path, log_stream):
