@@ -219,7 +219,9 @@ def _definition(ctx: InventoryContext, obj: CivisObject, detail: Any) -> tuple[s
     obj.git_repo = repo
     obj.git_ref = field_of(git, "git_ref") or field_of(git, "git_branch")
     obj.git_path = field_of(git, "git_path")
-    text, note = ctx.civis_git.read(ObjectType.WORKFLOW, obj.object_id, obj.git_ref, field_of(git, "git_ref_type"))
+    text, note = ctx.civis_git.read(
+        ObjectType.WORKFLOW, obj.object_id, obj.git_ref, field_of(git, "git_ref_type"), field_of(git, "git_branch")
+    )
     if text is None:
         return saved, f"{note} {SAVED_COPY_NOTE}"
     return text, note

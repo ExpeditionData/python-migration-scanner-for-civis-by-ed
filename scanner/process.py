@@ -178,7 +178,9 @@ def _own_file_through_civis(item: InventoryItem, deps: ScanDeps) -> tuple[str | 
     obj = item.obj
     if deps.civis_git is None or obj.object_type is not ObjectType.PYTHON_SCRIPT:
         return None, None
-    return deps.civis_git.read(obj.object_type, obj.object_id, obj.git_ref, item.code.get("git_ref_type"))
+    return deps.civis_git.read(
+        obj.object_type, obj.object_id, obj.git_ref, item.code.get("git_ref_type"), item.code.get("git_branch")
+    )
 
 
 def civis_file_note(github_reason: str) -> str:

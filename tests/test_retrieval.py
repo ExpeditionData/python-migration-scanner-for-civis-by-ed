@@ -939,3 +939,32 @@ def test_workflow_on_a_tag_read_at_the_branch_head_is_partial(tmp_path):
     assert result.obj.scan_status is ScanStatus.PARTIAL
     assert result.obj.scan_note == civis_git.TAG_READ_AT_BRANCH.format(item="workflow")
     assert rules(result) == {("CV3-ML", "code")}  # Still read from the git file.
+
+
+@pytest.mark.parametrize(
+    "ref, ref_type, branch, commits_called, sent",
+    [
+        ("2024101", "branch", "2024101", True, SHA_B),  # A branch named with hex characters.
+        (SHA_A[:7], "branch", "main", False, SHA_A[:7]),  # A SHA ref; Civis still says "branch".
+        ("abcdef1", "tag", "main", True, SHA_B),  # A tag named with hex characters.
+        ("v1.0.0", "tag", "main", True, SHA_B),
+        ("main", "branch", "main", True, SHA_B),
+        ("main", None, None, True, SHA_B),
+    ],
+)
+def test_civis_git_tells_a_sha_from_a_branch_or_tag(ref, ref_type, branch, commits_called, sent):
+    client = git_client({"commits": [{"commit_hash": SHA_B, "date": "2026-10-01T10:00:00Z"}],
+                         "files": {SHA_A: "a = 1\n", SHA_B: "b = 1\n"}})
+    text, _ = civis_git.CivisGitFiles(client).read(ObjectType.PYTHON_SCRIPT, 5, ref, ref_type, branch)
+    assert bool(client.called("scripts.list_python3_git_commits")) is commits_called
+    assert client.called("scripts.get_python3_git_commits") == [((5, sent), {})]
+    assert text == ("a = 1\n" if sent.startswith(SHA_A[:7]) else "b = 1\n")
+
+
+def test_the_branch_name_reaches_the_reader(tmp_path):
+    data = copy.deepcopy(FakeClient.from_fixture("synthetic_instance.json").data)
+    data["python3_git"]["111"].update({"git_ref": "2024101", "git_branch": "2024101"})
+    data["civis_git"]["python3/111"].pop("file_error")
+    results, client, _ = scan_all(tmp_path, token=None, data=data)
+    assert git_calls(client, 111) == ["scripts.list_python3_git_commits", "scripts.get_python3_git_commits"]
+    assert results[111].obj.scan_status is ScanStatus.PARTIAL

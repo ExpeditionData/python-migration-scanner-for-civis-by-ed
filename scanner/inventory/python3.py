@@ -51,4 +51,5 @@ def python_item(ctx: InventoryContext, row: Any) -> InventoryItem:
         obj.git_ref = field_of(git, "git_ref") or field_of(git, "git_branch")
         obj.git_path = field_of(git, "git_path")
         item.code["git_ref_type"] = field_of(git, "git_ref_type")
+        item.code["git_branch"] = field_of(git, "git_branch")  # Tells a hex branch name from a SHA.
     return item

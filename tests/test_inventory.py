@@ -374,8 +374,12 @@ def test_synthetic_git_backed_objects():
     assert by_id[109].obj.workflow_ids == [605]
     assert by_id[606].obj.scan_status is ScanStatus.PARTIAL and SAVED_COPY_NOTE in by_id[606].obj.scan_note
     assert [t.task for t in by_id[606].code["inline_tasks"]] == ["wait_step"]
-    refs = {i: (by_id[i].obj.git_ref, by_id[i].code["git_ref_type"]) for i in (109, 110, 111, 112)}
-    assert refs == {109: ("5ca1ab1", "branch"), 110: ("v2.0.0", "tag"), 111: ("main", "branch"), 112: ("main", "branch")}
+    refs = {
+        i: (by_id[i].obj.git_ref, by_id[i].code["git_ref_type"], by_id[i].code["git_branch"])
+        for i in (109, 110, 111, 112)
+    }
+    assert refs == {109: ("5ca1ab1", "branch", "main"), 110: ("v2.0.0", "tag", "main"),
+                    111: ("main", "branch", "main"), 112: ("main", "branch", "main")}
     assert (reader.reads, reader.failures) == (1, 1)  # Inventory reads only workflows.
 
 

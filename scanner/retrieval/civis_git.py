@@ -22,6 +22,12 @@ bad bytes replaced. A failure is logged through scan_log with the object ID,
 the error type, and the HTTP status only, and returns a short reason for the
 coverage note.
 
+The ref is used as the commit only if it looks like a SHA (7 to 40 hex
+characters), is not the item's branch name, and its ref type is not "tag".
+Civis's ref type says only "branch" or "tag", and a branch can be named with
+hex characters (for example 2024101), so the branch name is checked too.
+Anything else is resolved with the commits endpoint.
+
 A tag cannot be passed to the commits endpoint, which lists commits on the
 item's branch. So a file read for a tag is read at the branch's newest commit,
 and the read returns a note that it may not match the tag.
@@ -78,14 +84,15 @@ class CivisGitFiles:
         self.failures = 0
 
     def read(
-        self, object_type: ObjectType, object_id: int, ref: str | None, ref_type: str | None = None
+        self, object_type: ObjectType, object_id: int, ref: str | None, ref_type: str | None = None,
+        branch: str | None = None,
     ) -> tuple[str | None, str | None]:
         """Returns (file text, None); (file text, note) if the file was read but may not
         match the git reference; or (None, reason) if the file could not be read."""
         endpoint_name, commits_method, file_method = ENDPOINTS[object_type]
         endpoint = getattr(self._client, endpoint_name)
         try:
-            commit, from_branch = _commit(endpoint, commits_method, object_id, ref)
+            commit, from_branch = _commit(endpoint, commits_method, object_id, ref, ref_type, branch)
             text = _file_text(getattr(endpoint, file_method)(object_id, commit))
         except Exception as exc:
             with self._lock:
@@ -99,13 +106,15 @@ class CivisGitFiles:
         return text, None
 
 
-def _commit(endpoint: Any, commits_method: str, object_id: int, ref: str | None) -> tuple[str, bool]:
+def _commit(
+    endpoint: Any, commits_method: str, object_id: int, ref: str | None, ref_type: str | None, branch: str | None
+) -> tuple[str, bool]:
     """The commit to read, and whether it is the newest commit on the branch.
 
-    A commit SHA set in Civis is used as is. Anything else is resolved with the
-    commits endpoint."""
+    A commit SHA set in Civis is used as is. The branch name, a tag, and
+    anything else are resolved with the commits endpoint."""
     ref = (ref or "").strip()
-    if SHA.fullmatch(ref):
+    if SHA.fullmatch(ref) and ref != (branch or "").strip() and not _is_tag(ref_type):
         return ref, False
     response = getattr(endpoint, commits_method)(object_id)
     commits = list(response) if isinstance(response, (list, tuple)) else [response]
