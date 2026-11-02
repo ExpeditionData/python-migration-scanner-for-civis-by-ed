@@ -36,8 +36,16 @@ Its outbound calls are designed to be reads from:
 1. **The Civis API**, to list objects and read their settings, code, and run logs.
 2. **Civis file storage**, to download notebook files through the time-limited
    links the Civis API provides.
-3. **Your own GitHub repositories**, to read code for git-backed objects. This
-   happens only if you attach a GitHub token.
+3. **Your own GitHub repositories**, to read the rest of each git-backed
+   object's repository. This happens only if you attach a GitHub token.
+
+For git-backed Python scripts and workflows, the Civis API also returns the
+file set in Civis. Civis reads that file from the repository itself, so the
+tool does not contact GitHub for those files, and it needs no token for them
+([scanner/retrieval/civis_git.py](scanner/retrieval/civis_git.py)). The file
+is handled like other code: in memory only
+(`test_git_files_read_through_civis_never_reach_any_output` in
+[tests/test_security.py](tests/test_security.py)).
 
 The web app also shows two links to the Expedition Data website. They open only
 when a viewer clicks them, and they send no referrer.
@@ -105,8 +113,13 @@ all of it as sensitive.
   - GitHub tokens
   - common secret patterns, such as `password=`, bearer tokens, credentials
     inside URLs, and signed URL parameters
-- **GitHub token (optional).** Without a token, git-backed objects are listed as
-  "not scanned, review manually." If you add one:
+- **GitHub token (optional).** The normal setup has no token. Without one, the
+  tool reads the file set in Civis for each git-backed Python script and
+  workflow through the Civis API, as described above, and does not read the
+  rest of the repository. Git-backed container scripts, Services, and dbt
+  scripts are marked for manual review: "partial" if their most recent run log
+  was read, "not scanned" if not. A token lets the tool read the whole
+  repository from GitHub. If you add one:
   - Use a **fine-grained** GitHub token, not a classic token.
   - Give it **read-only "Contents"** permission and no other permissions.
   - Limit it to **only the repositories** your Civis objects use.

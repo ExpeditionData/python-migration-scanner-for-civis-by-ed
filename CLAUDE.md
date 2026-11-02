@@ -51,8 +51,9 @@ be made public at any time.
   until the public release. Rob changes its visibility himself; never change it
   from a session. Live tests run only after it is public, because both Civis
   objects clone it with no git credential.
-- Releases are git tags (the first live test uses `v0.1.0-rc1`). Rob creates
-  tags; never create one from a session.
+- Releases are git tags (the first live test sets up on `v0.1.0-rc1` and runs
+  its scans on `v0.1.0-rc2`). Rob creates tags; never create one from a
+  session.
 - Commit after each completed step, with a clear message that says what changed
   and why.
 - Before every commit, review the staged files (`git diff --cached --name-only`
@@ -90,7 +91,10 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
 - **Scanner job.** Runs on `civisanalytics/datascience-python:9.1.1` (Python
   3.14.6, civis 2.10.0). Installs nothing at run time. Inventories Python scripts,
   container scripts, custom scripts, notebooks, Services, and workflows; reads
-  code (inline, notebook file, GitHub); runs AST rules with regex fallback; reads
+  code (inline, notebook file, the own git file of each git-backed Python script
+  and workflow through the Civis API, and whole repositories from GitHub only
+  when a token is attached; no token is the normal setup); runs AST rules with
+  regex fallback; reads
   the most recent run log; writes results to the user's schema plus a CSV run
   output. Uses the `get_*` civis method names so it also runs on civis v3.
 - **Web app.** Runs on `civisanalytics/civis-services-flask:0.1.0` (Python
@@ -118,8 +122,11 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   frame rule, README setup steps, and TESTING.md. On October 26, 2026 the
   product and repository were renamed and the legal texts were updated
   (docs/PLAN.md section 16). Phase 7 is the first live test, following
-  TESTING.md. Implementation choices not in
-  the approved plan are in docs/PLAN.md sections 10 to 16.
+  TESTING.md. On November 2, 2026, Phase 7 added reading git-backed Python
+  scripts' and workflows' own files through Civis without a GitHub token, and
+  marked objects with only a log read as partial (docs/PLAN.md section 17).
+  Implementation choices not in the approved plan are in docs/PLAN.md
+  sections 10 to 17.
 - **App flow.** `app/__init__.create_app` -> `app/services.py` (Civis or local
   data layer) -> `app/pages.py` routes -> `app/views.py` (pure shaping) ->
   `app/templates/`. Data layer: `app/backends/civis_backend.py` (civis 2.7.1
@@ -142,11 +149,17 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   `process.process_item` per object (retrieval, engine, logs) ->
   `checkpoint.Checkpointer` -> `output` sinks. Every Civis API call goes
   through `ratelimit.BudgetedClient`; every other HTTP call goes through
-  `retrieval/http.SafeHttp` and its host allow list. The final `RUN` log line
-  adds `objects_total`, `objects_scanned`, `api_calls`,
-  `github_tarball_requests`, `github_cache_peak_bytes`, and
-  `github_cache_evictions`, so calls per object and memory use can be measured
-  in a live test. The GitHub file cache is capped at 1 GB of text
+  `retrieval/http.SafeHttp` and its host allow list. `retrieval/civis_git.CivisGitFiles`
+  reads an item's own git file through the Civis API: a git-backed workflow's
+  definition during inventory (`workflows.get_git` is called for every active
+  workflow), and a git-backed Python script's file in `process_item` when
+  there is no token or GitHub fails. An object whose code was not read but
+  whose log was is partial. The final `RUN` log line adds `objects_total`,
+  `objects_scanned`, `api_calls`, `github_tarball_requests`,
+  `github_cache_peak_bytes`, `github_cache_evictions`, `civis_git_reads`, and
+  `civis_git_failures`, so calls per object, memory use, and Civis git reads
+  can be measured in a live test. Failed Civis git reads also get a
+  `CIVIS_GIT_FAILED` line. The GitHub file cache is capped at 1 GB of text
   (`CACHE_MAX_BYTES`) with least-recently-used eviction.
 - **Live test.** TESTING.md is the checklist for the first live test. Records
   are pass or fail and aggregate counts only.
@@ -210,7 +223,8 @@ The last two commands stop a run partway and then resume it. A live scan
 ## Local app preview
 
 Seeds made-up data (four scans: completed, failed, completed with fixes, and
-one still running), then serves the app on 127.0.0.1 only:
+one still running, all with no GitHub token, the normal setup), then serves the
+app on 127.0.0.1 only:
 
 ```
 .venv\Scripts\python.exe -m scanner --dry-run --preview --out dry_run_output

@@ -230,6 +230,8 @@ Each `read_civis_sql` and `query_civis` call starts a query run, and Civis limit
 | Checkpoint and output writes, amortized | about 0.2 |
 | **Total** | **about 3 per object** |
 
+**Added November 2, 2026 (17.1):** one more call for each active workflow (`workflows.get_git`), and up to two more for each git-backed Python script or workflow whose own file is read through Civis (the commits list, skipped for a commit SHA ref, and the file). Without a GitHub token, the normal setup, every git-backed Python script is read this way. In an organization with few git-backed objects the totals below barely change; one where most Python scripts are git-backed should expect about 2 more calls for each of them.
+
 Notebook file downloads and GitHub requests do not count against the Civis API limit. GitHub allows 5,000 requests per hour with a token, and we make one request per repo and ref.
 
 | Objects | Calls (about) | At the 500 per 5 min budget (default) | At the full 1,000 per 5 min limit |
@@ -721,3 +723,44 @@ On the organization's GitHub Free plan, private vulnerability reporting and rule
    - Leave **Restrict creations** off, so new release tags can still be created.
    - Leave the bypass list empty, so not even an admin can move or delete a release tag without first changing the ruleset.
 4. **Create `v0.1.0-rc1`** from the newest commit on `main` after the October 26, 2026 naming and notice changes, and push it. Then confirm the ruleset: `git push origin :refs/tags/v0.1.0-rc1` must be rejected. If the delete goes through, recreate the tag on the same commit, push it again, and fix the ruleset before going further.
+
+---
+
+## 17. Phase 7 changes
+
+**Conclusion: changes made during Phase 7, after the first release candidate and before the first scan. Each one is retested in the live test.**
+
+### 17.1 Git-backed files read through Civis (November 2, 2026)
+
+**Why.** Most organizations will not give the scanner a GitHub token, so the setup without a token is the normal path, and the scanner should read as much as it can through Civis alone. Before this change, every git-backed object was "not scanned" without a token. The civis-python 2.10 API spec has two read endpoints for an item stored in git: `GET .../git/commits` (the commits on the item's current branch) and `GET .../git/commits/{commit_hash}` ("Get file contents at git ref", which returns `content`, `type`, `size`, and `fileHash`). They exist for Python scripts, workflows, notebooks, R, SQL, and JavaScript scripts, and reports, but not for container scripts, Services, or dbt scripts. Civis fetches the file itself, so the scanner reads it from the Civis API with no GitHub token and no call to GitHub. Requested by Rob, November 2, 2026.
+
+| # | Choice | Why |
+|---|---|---|
+| 17.1.1 | **Python scripts.** Today's order stays: with a GitHub token, the repository is read from GitHub. With no token, or if GitHub fails for any reason (`RepoUnavailable`), the script's own file is read through Civis (`scanner/retrieval/civis_git.py`) and scanned as a Python file named by its `git_path`. Such a script is "partial", with a note that other files in its repository (other modules, `requirements.txt`, `pyproject.toml`, `Dockerfile`) were not checked. | One file is not the whole repository, and the note says what a token would add. A non-GitHub host also falls back to Civis, since Civis reads the file. |
+| 17.1.2 | **Commit.** A `git_ref` of 7 to 40 hex characters is used as the commit as is. Any other ref (branch or tag) is resolved with the commits endpoint, and the newest commit by `date` is used (the first one if a date is missing). If the endpoint returns no commit, the reason says so, and for a tag it says the ref is a tag. | The file endpoint takes a commit SHA, not a branch or tag name. |
+| 17.1.3 | **Response shape.** The spec says the commits endpoint returns one object (`GitFileGitCommit`), but civis-python lists `scripts/python3/{id}/git/commits` and `workflows/{id}/git/commits` in `GET_PATHS_WITH_ARRAY_RESPONSE` ("Civis API says these paths ... should return an object, but they actually return an array"). Both shapes are accepted. | Either one may come back in the live test. |
+| 17.1.4 | **One-file rules.** The file gets the GitHub path's rules for one file: at most 2 MB (`MAX_FILE_BYTES`, checked against both `size` and the content), decoded as UTF-8 with bad bytes replaced. If the content is base64 (only base64 characters, no spaces or tabs, and it decodes to valid UTF-8), it is decoded first. Code and YAML always have spaces or punctuation outside the base64 alphabet. | Civis may pass GitHub's contents encoding through; the spec does not say. Decoding costs nothing if it does not. |
+| 17.1.5 | **Failures.** Any API error, an empty file, a file over 2 MB, or no commit becomes a short reason in the note, and the object falls back to its behavior before this change. Each failure is logged as `CIVIS_GIT_FAILED object_type=... object_id=... error=<type> [status=<HTTP status>]` through `scanner/scan_log.py`. The non-API error types are `GitCommitNotFound`, `GitFileEmpty`, and `GitFileTooLarge`. | Error type and status only, like `OBJECT_ERROR`. A separate line type lets TESTING item 4.8 count these failures apart from objects that could not be read at all. |
+| 17.1.6 | **Method names.** `scripts.list_python3_git_commits` and `scripts.get_python3_git_commits`; `workflows.list_git_commits` and `workflows.get_git_commits`. They are the same in civis 2.10 and v3, so no fallback helper is needed. civis-python names a GET `list_` when its path is on the array list, and v3 removes only the legacy-name list (`LEGACY_PATHS_WITH_LIST_NAME`), not the array list. A `get_` name for the commits list would also clash with the file method. None of the four is in section 7's 19 renames or its 37 pending renames. `tests/test_retrieval.py` runs civis-python's own `parse_method_name` with and without legacy names to check all four. The v3 changelog was not read again for this change (no GitHub calls from this session); section 7 records its renames. | The scanner uses names that work on 2.10 and v3. |
+| 17.1.7 | **Workflows.** The workflow detail response has no git field, so `workflows.get_git` is called for every active workflow. A git-backed workflow's saved definition can be out of date, like a git-backed Python script's saved source: the git metadata has `pull_from_git`, so Civis copies from git only when set to. A git-backed workflow's definition is read through Civis during inventory and parsed instead of the saved one, for both its inline tasks and the jobs it runs. | The git file is what the workflow should run. |
+| 17.1.8 | **Workflow status.** A workflow read through Civis is "scanned", not "partial": its git file is the whole workflow, and a token would add nothing (workflows are never read from GitHub). If the read fails, the saved definition is parsed, with a note that it may not match git: on the object row ("partial") when the workflow has inline code, or as a coverage row when it only runs other jobs. | The Python script note ("other files were not checked") would be wrong for a workflow. **This differs from the request, which asked for the same status rules as Python scripts. To review.** |
+| 17.1.9 | **Log only (part C).** If an object's code could not be read but its most recent run log or deployment log was read, it is "partial", and its note adds "Only its <log> was checked." after the reason the code was not read. If neither was read, it stays "not scanned". The missing-token reason now says no token is the normal setup. | A log was checked, so "not scanned" hid work the scan did. Without a token this is the usual case for git-backed container scripts, Services, and dbt scripts. |
+| 17.1.10 | **Overview.** The "By object type" table gains a "Partly scanned" column, and the Not scanned tile links to both the not scanned and the partly scanned objects. | Partial objects were in no column, so rows did not add up to Found; more objects are partial now. |
+| 17.1.11 | **Counts.** The final `RUN` line adds `civis_git_reads` and `civis_git_failures`. | TESTING item 4.8 measures the change with counts only. |
+| 17.1.12 | **Preview.** The local preview seeds every scan without a GitHub token. | The normal setup is what most admins will see. |
+
+**Call cost** (added to section 5):
+
+| Object | Extra Civis API calls |
+|---|---|
+| Every active workflow | 1 (`workflows.get_git`), including workflows that only run other jobs and so are not objects |
+| Git-backed workflow | 2 more (commits list and file; 1 for a commit SHA ref), so 3 in all |
+| Git-backed Python script, no token or GitHub fails | 2 (commits list and file; 1 for a commit SHA ref) |
+| Git-backed Python script read from GitHub | 0 |
+| Every other object | 0 |
+
+**Open questions, confirmed by TESTING item 4.8:**
+
+- Which GitHub connection Civis uses to read these files, and whether the Robot user can call these endpoints. If every read fails with the same error, the error type and status show which.
+- Whether the commits endpoint returns an array or one object, and whether its newest commit for a tag is the tagged commit or the newest on the branch.
+- Whether `content` is plain text or base64.

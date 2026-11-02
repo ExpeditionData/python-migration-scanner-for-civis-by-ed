@@ -61,7 +61,8 @@ for your review.
 - **Share the scanner job with Civis admins only.** Each scan saves the full
   report as a CSV run output on the job, so anyone who can read the job can
   download it.
-- **GitHub token (optional).**
+- **GitHub token (optional).** The normal setup has no token (see "Before you
+  start" below). If you add one:
   - Use a fine-grained token with read-only "Contents" permission.
   - Limit it to the repositories your Civis objects use.
   - Give it an expiration date.
@@ -99,10 +100,35 @@ You need:
    needs to create tables in the schema and to select, insert, and delete rows
    in them (delete is used only by `RETENTION_DAYS`). Grant read access to
    Civis admins only. The scanner creates its five tables on the first run.
-4. **A GitHub token (optional).** Without one, git-backed objects are listed as
-   "not scanned, review manually." The token is only for reading **your own**
-   repositories that your Civis objects use. This tool's own code is public and
-   needs no token. If you add one:
+4. **No GitHub token.** The normal setup has no GitHub token. Without one, the
+   scanner reads:
+   - inline code: Python script source, container commands, template code,
+     and inline workflow tasks
+   - notebook files
+   - the file set in Civis for each git-backed Python script and workflow,
+     through the Civis API. Civis reads the file from the repository, so the
+     scanner does not contact GitHub for it.
+   - the most recent run log of each script, and each Service's current
+     deployment log
+
+   Without a token, the scanner does not read:
+   - the rest of each repository, such as other modules, `requirements.txt`,
+     `pyproject.toml`, and `Dockerfile`
+   - any repository code for git-backed container scripts, Services, and dbt
+     scripts
+
+   An object whose code was not fully read is marked "partial" (for example,
+   when only its run log was read) or "not scanned", with the reason, so you
+   can review its code manually. Run logs show most civis-python v2
+   deprecation warnings, but they miss most Python 3.15 changes, because the
+   code still runs on the current image.
+
+   **A GitHub token (optional)** adds the rest of each git-backed repository:
+   the other Python files in the object's folder and its dependency files, and
+   the repository code of git-backed container scripts, Services, and dbt
+   scripts. Workflows are read through Civis either way. The token is only for
+   reading **your own** repositories that your Civis objects use. This tool's
+   own code is public and needs no token. If you add one:
    - Create a **fine-grained** GitHub token with read-only **Contents**
      permission and no other permissions, limited to only those repositories,
      with an expiration date.
@@ -151,7 +177,7 @@ You need:
    |---|---|---|---|---|
    | `RESULTS_DB` | Database | Yes | (none) | Database and credential for the result tables. |
    | `RESULTS_SCHEMA` | String | Yes | (none) | The dedicated results schema. Letters, numbers, and underscores only. |
-   | `GITHUB` | Custom Credential | No | (none) | Optional GitHub token for your own repositories. |
+   | `GITHUB` | Custom Credential | No | (none) | Optional, and not part of the normal setup. A GitHub token for your own repositories. Adds the rest of each git-backed repository and the code of git-backed container scripts, Services, and dbt scripts. |
    | `LOOKBACK_DAYS` | Integer | No | `200` | Read the most recent run log only for objects that ran in this many days (1 to 3,650). |
    | `MAX_CONCURRENCY` | Integer | No | `4` | Worker threads (1 to 16). For each thread above 4, add 512 MB to **Memory**. |
    | `REQUEST_BUDGET` | Integer | No | `500` | Civis API requests per 5 minutes (10 to 1,000). Civis allows 1,000 per user, shared with the web app and any other jobs that run as the Robot user. |

@@ -16,10 +16,24 @@ README setup and every fact that could not be confirmed from documentation
   `error=CivisAPIError status=403`) are fine to record; they hold no content.
 - If something you would need to record looks like client content, write
   "content withheld" and describe it in general terms instead.
-- **Release tag:** `v0.1.0-rc1` for both objects. Use it wherever the README
-  says `<release tag>`.
+- **Release tags:** setup (section 1) can start on `v0.1.0-rc1`. Every scan
+  uses `v0.1.0-rc2`: item 5.6 moves both objects to it before the first scan.
+  Use the tag in place wherever the README says `<release tag>`.
 - **Browser:** Chrome, Edge, or Firefox. Safari ignores the report-only frame
   rule (item 2.1).
+
+## Order
+
+1. Section 1 (setup) on `v0.1.0-rc1`, with no GitHub token attached to the
+   scanner job.
+2. Section 2 (frame rule).
+3. Item 5.6, first part: update both objects to `v0.1.0-rc2`.
+4. Section 3 (the first scan, with no GitHub token) and the first-scan part
+   of item 4.8.
+5. Items 4.1 to 4.3, 4.6, 4.7, and 5.1.
+6. Attach the GitHub token (item 4.8), then item 5.2 (the second scan), the
+   second-scan part of item 4.8, and item 1.4.
+7. Items 4.4, 4.5, 5.3 to 5.5, and the rest of item 5.6.
 
 ## Prepare the test organization
 
@@ -33,6 +47,9 @@ contain one known pattern, such as `client.users.list_me()`.
 - a dbt script with a blank image tag, if the organization has dbt
 - a workflow (not archived) that runs a Python script, a container script, and
   a custom script, after which those three scripts are **archived** (item 4.6)
+- if the organization uses git: a git-backed Python script on a branch, a
+  git-backed Python script on a tag or a commit, and a git-backed workflow
+  (item 4.8)
 
 Record: how many of each type you prepared.
 
@@ -43,11 +60,12 @@ finish the step the way the interface allows and record the difference.
 
 ### 1.1 Before you start
 
-- **Steps:** Follow README "Before you start": confirm the Robot user, have a
-  database admin create the results schema with the privileges listed, and
-  create the optional GitHub Custom Credential.
+- **Steps:** Follow README "Before you start": confirm the Robot user and have
+  a database admin create the results schema with the privileges listed. Do
+  not attach a GitHub token yet: the first scan runs without one on purpose
+  (item 4.8). The GitHub Custom Credential can be created now or at item 4.8.
 - **Expected:** Each step works as written.
-- **Record:** pass or fail per step; whether a GitHub token was used (yes or no).
+- **Record:** pass or fail per step.
 
 ### 1.2 Create the scanner job
 
@@ -77,8 +95,10 @@ finish the step the way the interface allows and record the difference.
 ### 1.4 Scanner resources
 
 - **Steps:** Use the README values (CPU `1000`, Memory `4096`, Disk Space `4`).
-  After the first scan (item 3.4), check the run for memory or disk errors, and
-  read the GitHub counts on the last line of its run log.
+  After the first scan (item 3.4) and the second scan (item 5.2), check each
+  run for memory or disk errors. Read the GitHub counts on the last line of
+  the run log of the first scan with the token attached (the second scan,
+  item 4.8). The first scan has no token, so its GitHub counts are zero.
 - **Expected:** No out-of-memory or disk-full failure. `github_cache_peak_bytes`
   is at most 1073741824 (the 1 GB cache cap).
 - **Record:** pass or fail; peak memory if Civis shows it;
@@ -177,12 +197,14 @@ finish the step the way the interface allows and record the difference.
 - **Steps:** When the scan finishes, read the last line of the scanner job's
   run log. It has the form
   `RUN run_id=... status=succeeded objects_total=N objects_scanned=N api_calls=N
-  github_tarball_requests=N github_cache_peak_bytes=N github_cache_evictions=N`.
+  github_tarball_requests=N github_cache_peak_bytes=N github_cache_evictions=N
+  civis_git_reads=N civis_git_failures=N`.
   Then read the counts on the Overview page.
 - **Expected:** Status `succeeded`; Overview counts match the run log.
 - **Record:** status; minutes from start to finish; `objects_total`,
-  `objects_scanned`, `api_calls`; objects scanned, partly scanned, and not
-  scanned; affected and advisory counts; total findings.
+  `objects_scanned`, `api_calls`, `civis_git_reads`, `civis_git_failures`;
+  objects scanned, partly scanned, and not scanned; affected and advisory
+  counts; total findings.
 
 ### 3.5 Calls per object (PLAN.md section 5)
 
@@ -190,8 +212,12 @@ finish the step the way the interface allows and record the difference.
   Civis API request the scanner sent through its request budget. Table writes
   and the CSV upload are not counted (a few calls per checkpoint).
 - **Expected:** About 3 to 4 per object (section 5 estimates 3, plus about 1
-  for each Python script, PLAN.md 10.4). At the default budget, about 20
-  minutes per 500 objects.
+  for each Python script, PLAN.md 10.4), plus 1 for each active workflow
+  (`workflows.get_git`, including workflows that only run other jobs and so
+  are not counted in `objects_total`), plus up to 2 for each git-backed Python
+  script or workflow read through Civis (`civis_git_reads` plus
+  `civis_git_failures`; PLAN.md 17.1). At the default budget, about 20 minutes
+  per 500 objects.
 - **Record:** calls per object; minutes per 100 objects;
   `github_tarball_requests` and `github_cache_evictions` (GitHub requests do
   not count against the Civis limit, but evictions mean repeat downloads).
@@ -200,12 +226,12 @@ finish the step the way the interface allows and record the difference.
 
 - **Steps:** Scan the scanner's run log without copying it. Scanner lines
   start with `RUN`, `PHASE`, `PROGRESS`, `CHECKPOINT`, `FINDINGS`,
-  `OBJECT_ERROR`, `PARSE_ERROR`, `TABLE_WRITE_FAILED`, `OUTPUT_FAILED`, or
-  `FATAL`.
+  `OBJECT_ERROR`, `CIVIS_GIT_FAILED`, `PARSE_ERROR`, `TABLE_WRITE_FAILED`,
+  `OUTPUT_FAILED`, or `FATAL`.
 - **Expected:** No other lines, apart from Civis's own container messages. No
   "pip" lines.
 - **Record:** the number of other lines, and the count of each error type in
-  `OBJECT_ERROR` and `PARSE_ERROR` lines (for example
+  `OBJECT_ERROR`, `CIVIS_GIT_FAILED`, and `PARSE_ERROR` lines (for example
   `CivisAPIError status=403: 2`).
 
 ### 3.7 First page loads after a scan
@@ -293,6 +319,50 @@ finish the step the way the interface allows and record the difference.
 - **Record:** the image name and tag (public Civis image names only), or "not
   shown". If not shown, ask Civis support.
 
+### 4.8 Git-backed files read through Civis (PLAN.md 17.1)
+
+- **Steps:**
+  1. The first scan (item 3.1) runs with no GitHub token, on purpose. After
+     it, read `civis_git_reads` and `civis_git_failures` on the last line of
+     its run log, and count the `CIVIS_GIT_FAILED` lines by error type and
+     status (for example `CivisAPIError status=403: 3`), as in item 3.6.
+  2. In a Civis query against the results database, run this with the scan's
+     run ID (the `run_id=` value on its `RUN` lines) and your schema's name:
+
+     ```sql
+     SELECT object_type,
+            COUNT(*) AS git_backed,
+            SUM(CASE WHEN scan_note LIKE '%own file was checked, read through Civis%' THEN 1 ELSE 0 END) AS read_through_civis,
+            SUM(CASE WHEN scan_note LIKE '%could not be read through Civis%' THEN 1 ELSE 0 END) AS civis_read_failed
+     FROM results_schema.objects
+     WHERE run_id = '<run_id>' AND git_repo IS NOT NULL
+       AND object_type IN ('python_script', 'workflow')
+     GROUP BY object_type;
+     ```
+
+     For Python scripts, `read_through_civis` is the number read through
+     Civis. A workflow read through Civis has no note, so for workflows the
+     number read is `git_backed` minus `civis_read_failed`. Workflows that
+     only run other jobs have no row here; they are in the `RUN` line counts.
+  3. Create the GitHub Custom Credential if you have not, attach it to the
+     scanner job's `GITHUB` parameter (README "Before you start", item 4),
+     signed in as the Robot user, and save.
+  4. The second scan (item 5.2) runs with the token. Repeat steps 1 and 2 for
+     it. For Python scripts, the number read from GitHub is `git_backed` minus
+     `read_through_civis` minus `civis_read_failed`.
+- **Expected:** Without the token, git-backed Python scripts and workflows are
+  read through Civis, with few or no failures. With the token, most
+  git-backed Python scripts are read from GitHub, and only those GitHub cannot
+  read are read through Civis. Workflows are read through Civis in both scans.
+  If every read fails with the same error, record it: it may show which
+  GitHub connection Civis uses for these endpoints, or that the Robot user
+  cannot call them.
+- **Record:** for each scan: git-backed Python scripts and git-backed workflows
+  (`git_backed`); how many of each were read through Civis;
+  `civis_git_reads` and `civis_git_failures`; the error type and status of each
+  kind of `CIVIS_GIT_FAILED` line, with counts. For the second scan, also how
+  many git-backed Python scripts were read from GitHub.
+
 ## 5. App functions
 
 ### 5.1 Checklist save with the Civis-Username header
@@ -355,11 +425,15 @@ finish the step the way the interface allows and record the difference.
   the new API key Civis gives it on wake).
 - **Record:** pass or fail; minutes to wake.
 
-### 5.6 Update and removal (optional)
+### 5.6 Update to a new release, and removal
 
-- **Steps:** If a second release candidate exists, follow README "Update to a
-  new release". At the end of the test, follow README "Remove the tool".
-- **Expected:** Each step works as written.
+- **Steps:**
+  1. After section 2 and before the first scan (item 3.1), follow README
+     "Update to a new release" to move both objects from `v0.1.0-rc1` to
+     `v0.1.0-rc2`. Its step 4 ("Run a new scan") is item 3.1.
+  2. Optional, at the end of the test: follow README "Remove the tool".
+- **Expected:** Each step works as written. After the update, the Service
+  starts again and both objects show `v0.1.0-rc2`.
 - **Record:** pass or fail per step.
 
 ## Results to report back
@@ -369,18 +443,19 @@ only.
 
 ```
 Python Migration Scanner: first live test results
-Release tag: v0.1.0-rc1
+Release tags: setup on v0.1.0-rc1, scans on v0.1.0-rc2
 Date (MM/DD/YYYY):
 Browser:
 
 Prepared objects by type: python_script=  container_script=  custom_script=
   notebook=  service=  workflow=  dbt_script=  archived_in_workflow=
+  git_python_branch=  git_python_tag_or_commit=  git_workflow=
 
 Item  Result (pass/fail/skipped)  Counts or note
 1.1
 1.2   URL typed: yes/no
 1.3   a=  b=  c=  d=  e=   (matches, or the label shown)
-1.4   peak memory:   github_tarball_requests=  github_cache_peak_bytes=  github_cache_evictions=
+1.4   peak memory (scan 1, scan 2):   from scan 2: github_tarball_requests=  github_cache_peak_bytes=  github_cache_evictions=
 1.5   minutes to start:
 1.6
 1.7   Service:  job:
@@ -392,9 +467,10 @@ Item  Result (pass/fail/skipped)  Counts or note
 3.2   Scan history shows Robot user: yes/no   job run started by Robot user: yes/no
 3.3
 3.4   status=  minutes=  objects_total=  objects_scanned=  api_calls=
+      civis_git_reads=  civis_git_failures=
       scanned=  partly scanned=  not scanned=  affected=  advisory=  findings=
 3.5   calls per object=  minutes per 100 objects=  github_tarball_requests=  github_cache_evictions=
-3.6   other lines=   error types: (type and count)
+3.6   other lines=   error types: (line type, error type, and count)
 3.7   seconds: overview=  inventory=  findings=  slowest=   any failed or timed out: yes/no
 4.1   python3=  custom=  notebooks=  services=  workflows=  dbt=
 4.2   notebooks scanned=  refused for host=   host shape (if any):
@@ -403,6 +479,12 @@ Item  Result (pass/fail/skipped)  Counts or note
 4.5   runs before=  after=
 4.6   python=  container=  custom=
 4.7   image and tag:
+4.8   scan 1 (no token): python git_backed=  read_through_civis=  civis_read_failed=
+                         workflow git_backed=  civis_read_failed=
+                         civis_git_reads=  civis_git_failures=   failures by type:
+      scan 2 (token):    python git_backed=  read_through_civis=  civis_read_failed=  read_from_github=
+                         workflow git_backed=  civis_read_failed=
+                         civis_git_reads=  civis_git_failures=   failures by type:
 5.1   rows=
 5.2
 5.3   rows=
@@ -410,7 +492,7 @@ Item  Result (pass/fail/skipped)  Counts or note
       step 3 edit by Robot user: yes/no   resumed run shows Robot user: yes/no
       step 4 edit by Robot user: yes/no   next run shows Robot user: yes/no
 5.5   minutes to wake=
-5.6
+5.6   update to rc2:   removal:
 
 Error types seen (from the scanner's log only), with counts:
 Anything that did not match the README (general terms only):
