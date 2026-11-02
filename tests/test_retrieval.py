@@ -697,7 +697,10 @@ def test_civis_git_reads_the_newest_commit_for_a_branch_or_tag():
     client = git_client({"commits": commits, "files": {SHA_A: "old = 1\n", SHA_B: "new = 1\n"}})
     reader = civis_git.CivisGitFiles(client)
     assert reader.read(ObjectType.PYTHON_SCRIPT, 5, "main", "branch") == ("new = 1\n", None)
-    assert reader.read(ObjectType.PYTHON_SCRIPT, 5, "v1.0.0", "tag") == ("new = 1\n", None)
+    tag_note = civis_git.TAG_READ_AT_BRANCH.format(item="script")
+    assert reader.read(ObjectType.PYTHON_SCRIPT, 5, "v1.0.0", "tag") == ("new = 1\n", tag_note)
+    assert tag_note.startswith("The script's git reference is a tag") and "may not match the tag" in tag_note
+    assert "could not be read through Civis" not in tag_note  # TESTING 4.8 counts failures by that phrase.
     assert [n for n, _, _ in client.calls].count("scripts.list_python3_git_commits") == 2
 
 
@@ -908,3 +911,31 @@ def test_git_backed_workflows_in_the_synthetic_instance(with_token):
     assert rules(results[605]) == {("CV3-RENAME-USERS-LIST-ME", "code")}
     assert rules(results[606]) == {("CV3-CONTAINERFUTURE", "code")}
     assert results[109].obj.workflow_ids == [605]
+
+
+def test_script_on_a_tag_read_at_the_branch_head_is_partial_with_both_notes(tmp_path):
+    data = copy.deepcopy(FakeClient.from_fixture("synthetic_instance.json").data)
+    data["civis_git"]["python3/110"] = {
+        "commits": [{"commit_hash": SHA_A, "author_name": "Example Analyst", "date": "2026-10-01T10:00:00Z",
+                     "message": "Example change"}],
+        "files": {SHA_A: "import civis\nimport civis.parallel\n"},
+    }
+    for token, github_note in ((None, " without a GitHub token."), ("synthetic-github-token", ". " + gh.NOT_FOUND)):
+        results, _, _ = scan_all(tmp_path / str(bool(token)), token=token, data=copy.deepcopy(data))
+        script = results[110]
+        assert script.obj.scan_status is ScanStatus.PARTIAL
+        assert script.obj.scan_note == (
+            CIVIS_FILE_ONLY + github_note + " " + civis_git.TAG_READ_AT_BRANCH.format(item="script")
+        )
+        assert ("CV3-PARALLEL", "code") in rules(script)  # The read is kept.
+
+
+def test_workflow_on_a_tag_read_at_the_branch_head_is_partial(tmp_path):
+    from tests.test_inventory import git_workflow_data
+    data = git_workflow_data()
+    data["workflows_git"]["601"].update({"git_ref": "v1.0.0", "git_ref_type": "tag"})
+    results, _, _ = scan_all(tmp_path, data=data)
+    result = results[601]
+    assert result.obj.scan_status is ScanStatus.PARTIAL
+    assert result.obj.scan_note == civis_git.TAG_READ_AT_BRANCH.format(item="workflow")
+    assert rules(result) == {("CV3-ML", "code")}  # Still read from the git file.

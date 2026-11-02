@@ -12,7 +12,7 @@ from scanner.inventory import build_inventory
 from scanner.inventory.base import classify_image, normalize_image, schedule_summary
 from scanner.inventory.users import load_users, scanning_user
 from scanner.inventory.workflows import SAVED_COPY_NOTE, parse_definition
-from scanner.retrieval.civis_git import CivisGitFiles
+from scanner.retrieval.civis_git import TAG_READ_AT_BRANCH, CivisGitFiles
 from tests.fake_civis import FakeClient
 
 
@@ -377,3 +377,13 @@ def test_synthetic_git_backed_objects():
     refs = {i: (by_id[i].obj.git_ref, by_id[i].code["git_ref_type"]) for i in (109, 110, 111, 112)}
     assert refs == {109: ("5ca1ab1", "branch"), 110: ("v2.0.0", "tag"), 111: ("main", "branch"), 112: ("main", "branch")}
     assert (reader.reads, reader.failures) == (1, 1)  # Inventory reads only workflows.
+
+
+def test_git_backed_workflow_on_a_tag_is_partial_with_a_note():
+    data = git_workflow_data()
+    data["workflows_git"]["601"].update({"git_ref": "v1.0.0", "git_ref_type": "tag"})
+    _, inventory, _ = git_inventory(data)
+    workflow = inventory.by_id()[601]
+    assert [t.task for t in workflow.code["inline_tasks"]] == ["from_git"]
+    assert workflow.obj.scan_status is ScanStatus.PARTIAL
+    assert workflow.obj.scan_note == TAG_READ_AT_BRANCH.format(item="workflow")

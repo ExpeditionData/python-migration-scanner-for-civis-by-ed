@@ -130,6 +130,8 @@ def process_item(item: InventoryItem, deps: ScanDeps) -> ObjectResult:
                 del text
                 scanned = True
                 problems.append(civis_file_note(exc.reason))
+                if civis_problem:
+                    problems.append(civis_problem)  # The file was read for a tag at the branch's newest commit.
             else:
                 problems.append(exc.reason)
                 if civis_problem:

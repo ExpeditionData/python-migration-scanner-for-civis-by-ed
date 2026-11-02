@@ -21,6 +21,10 @@ decoding as one file from a GitHub tarball: at most 2 MB, decoded as UTF-8 with
 bad bytes replaced. A failure is logged through scan_log with the object ID,
 the error type, and the HTTP status only, and returns a short reason for the
 coverage note.
+
+A tag cannot be passed to the commits endpoint, which lists commits on the
+item's branch. So a file read for a tag is read at the branch's newest commit,
+and the read returns a note that it may not match the tag.
 """
 
 from __future__ import annotations
@@ -46,6 +50,10 @@ ENDPOINTS = {
     ObjectType.WORKFLOW: ("workflows", "list_git_commits", "get_git_commits"),
 }
 ITEM_NAMES = {ObjectType.PYTHON_SCRIPT: "script", ObjectType.WORKFLOW: "workflow"}
+TAG_READ_AT_BRANCH = (
+    "The {item}'s git reference is a tag, and Civis lists commits on the branch, so the file was read "
+    "at the branch's newest commit and may not match the tag."
+)
 
 
 class GitCommitNotFound(Exception):
@@ -72,11 +80,12 @@ class CivisGitFiles:
     def read(
         self, object_type: ObjectType, object_id: int, ref: str | None, ref_type: str | None = None
     ) -> tuple[str | None, str | None]:
-        """Returns (file text, None), or (None, reason) if the file could not be read."""
+        """Returns (file text, None); (file text, note) if the file was read but may not
+        match the git reference; or (None, reason) if the file could not be read."""
         endpoint_name, commits_method, file_method = ENDPOINTS[object_type]
         endpoint = getattr(self._client, endpoint_name)
         try:
-            commit = _commit(endpoint, commits_method, object_id, ref)
+            commit, from_branch = _commit(endpoint, commits_method, object_id, ref)
             text = _file_text(getattr(endpoint, file_method)(object_id, commit))
         except Exception as exc:
             with self._lock:
@@ -85,14 +94,19 @@ class CivisGitFiles:
             return None, _reason(exc, ITEM_NAMES[object_type], ref_type)
         with self._lock:
             self.reads += 1
+        if from_branch and _is_tag(ref_type):
+            return text, TAG_READ_AT_BRANCH.format(item=ITEM_NAMES[object_type])
         return text, None
 
 
-def _commit(endpoint: Any, commits_method: str, object_id: int, ref: str | None) -> str:
-    """A commit SHA set in Civis is used as is. Anything else is resolved with the commits endpoint."""
+def _commit(endpoint: Any, commits_method: str, object_id: int, ref: str | None) -> tuple[str, bool]:
+    """The commit to read, and whether it is the newest commit on the branch.
+
+    A commit SHA set in Civis is used as is. Anything else is resolved with the
+    commits endpoint."""
     ref = (ref or "").strip()
     if SHA.fullmatch(ref):
-        return ref
+        return ref, False
     response = getattr(endpoint, commits_method)(object_id)
     commits = list(response) if isinstance(response, (list, tuple)) else [response]
     dated = []
@@ -103,8 +117,12 @@ def _commit(endpoint: Any, commits_method: str, object_id: int, ref: str | None)
     if not dated:
         raise GitCommitNotFound()
     if all(when is not None for when, _ in dated):
-        return max(dated, key=lambda pair: pair[0])[1]
-    return dated[0][1]
+        return max(dated, key=lambda pair: pair[0])[1], True
+    return dated[0][1], True
+
+
+def _is_tag(ref_type: str | None) -> bool:
+    return (ref_type or "").strip().lower() == "tag"
 
 
 def _file_text(response: Any) -> str:
@@ -142,7 +160,7 @@ def _base64_bytes(content: str) -> bytes | None:
 def _reason(exc: Exception, item: str, ref_type: str | None) -> str:
     start = f"The {item}'s own file could not be read through Civis"
     if isinstance(exc, GitCommitNotFound):
-        if (ref_type or "").strip().lower() == "tag":
+        if _is_tag(ref_type):
             return f"{start}: its git reference is a tag, and Civis returned no commit for it."
         return f"{start}: Civis returned no commit for its git branch."
     if isinstance(exc, GitFileEmpty):

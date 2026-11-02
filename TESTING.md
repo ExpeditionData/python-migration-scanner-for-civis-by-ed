@@ -341,8 +341,9 @@ finish the step the way the interface allows and record the difference.
      ```
 
      For Python scripts, `read_through_civis` is the number read through
-     Civis. A workflow read through Civis has no note, so for workflows the
-     number read is `git_backed` minus `civis_read_failed`. Workflows that
+     Civis. A workflow read through Civis has no note, or only a note that its
+     tag was read at the branch's newest commit, so for workflows the number
+     read is `git_backed` minus `civis_read_failed`. Workflows that
      only run other jobs have no row here; they are in the `RUN` line counts.
   3. Create the GitHub Custom Credential if you have not, attach it to the
      scanner job's `GITHUB` parameter (README "Before you start", item 4),

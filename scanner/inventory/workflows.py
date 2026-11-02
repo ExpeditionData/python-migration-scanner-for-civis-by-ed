@@ -12,7 +12,9 @@ saved in Civis can then be out of date, like a git-backed Python script's saved
 source (Civis pulls from git only when set to), so a git-backed workflow's
 definition is read from git through the Civis API (scanner/retrieval/civis_git.py)
 and parsed instead. That file is the whole workflow, so a workflow read this
-way is fully scanned. If the read fails, the saved definition is parsed, and a
+way is fully scanned, unless its git reference is a tag: then the file was read
+at the branch's newest commit, and the workflow is partial with a note that it
+may not match the tag. If the read fails, the saved definition is parsed, and a
 note says it may not match git.
 
 Workflow definitions use Mistral v2 YAML:
@@ -205,7 +207,8 @@ def inventory_workflows(ctx: InventoryContext) -> tuple[list[InventoryItem], dic
 
 
 def _definition(ctx: InventoryContext, obj: CivisObject, detail: Any) -> tuple[str | None, str | None]:
-    """The definition to parse, and a note if a git-backed workflow had to use its saved copy."""
+    """The definition to parse, and a note if a git-backed workflow had to use its saved copy
+    or was read for a tag at the branch's newest commit."""
     saved = field_of(detail, "definition")
     if ctx.civis_git is None:
         return saved, None
@@ -216,7 +219,7 @@ def _definition(ctx: InventoryContext, obj: CivisObject, detail: Any) -> tuple[s
     obj.git_repo = repo
     obj.git_ref = field_of(git, "git_ref") or field_of(git, "git_branch")
     obj.git_path = field_of(git, "git_path")
-    text, reason = ctx.civis_git.read(ObjectType.WORKFLOW, obj.object_id, obj.git_ref, field_of(git, "git_ref_type"))
+    text, note = ctx.civis_git.read(ObjectType.WORKFLOW, obj.object_id, obj.git_ref, field_of(git, "git_ref_type"))
     if text is None:
-        return saved, f"{reason} {SAVED_COPY_NOTE}"
-    return text, None
+        return saved, f"{note} {SAVED_COPY_NOTE}"
+    return text, note
