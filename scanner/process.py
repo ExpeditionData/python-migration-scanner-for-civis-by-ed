@@ -3,9 +3,11 @@
 Every object ends with a coverage status:
 
 - scanned: all of its code was read and checked.
-- partial: some code was checked, but something was skipped (the reason says what).
-- not_scanned: none of its code could be read (the reason says why and asks
-  for a manual review).
+- partial: some code was checked, but something was skipped (the reason says
+  what). Also an object whose code could not be read but whose most recent run
+  log or deployment log was read and checked.
+- not_scanned: neither its code nor a log could be read (the reason says why
+  and asks for a manual review).
 
 A git-backed Python script is read from GitHub when a token is attached. If
 there is no token, or GitHub cannot be read, the script's own file is read
@@ -135,15 +137,19 @@ def process_item(item: InventoryItem, deps: ScanDeps) -> ObjectResult:
 
     # Most recent run log, or the Service's current deployment log.
     log = read_log(deps.client, obj, item.code.get("deployment_id"), deps.lookback_days, deps.now)
+    log_read = False
     if log is not None:
         if log.read:
             matches.extend(deps.engine.scan_log(log.lines, log.label))
+            log_read = True
         if log.note:
             problems.append(log.note)
         log.lines.clear()
 
     if not parsed_ok:
         problems.append(PARSE_NOTE)
+    if needed and not scanned and log_read:
+        problems.append(f"Only its {log.label} was checked.")
 
     findings = deps.engine.to_findings(obj, matches)
     earlier = [obj.scan_note] if obj.scan_note else []
@@ -151,7 +157,7 @@ def process_item(item: InventoryItem, deps: ScanDeps) -> ObjectResult:
     if note and len(note) > MAX_NOTE_CHARS:
         note = note[: MAX_NOTE_CHARS - 3] + "..."
 
-    if needed and not scanned:
+    if needed and not scanned and not log_read:
         obj.scan_status = ScanStatus.NOT_SCANNED
     elif problems or obj.scan_status is ScanStatus.PARTIAL:
         obj.scan_status = ScanStatus.PARTIAL

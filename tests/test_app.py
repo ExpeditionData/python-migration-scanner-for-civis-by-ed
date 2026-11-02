@@ -126,6 +126,13 @@ def test_overview_numbers(app):
     assert "A scan is running." in page
 
 
+def test_overview_counts_partly_scanned_objects(app):
+    html = app.test_client().get("/").get_data(as_text=True)
+    page = text_of(app.test_client().get("/"))
+    assert "Partly scanned" in page and "more partly scanned. Review the not scanned and partly scanned objects manually." in page
+    assert "/inventory?status=not_scanned" in html and "/inventory?status=partial" in html
+
+
 def test_scan_page_progress_and_history(app):
     page = text_of(app.test_client().get("/scan"))
     assert "Scanning code and logs: 40 of 87 objects" in page

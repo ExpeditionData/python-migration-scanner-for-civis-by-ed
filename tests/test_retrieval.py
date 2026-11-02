@@ -810,3 +810,24 @@ def test_git_backed_workflow_findings_come_from_its_git_file(tmp_path):
     assert result.obj.scan_status is ScanStatus.SCANNED and result.coverage == []
     assert rules(result) == {("CV3-ML", "code")}
     assert not any("example-workflows" in url for url, _ in session.requests)  # Never read from GitHub.
+
+
+def test_object_with_a_log_but_no_readable_code_is_partial(tmp_path):
+    results, _, _ = scan_all(tmp_path, token=None)
+    service = results[501]
+    assert service.obj.scan_status is ScanStatus.PARTIAL
+    assert service.obj.scan_note == f"{gh.NO_TOKEN} Only its deployment log (deployment 7001) was checked."
+    assert rules(service) == {("CV3-ML", "log")}
+    assert service.coverage[0].reason == service.obj.scan_note
+
+
+def test_object_with_neither_code_nor_a_log_stays_not_scanned(tmp_path):
+    results, _, _ = scan_all(tmp_path, token=None)
+    script = results[106]  # Git-backed, no Civis git file in this instance, and never run.
+    assert script.obj.last_run_id is None
+    assert script.obj.scan_status is ScanStatus.NOT_SCANNED and "Only its" not in script.obj.scan_note
+
+
+def test_missing_token_reads_as_the_normal_setup():
+    assert "normal setup" in gh.NO_TOKEN and "No GitHub token is attached" not in gh.NO_TOKEN
+

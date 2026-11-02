@@ -37,7 +37,7 @@
   <div class="tile tile-neutral">
     <div class="tile-label">Not scanned</div>
     <div class="tile-value">{{ stats.not_scanned | number }}</div>
-    <div class="tile-note">{{ stats.partial | number }} more partly scanned. <a href="{{ url_for('pages.inventory', status='not_scanned') }}">Review manually</a></div>
+    <div class="tile-note">{{ stats.partial | number }} more partly scanned. Review the <a href="{{ url_for('pages.inventory', status='not_scanned') }}">not scanned</a> and <a href="{{ url_for('pages.inventory', status='partial') }}">partly scanned</a> objects manually.</div>
   </div>
 </div>
 
@@ -47,7 +47,7 @@
     <div class="table-wrap">
       <table class="nowrap">
         <thead>
-          <tr><th scope="col">Object type</th><th scope="col" class="num">Found</th><th scope="col" class="num">Scanned</th><th scope="col" class="num">Affected</th><th scope="col" class="num">Advisory</th><th scope="col" class="num">Not scanned</th></tr>
+          <tr><th scope="col">Object type</th><th scope="col" class="num">Found</th><th scope="col" class="num">Scanned</th><th scope="col" class="num">Affected</th><th scope="col" class="num">Advisory</th><th scope="col" class="num">Partly scanned</th><th scope="col" class="num">Not scanned</th></tr>
         </thead>
         <tbody>
           {% for t in stats.types %}
@@ -57,6 +57,7 @@
             <td class="num">{{ t.scanned | number }}</td>
             <td class="num affected-text">{{ t.affected | number }}</td>
             <td class="num advisory-text">{{ t.advisory | number }}</td>
+            <td class="num">{{ t.partial | number }}</td>
             <td class="num">{{ t.not_scanned | number }}</td>
           </tr>
           {% endfor %}

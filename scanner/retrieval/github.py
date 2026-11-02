@@ -52,7 +52,10 @@ KEPT_KINDS = ("python", "notebook", *DEPENDENCY_KINDS)
 REVIEW = "Review it manually."
 NOT_GITHUB = f"The repository is not on github.com, so it was not scanned. {REVIEW}"
 BAD_ADDRESS = f"The repository address could not be read, so it was not scanned. {REVIEW}"
-NO_TOKEN = f"No GitHub token is attached to the scanner job, so the repository was not scanned. {REVIEW}"
+NO_TOKEN = (
+    "The repository code was not checked, because the scanner job has no GitHub token. "
+    "That is the normal setup. Review the code manually, or add a token to scan it."
+)
 NOT_FOUND = (
     f"GitHub returned 404: the repository or ref does not exist, or the GitHub token cannot read it. {REVIEW}"
 )
