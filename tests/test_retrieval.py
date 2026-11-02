@@ -539,6 +539,10 @@ def scanned(tmp_path_factory):
         (105, ScanStatus.SCANNED),
         (106, ScanStatus.SCANNED),
         (107, ScanStatus.NOT_SCANNED),
+        (109, ScanStatus.PARTIAL),
+        (110, ScanStatus.PARTIAL),
+        (111, ScanStatus.NOT_SCANNED),
+        (112, ScanStatus.NOT_SCANNED),
         (201, ScanStatus.SCANNED),
         (202, ScanStatus.PARTIAL),
         (205, ScanStatus.PARTIAL),
@@ -554,6 +558,8 @@ def scanned(tmp_path_factory):
         (601, ScanStatus.SCANNED),
         (231, ScanStatus.SCANNED),
         (603, ScanStatus.NOT_SCANNED),
+        (605, ScanStatus.SCANNED),
+        (606, ScanStatus.PARTIAL),
     ],
 )
 def test_every_object_ends_with_a_coverage_status(scanned, object_id, status):
@@ -629,11 +635,12 @@ def test_dbt_template_repo(scanned):
     assert ("PY315-PINNED-PACKAGE-INSTALL", "warehouse/requirements.txt") in found
 
 
-def test_missing_token_marks_repos_for_manual_review(tmp_path):
-    results, _, session = scan_all(tmp_path, token=None)
-    assert results[106].obj.scan_status is ScanStatus.NOT_SCANNED
-    assert gh.NO_TOKEN in results[106].obj.scan_note
+def test_missing_token_marks_repos_for_manual_review(no_token):
+    results, _, session = no_token
+    assert results[106].obj.scan_status is ScanStatus.PARTIAL  # Its own file was read through Civis.
+    assert results[106].obj.scan_note == f"{CIVIS_FILE_ONLY} without a GitHub token."
     assert results[202].obj.scan_status is ScanStatus.PARTIAL  # Its docker command was still scanned.
+    assert gh.NO_TOKEN in results[202].obj.scan_note
     assert not any("github.com" in url for url, _ in session.requests)
 
 
@@ -786,14 +793,14 @@ def test_git_backed_script_without_a_token_is_read_through_civis(tmp_path):
     assert result.obj.scan_status is ScanStatus.PARTIAL
     assert {(f.rule_id, f.file) for f in result.findings} == {("CV3-PARALLEL", "jobs/load.py")}
     assert result.obj.scan_note == f"{CIVIS_FILE_ONLY} without a GitHub token."
-    assert client.called("scripts.get_python3_git_commits") == [((106, SHA_A), {})]
+    assert [c for c in client.called("scripts.get_python3_git_commits") if c[0][0] == 106] == [((106, SHA_A), {})]
     assert not any("github.com" in url for url, _ in session.requests)
 
 
 def test_git_backed_script_with_a_token_is_read_from_github_not_civis(tmp_path):
     results, client, _ = scan_all(tmp_path, data=no_token_data())
     assert results[106].obj.scan_status is ScanStatus.SCANNED
-    assert not [n for n, _, _ in client.calls if "git_commits" in n]
+    assert not [n for n, a, _ in client.calls if "git_commits" in n and a[0] == 106]
 
 
 def test_failed_civis_read_falls_back_to_the_github_reason(tmp_path):
@@ -823,7 +830,7 @@ def test_object_with_a_log_but_no_readable_code_is_partial(tmp_path):
 
 def test_object_with_neither_code_nor_a_log_stays_not_scanned(tmp_path):
     results, _, _ = scan_all(tmp_path, token=None)
-    script = results[106]  # Git-backed, no Civis git file in this instance, and never run.
+    script = results[111]  # Git-backed, Civis cannot read its file, and never run.
     assert script.obj.last_run_id is None
     assert script.obj.scan_status is ScanStatus.NOT_SCANNED and "Only its" not in script.obj.scan_note
 
@@ -831,3 +838,73 @@ def test_object_with_neither_code_nor_a_log_stays_not_scanned(tmp_path):
 def test_missing_token_reads_as_the_normal_setup():
     assert "normal setup" in gh.NO_TOKEN and "No GitHub token is attached" not in gh.NO_TOKEN
 
+
+# --- Synthetic git-backed objects, with and without a token ----------------------------------
+
+
+@pytest.fixture(scope="module")
+def with_token(tmp_path_factory):
+    return scan_all(tmp_path_factory.mktemp("with-token"))
+
+
+@pytest.fixture(scope="module")
+def no_token(tmp_path_factory):
+    return scan_all(tmp_path_factory.mktemp("no-token"), token=None)
+
+
+def git_calls(client, object_id: int) -> list[str]:
+    return [name for name, args, _ in client.calls if "git_commits" in name and args[0] == object_id]
+
+
+def test_with_a_token_github_is_read_and_civis_is_not(with_token):
+    results, client, _ = with_token
+    assert results[106].obj.scan_status is ScanStatus.SCANNED and git_calls(client, 106) == []
+
+
+def test_with_a_token_a_github_404_is_read_through_civis(with_token):
+    results, client, session = with_token
+    result = results[109]
+    assert any(url.startswith("https://api.github.com/repos/example-org/example-models/") for url, _ in session.requests)
+    assert result.obj.scan_status is ScanStatus.PARTIAL
+    assert result.obj.scan_note == f"{CIVIS_FILE_ONLY}. {gh.NOT_FOUND}"
+    assert {(f.rule_id, f.file) for f in result.findings} == {("CV3-USE-PANDAS", "models/score.py")}
+
+
+def test_sha_branch_and_tag_refs(with_token):
+    results, client, _ = with_token
+    assert git_calls(client, 109) == ["scripts.get_python3_git_commits"]  # A SHA ref needs no commits call.
+    assert client.called("scripts.get_python3_git_commits")[0][0][1] == "5ca1ab1"
+    assert git_calls(client, 111) == ["scripts.list_python3_git_commits", "scripts.get_python3_git_commits"]
+    assert git_calls(client, 110) == ["scripts.list_python3_git_commits"]  # No commit for the tag.
+    assert "its git reference is a tag, and Civis returned no commit for it." in results[110].obj.scan_note
+
+
+def test_failed_civis_reads_fall_back_to_todays_behavior(with_token):
+    results, _, _ = with_token
+    for object_id, why in ((111, "(HTTP 403)."), (112, "the file is over 2 MB.")):
+        result = results[object_id]
+        assert result.obj.scan_status is ScanStatus.NOT_SCANNED and result.findings == []
+        assert result.obj.scan_note.startswith(gh.NOT_FOUND) and why in result.obj.scan_note
+
+
+def test_log_only_objects_are_partial(with_token, no_token):
+    tag = with_token[0][110]  # Its file could not be read, but its run log was.
+    assert tag.obj.scan_status is ScanStatus.PARTIAL
+    assert tag.obj.scan_note.endswith("Only its run log (run 9010) was checked.")
+    assert rules(tag) == {("CV3-RENAME-USERS-LIST-ME", "log")}
+    assert no_token[0][501].obj.scan_status is ScanStatus.PARTIAL
+
+
+def test_without_a_token_no_github_requests_and_scripts_read_through_civis(no_token):
+    results, client, session = no_token
+    assert not any("github.com" in url for url, _ in session.requests)
+    assert {(f.rule_id, f.file) for f in results[106].findings} == {("CV3-PARALLEL", "jobs/load.py")}
+    assert results[109].obj.scan_note == f"{CIVIS_FILE_ONLY} without a GitHub token."
+    assert git_calls(client, 106) == ["scripts.list_python3_git_commits", "scripts.get_python3_git_commits"]
+
+
+def test_git_backed_workflows_in_the_synthetic_instance(with_token):
+    results, _, _ = with_token
+    assert rules(results[605]) == {("CV3-RENAME-USERS-LIST-ME", "code")}
+    assert rules(results[606]) == {("CV3-CONTAINERFUTURE", "code")}
+    assert results[109].obj.workflow_ids == [605]

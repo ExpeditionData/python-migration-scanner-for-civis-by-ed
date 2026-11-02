@@ -9,6 +9,11 @@ runs the scanner several times so every app page has something to show:
    shows "fixed since last run," plus some checklist changes by an admin.
 4. Twenty minutes ago: a scan that is still running.
 
+Every run uses the normal setup, with no GitHub token, so the preview shows
+git-backed scripts and workflows read through Civis, Civis reads that failed,
+and objects where only the run log was checked. The synthetic instance has one
+of each.
+
 It writes ``results.sqlite`` (the five tables), one CSV report per completed
 run, and ``local_jobs.json``, which stands in for the scanner job's Civis runs
 and log lines. Everything is made up, and nothing calls the network.
@@ -208,7 +213,7 @@ def build_preview(out: Path, now: datetime | None = None) -> dict:
         try:
             result = dry_run(
                 out, data=preview_instance(fixed, start), civis_job_id=PREVIEW_JOB_ID, civis_run_id=civis_run_id,
-                clock=_ticking(start, 2.0), stop_after=stop_after, checkpoint_objects=10,
+                clock=_ticking(start, 2.0), stop_after=stop_after, checkpoint_objects=10, github_token=None,
             )
             outputs[str(civis_run_id)] = f"python-migration-scanner-{result.run_id}.csv"
         except SimulatedStop:

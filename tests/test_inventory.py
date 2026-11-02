@@ -38,27 +38,27 @@ def test_inventoried_ids_by_type(built):
     for it in inventory.items:
         ids.setdefault(it.obj.object_type, set()).add(it.obj.object_id)
     assert ids == {
-        ObjectType.PYTHON_SCRIPT: {101, 102, 105, 106, 107},
+        ObjectType.PYTHON_SCRIPT: {101, 102, 105, 106, 107, 109, 110, 111, 112},
         ObjectType.CONTAINER_SCRIPT: {201, 202, 203, 204, 205, 206},
         ObjectType.CUSTOM_SCRIPT: {301, 302, 304, 306},
         ObjectType.DBT_SCRIPT: {231},
         ObjectType.NOTEBOOK: {401, 403},
         ObjectType.SERVICE: {501, 502, 503},
-        ObjectType.WORKFLOW: {601, 603},
+        ObjectType.WORKFLOW: {601, 603, 605, 606},
     }
 
 
 def test_counts_cover_hidden_archived_and_non_python(built):
     _, inventory = built
     c = inventory.counts
-    assert (c[ObjectType.PYTHON_SCRIPT].found, c[ObjectType.PYTHON_SCRIPT].hidden_skipped) == (5, 1)
+    assert (c[ObjectType.PYTHON_SCRIPT].found, c[ObjectType.PYTHON_SCRIPT].hidden_skipped) == (9, 1)
     assert c[ObjectType.PYTHON_SCRIPT].archived_included == 1
     assert c[ObjectType.CUSTOM_SCRIPT].not_python == {"sql": 1, "dbt": 1}
     assert c[ObjectType.NOTEBOOK].not_python == {"r": 1}
     assert c[ObjectType.SERVICE].not_python == {"r": 2}
     assert c[ObjectType.PYTHON_SCRIPT].not_python == {}
     assert c[ObjectType.DBT_SCRIPT].not_python == {"dbt": 1}  # The pinned dbt script.
-    assert c[ObjectType.WORKFLOW].found == 3
+    assert c[ObjectType.WORKFLOW].found == 5
 
 
 def test_archived_jobs_are_skipped_unless_an_active_workflow_runs_them(built):
@@ -334,7 +334,7 @@ def test_git_backed_workflow_is_parsed_from_its_git_file():
     by_id = inventory.by_id()
     assert by_id[102].obj.workflow_ids == [601]  # Job references come from the git file too,
     assert 601 not in by_id[201].obj.workflow_ids  # not from the saved definition.
-    assert (reader.reads, reader.failures) == (1, 0)
+    assert (reader.reads, reader.failures) == (2, 1)  # 601 and 605 are read; 606 fails (synthetic instance).
 
 
 def test_git_backed_workflow_falls_back_to_its_saved_definition():
@@ -346,7 +346,7 @@ def test_git_backed_workflow_falls_back_to_its_saved_definition():
         "The workflow's own file could not be read through Civis (HTTP 403). " + SAVED_COPY_NOTE
     )
     assert inventory.by_id()[201].obj.workflow_ids == [601]
-    assert (reader.reads, reader.failures) == (0, 1)
+    assert (reader.reads, reader.failures) == (1, 2)  # 605 is read; 606 fails (synthetic instance).
 
 
 def test_git_backed_workflow_that_only_runs_jobs_reports_a_failed_read_in_coverage():
@@ -360,8 +360,20 @@ def test_get_git_is_called_once_per_active_workflow():
     client, _, _ = git_inventory(git_workflow_data())
     active = [w["id"] for w in client.data["workflows"] if not w.get("archived")]
     assert sorted(a[0] for a, _ in client.called("workflows.get_git")) == sorted(active)
-    assert client.called("workflows.list_git_commits") == [((601,), {})]
-    assert client.called("workflows.get_git_commits") == [((601, WORKFLOW_SHA), {})]
+    assert sorted(a[0] for a, _ in client.called("workflows.list_git_commits")) == [601, 605, 606]
+    assert ((601, WORKFLOW_SHA), {}) in client.called("workflows.get_git_commits")
     plain = FakeClient.from_fixture("synthetic_instance.json")
     build_inventory(plain)
     assert not plain.called("workflows.get_git")  # Without a reader, no git calls.
+
+
+def test_synthetic_git_backed_objects():
+    client, inventory, reader = git_inventory(copy.deepcopy(FakeClient.from_fixture("synthetic_instance.json").data))
+    by_id = inventory.by_id()
+    assert [t.task for t in by_id[605].code["inline_tasks"]] == ["from_git"]  # Not the saved "old_step".
+    assert by_id[109].obj.workflow_ids == [605]
+    assert by_id[606].obj.scan_status is ScanStatus.PARTIAL and SAVED_COPY_NOTE in by_id[606].obj.scan_note
+    assert [t.task for t in by_id[606].code["inline_tasks"]] == ["wait_step"]
+    refs = {i: (by_id[i].obj.git_ref, by_id[i].code["git_ref_type"]) for i in (109, 110, 111, 112)}
+    assert refs == {109: ("5ca1ab1", "branch"), 110: ("v2.0.0", "tag"), 111: ("main", "branch"), 112: ("main", "branch")}
+    assert (reader.reads, reader.failures) == (1, 1)  # Inventory reads only workflows.

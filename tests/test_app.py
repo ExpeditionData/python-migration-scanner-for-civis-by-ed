@@ -120,7 +120,7 @@ def test_static_assets_are_vendored(app):
 
 def test_overview_numbers(app):
     page = text_of(app.test_client().get("/"))
-    assert "Python objects found 87" in page
+    assert "Python objects found 93" in page
     assert "Checklist progress" in page and "Most common issues" in page
     assert "Last scan: October 7, 2026" in page and "Run 3." in page
     assert "A scan is running." in page
@@ -135,7 +135,7 @@ def test_overview_counts_partly_scanned_objects(app):
 
 def test_scan_page_progress_and_history(app):
     page = text_of(app.test_client().get("/scan"))
-    assert "Scanning code and logs: 40 of 87 objects" in page
+    assert "Scanning code and logs: 40 of 93 objects" in page
     assert "1. Inventory" in page and "2. Code and log scan" in page and "3. Save results" in page
     for status in ("In progress", "Completed", "Failed"):
         assert status in page
@@ -147,16 +147,20 @@ def test_scan_status_api(app):
     response = app.test_client().get("/api/scan-status")
     data = response.get_json()
     assert response.mimetype == "application/json"
-    assert data["state"] == "running" and data["percent"] == 45 and data["can_start"] is False
+    assert data["state"] == "running" and data["percent"] == 43 and data["can_start"] is False
     assert [s["state"] for s in data["steps"]] == ["Done", "Running", "Waiting"]
 
 
 def test_inventory_filters_reasons_and_workflows(app):
     client = app.test_client()
     everything = text_of(client.get("/inventory"))
-    assert "Showing 1 to 50 of 87 objects" in everything
+    assert "Showing 1 to 50 of 93 objects" in everything
     partial = text_of(client.get("/inventory?status=partial"))
-    assert "GitHub returned 404" in partial and "Scanned the code preview instead." in partial
+    assert "Scanned the code preview instead." in partial
+    # The preview uses the normal setup, with no GitHub token.
+    assert "Only the script's own file was checked, read through Civis." in partial
+    assert "Only its deployment log (deployment 7001) was checked." in partial
+    assert "may not match the file in git" in partial
     notebooks = text_of(client.get("/inventory?type=notebook"))
     assert "Notebook" in notebooks and "Python script" not in notebooks.split("Run by workflows")[1]
     search = text_of(client.get("/inventory?q=nightly+load"))
@@ -165,7 +169,7 @@ def test_inventory_filters_reasons_and_workflows(app):
     assert "Example nightly pipeline" in run_by
     assert "No objects match" in text_of(client.get("/inventory?q=zzzz-no-match"))
     page_two = text_of(client.get("/inventory?page=2"))
-    assert "Showing 51 to 87 of 87 objects" in page_two
+    assert "Showing 51 to 93 of 93 objects" in page_two
 
 
 def test_findings_filters_show_location_never_code(app):

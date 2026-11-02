@@ -6,12 +6,14 @@ All secrets, emails, and names below are fake and made up for these tests.
 from __future__ import annotations
 
 import ast
+import copy
 import csv
 import io
 import json
 import logging
 import os
 import re
+import sqlite3
 import stat
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -116,6 +118,35 @@ def test_code_and_notebook_output_text_never_reach_findings(scanner_log):
     output = _every_output(engine.to_findings(_obj(), matches), scanner_log.getvalue())
     for secret in (FAKE_PASSWORD, FAKE_EMAIL):
         assert secret not in output
+
+
+def test_git_files_read_through_civis_never_reach_any_output(tmp_path, scanner_log):
+    """Files read through the Civis git endpoints are scanned in memory only: no text from them
+    reaches the findings, the coverage notes, the CSV report, or the scanner's log."""
+    from scanner.__main__ import dry_run
+    from scanner.synthetic import FakeClient as SyntheticClient
+
+    data = copy.deepcopy(SyntheticClient.from_fixture("synthetic_instance.json").data)
+    planted = f"PASSWORD = '{FAKE_PASSWORD}'  # {FAKE_EMAIL}\n"
+    for key, entry in data["civis_git"].items():
+        for sha, file in list(entry.get("files", {}).items()):
+            if isinstance(file, str):
+                entry["files"][sha] = file + (planted if key.startswith("python3/") else "# " + planted)
+    markers = (FAKE_PASSWORD, FAKE_EMAIL, "make_backend_factory", "'analytics'")
+    for token in (None, "synthetic-github-token"):
+        out = tmp_path / ("token" if token else "no-token")
+        dry_run(out, data=copy.deepcopy(data), github_token=token)
+        conn = sqlite3.connect(out / "results.sqlite")
+        try:
+            read = {r[0] for r in conn.execute("SELECT object_id FROM findings WHERE rule_id = 'CV3-USE-PANDAS'")}
+        finally:
+            conn.close()
+        assert 109 in read  # The planted file was read and scanned.
+        outputs = [(out / "results.sqlite").read_bytes(), *(path.read_bytes() for path in out.glob("*.csv"))]
+        for marker in markers:
+            assert not any(marker.encode() in blob for blob in outputs)
+            assert marker not in scanner_log.getvalue()
+    assert "CIVIS_GIT_FAILED object_type=python_script object_id=111 error=FakeAPIError status=403" in scanner_log.getvalue()
 
 
 def test_parse_failures_log_object_id_and_error_type_only(scanner_log):

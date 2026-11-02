@@ -163,6 +163,82 @@
       },
       "docker_image_tag": "9.1.1",
       "source": "import civis\nprint('template')\n"
+    },
+    {
+      "id": 109,
+      "name": "Example git-backed script pinned to a commit",
+      "type": "Python",
+      "archived": false,
+      "hidden": false,
+      "author": {
+        "id": 2,
+        "name": "Example Analyst",
+        "username": "example_analyst"
+      },
+      "schedule": {
+        "scheduled": false
+      },
+      "last_run": null,
+      "docker_image_tag": "",
+      "source": "print('saved copy, may be out of date')\n"
+    },
+    {
+      "id": 110,
+      "name": "Example git-backed script on a tag",
+      "type": "Python",
+      "archived": false,
+      "hidden": false,
+      "author": {
+        "id": 2,
+        "name": "Example Analyst",
+        "username": "example_analyst"
+      },
+      "schedule": {
+        "scheduled": false
+      },
+      "last_run": {
+        "id": 9010,
+        "state": "succeeded",
+        "finished_at": "2026-10-05T07:00:00Z"
+      },
+      "docker_image_tag": "",
+      "source": "print('saved copy, may be out of date')\n"
+    },
+    {
+      "id": 111,
+      "name": "Example git-backed script Civis cannot read",
+      "type": "Python",
+      "archived": false,
+      "hidden": false,
+      "author": {
+        "id": 2,
+        "name": "Example Analyst",
+        "username": "example_analyst"
+      },
+      "schedule": {
+        "scheduled": false
+      },
+      "last_run": null,
+      "docker_image_tag": "",
+      "source": "print('saved copy, may be out of date')\n"
+    },
+    {
+      "id": 112,
+      "name": "Example git-backed script over the size limit",
+      "type": "Python",
+      "archived": false,
+      "hidden": false,
+      "author": {
+        "id": 2,
+        "name": "Example Analyst",
+        "username": "example_analyst"
+      },
+      "schedule": {
+        "scheduled": false
+      },
+      "last_run": null,
+      "docker_image_tag": "",
+      "source": "print('saved copy, may be out of date')\n"
     }
   ],
   "python3_git": {
@@ -175,6 +251,50 @@
       "git_repo": {
         "id": 77,
         "repo_url": "https://github.com/example-org/example-etl.git"
+      }
+    },
+    "109": {
+      "git_ref": "5ca1ab1",
+      "git_branch": "main",
+      "git_path": "models/score.py",
+      "git_ref_type": "branch",
+      "pull_from_git": false,
+      "git_repo": {
+        "id": 79,
+        "repo_url": "https://github.com/example-org/example-models.git"
+      }
+    },
+    "110": {
+      "git_ref": "v2.0.0",
+      "git_branch": "main",
+      "git_path": "models/tagged.py",
+      "git_ref_type": "tag",
+      "pull_from_git": false,
+      "git_repo": {
+        "id": 79,
+        "repo_url": "https://github.com/example-org/example-models.git"
+      }
+    },
+    "111": {
+      "git_ref": "main",
+      "git_branch": "main",
+      "git_path": "models/private.py",
+      "git_ref_type": "branch",
+      "pull_from_git": false,
+      "git_repo": {
+        "id": 79,
+        "repo_url": "https://github.com/example-org/example-models.git"
+      }
+    },
+    "112": {
+      "git_ref": "main",
+      "git_branch": "main",
+      "git_path": "models/big.py",
+      "git_ref_type": "branch",
+      "pull_from_git": false,
+      "git_repo": {
+        "id": 79,
+        "repo_url": "https://github.com/example-org/example-models.git"
       }
     }
   },
@@ -704,6 +824,38 @@
         "username": "example_robot"
       },
       "definition": "version: '2.0'\nouter:\n  tasks:\n    run_child:\n      action: civis.workflows.execute\n      input:\n        workflow_id: 601\n    run_load:\n      action: civis.run_job\n      input:\n        job_id: 101\n"
+    },
+    {
+      "id": 605,
+      "name": "Example git-backed workflow",
+      "archived": false,
+      "hidden": false,
+      "valid": true,
+      "user": {
+        "id": 2,
+        "name": "Example Analyst",
+        "username": "example_analyst"
+      },
+      "schedule": {
+        "scheduled": false
+      },
+      "definition": "version: '2.0'\nsaved:\n  tasks:\n    old_step:\n      action: civis.scripts.python3\n      input:\n        source: |\n          print('saved copy, may be out of date')\n"
+    },
+    {
+      "id": 606,
+      "name": "Example git-backed workflow Civis cannot read",
+      "archived": false,
+      "hidden": false,
+      "valid": true,
+      "user": {
+        "id": 2,
+        "name": "Example Analyst",
+        "username": "example_analyst"
+      },
+      "schedule": {
+        "scheduled": false
+      },
+      "definition": "version: '2.0'\nweekly:\n  tasks:\n    wait_step:\n      action: civis.scripts.python3\n      input:\n        source: |\n          from civis.futures import ContainerFuture\n"
     }
   ],
   "jobs": {
@@ -753,6 +905,18 @@
       {
         "id": 1,
         "message": "/app/job.py:8: DeprecationWarning: Parsing dates involving a day of month without a year specified is ambiguous and fails to parse leap day.",
+        "level": "info"
+      }
+    ],
+    "110/9010": [
+      {
+        "id": 1,
+        "message": "Job started",
+        "level": "info"
+      },
+      {
+        "id": 2,
+        "message": "/app/models/tagged.py:3: FutureWarning: The method name ``<client>.users.list_me`` is deprecated and will be removed at civis-python v3.0.0 (scheduled for February 2027).",
         "level": "info"
       }
     ]
@@ -855,6 +1019,114 @@
           "warehouse/requirements.txt": "dbt-core==1.8.0\n"
         }
       }
+    }
+  },
+  "workflows_git": {
+    "605": {
+      "git_ref": "main",
+      "git_branch": "main",
+      "git_path": "workflows/nightly.yml",
+      "git_ref_type": "branch",
+      "pull_from_git": false,
+      "git_repo": {
+        "id": 78,
+        "repo_url": "https://github.com/example-org/example-workflows.git"
+      }
+    },
+    "606": {
+      "git_ref": "main",
+      "git_branch": "main",
+      "git_path": "workflows/weekly.yml",
+      "git_ref_type": "branch",
+      "pull_from_git": false,
+      "git_repo": {
+        "id": 78,
+        "repo_url": "https://github.com/example-org/example-workflows.git"
+      }
+    }
+  },
+  "civis_git": {
+    "python3/106": {
+      "commits": [
+        {
+          "commit_hash": "facade00facade00facade00facade00facade00",
+          "author_name": "Example Analyst",
+          "date": "2026-10-01T09:00:00Z",
+          "message": "Example change"
+        }
+      ],
+      "files": {
+        "facade00facade00facade00facade00facade00": "import civis\nfrom civis.parallel import make_backend_factory\n"
+      }
+    },
+    "python3/109": {
+      "commits": [
+        {
+          "commit_hash": "5ca1ab1e5ca1ab1e5ca1ab1e5ca1ab1e5ca1ab1e",
+          "author_name": "Example Analyst",
+          "date": "2026-10-01T09:00:00Z",
+          "message": "Example change"
+        }
+      ],
+      "files": {
+        "5ca1ab1e5ca1ab1e5ca1ab1e5ca1ab1e5ca1ab1e": "import civis\ndf = civis.io.read_civis_sql(QUERY, 'analytics', use_pandas=True)\n"
+      }
+    },
+    "python3/110": {
+      "commits": []
+    },
+    "python3/111": {
+      "commits": [
+        {
+          "commit_hash": "decade00decade00decade00decade00decade00",
+          "author_name": "Example Analyst",
+          "date": "2026-10-01T09:00:00Z",
+          "message": "Example change"
+        }
+      ],
+      "files": {
+        "decade00decade00decade00decade00decade00": "import civis\nprint(civis.APIClient().feature_flags)\n"
+      },
+      "file_error": 403
+    },
+    "python3/112": {
+      "commits": [
+        {
+          "commit_hash": "beaded00beaded00beaded00beaded00beaded00",
+          "author_name": "Example Analyst",
+          "date": "2026-10-01T09:00:00Z",
+          "message": "Example change"
+        }
+      ],
+      "files": {
+        "beaded00beaded00beaded00beaded00beaded00": {
+          "content": "import civis\n",
+          "size": 2097153
+        }
+      }
+    },
+    "workflows/605": {
+      "commits": [
+        {
+          "commit_hash": "c0ffee01c0ffee01c0ffee01c0ffee01c0ffee01",
+          "author_name": "Example Analyst",
+          "date": "2026-09-01T09:00:00Z",
+          "message": "Example change"
+        },
+        {
+          "commit_hash": "c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00",
+          "author_name": "Example Analyst",
+          "date": "2026-10-02T09:00:00Z",
+          "message": "Example change"
+        }
+      ],
+      "files": {
+        "c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00": "version: '2.0'\nnightly:\n  tasks:\n    from_git:\n      action: civis.scripts.python3\n      input:\n        source: |\n          import civis\n          client = civis.APIClient()\n          me = client.users.list_me()\n    score:\n      action: civis.run_job\n      input:\n        job_id: 109\n",
+        "c0ffee01c0ffee01c0ffee01c0ffee01c0ffee01": "version: '2.0'\nolder:\n  tasks: {}\n"
+      }
+    },
+    "workflows/606": {
+      "commits_error": 403
     }
   }
 }
