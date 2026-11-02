@@ -35,9 +35,11 @@ _BY_TYPE = (
 )
 
 
-def build_inventory(client: Any, users: dict[int, UserInfo] | None = None) -> Inventory:
+def build_inventory(client: Any, users: dict[int, UserInfo] | None = None, civis_git: Any = None) -> Inventory:
+    """``civis_git`` (a CivisGitFiles) reads git-backed workflows' definitions through Civis.
+    Without it, every workflow is read from the definition saved in Civis."""
     inventory = Inventory()
-    ctx = InventoryContext(client, users if users is not None else load_users(client), inventory)
+    ctx = InventoryContext(client, users if users is not None else load_users(client), inventory, civis_git)
 
     for object_type, inventory_type in _BY_TYPE:
         items = inventory_type(ctx)

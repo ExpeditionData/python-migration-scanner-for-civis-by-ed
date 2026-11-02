@@ -128,10 +128,11 @@ class Inventory:
 class InventoryContext:
     """Holds the client, the user lookup, and the inventory being built."""
 
-    def __init__(self, client: Any, users: dict[int, UserInfo], inventory: Inventory):
+    def __init__(self, client: Any, users: dict[int, UserInfo], inventory: Inventory, civis_git: Any = None):
         self.client = client
         self.users = users
         self.inventory = inventory
+        self.civis_git = civis_git  # scanner.retrieval.civis_git.CivisGitFiles, or None to read no git files.
 
     def list_all(self, method: Callable, **kwargs) -> list:
         """List every non-archived, non-hidden row, following pages."""

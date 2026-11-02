@@ -6,6 +6,15 @@ that define Python or container tasks inline are also added to the inventory,
 because that inline code exists nowhere else (decision 10). Workflows that only
 run other jobs are counted but not inventoried; their jobs are scanned as jobs.
 
+A workflow can be stored in git. The detail response has no field that says
+so, so workflows.get_git is called for every active workflow. The definition
+saved in Civis can then be out of date, like a git-backed Python script's saved
+source (Civis pulls from git only when set to), so a git-backed workflow's
+definition is read from git through the Civis API (scanner/retrieval/civis_git.py)
+and parsed instead. That file is the whole workflow, so a workflow read this
+way is fully scanned. If the read fails, the saved definition is parsed, and a
+note says it may not match git.
+
 Workflow definitions use Mistral v2 YAML:
 
     version: '2.0'
@@ -25,7 +34,7 @@ from typing import Any
 
 import yaml
 
-from common.models import CoverageItem, Impact, ObjectType, WorkflowRef
+from common.models import CivisObject, CoverageItem, Impact, ObjectType, ScanStatus, WorkflowRef
 from scanner.inventory.base import (
     InventoryContext,
     InventoryItem,
@@ -42,6 +51,7 @@ RUN_WORKFLOW = "civis.workflows.execute"
 INLINE_PYTHON = {"civis.scripts.python3", "civis.python3_script"}
 INLINE_CONTAINER = {"civis.scripts.container", "civis.scripts.containers"}
 INLINE_CUSTOM = {"civis.scripts.custom"}
+SAVED_COPY_NOTE = "The definition saved in Civis was scanned instead. It may not match the file in git."
 
 
 @dataclass
@@ -156,9 +166,11 @@ def inventory_workflows(ctx: InventoryContext) -> tuple[list[InventoryItem], dic
         if obj.archived:
             continue  # Only active workflows count (decision 15).
 
-        parsed = parse_definition(field_of(detail, "definition"))
+        definition, git_note = _definition(ctx, obj, detail)
+        parsed = parse_definition(definition)
+        del definition
         if parsed.error:
-            mark_not_scanned(obj, parsed.error, ctx.inventory)
+            mark_not_scanned(obj, " ".join(filter(None, [parsed.error, git_note])), ctx.inventory)
             items.append(item)
             continue
         ref = WorkflowRef(obj.object_id, obj.name)
@@ -174,7 +186,12 @@ def inventory_workflows(ctx: InventoryContext) -> tuple[list[InventoryItem], dic
                 )
             )
         if not parsed.inline_tasks:
+            if git_note:
+                ctx.inventory.coverage.append(CoverageItem(ObjectType.WORKFLOW, obj.object_id, git_note))
             continue  # Runs other jobs only. Counted as found; nothing of its own to scan.
+        if git_note:
+            obj.scan_status = ScanStatus.PARTIAL
+            obj.scan_note = git_note
 
         defaults = [t.uses_default_image for t in parsed.inline_tasks]
         if any(d is True for d in defaults):
@@ -185,3 +202,21 @@ def inventory_workflows(ctx: InventoryContext) -> tuple[list[InventoryItem], dic
         item.code["inline_tasks"] = parsed.inline_tasks
         items.append(item)
     return items, references
+
+
+def _definition(ctx: InventoryContext, obj: CivisObject, detail: Any) -> tuple[str | None, str | None]:
+    """The definition to parse, and a note if a git-backed workflow had to use its saved copy."""
+    saved = field_of(detail, "definition")
+    if ctx.civis_git is None:
+        return saved, None
+    git, _ = ctx.fetch(ctx.client.workflows.get_git, obj.object_id)
+    repo = field_of(field_of(git, "git_repo"), "repo_url")
+    if not repo:
+        return saved, None
+    obj.git_repo = repo
+    obj.git_ref = field_of(git, "git_ref") or field_of(git, "git_branch")
+    obj.git_path = field_of(git, "git_path")
+    text, reason = ctx.civis_git.read(ObjectType.WORKFLOW, obj.object_id, obj.git_ref, field_of(git, "git_ref_type"))
+    if text is None:
+        return saved, f"{reason} {SAVED_COPY_NOTE}"
+    return text, None

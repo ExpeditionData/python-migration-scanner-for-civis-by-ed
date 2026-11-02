@@ -505,7 +505,8 @@ def scan_all(tmp_path, token="synthetic-github-token", workers=1, data=None):
     tmp_path.mkdir(parents=True, exist_ok=True)
     client = FakeClient(data) if data is not None else FakeClient.from_fixture("synthetic_instance.json")
     session = SyntheticSession(client.data)
-    inventory = build_inventory(client)
+    reader = civis_git.CivisGitFiles(client)
+    inventory = build_inventory(client, civis_git=reader)
     deps = ScanDeps(
         engine=Engine(),
         client=client,
@@ -513,7 +514,7 @@ def scan_all(tmp_path, token="synthetic-github-token", workers=1, data=None):
         repos=gh.GitHubRepos(SafeHttp(session), token, tmp_path),
         lookback_days=200,
         now=NOW,
-        civis_git=civis_git.CivisGitFiles(client),
+        civis_git=reader,
     )
     with ThreadPoolExecutor(workers) as pool:
         results = list(pool.map(lambda item: process_item(item, deps), inventory.items))
@@ -800,3 +801,12 @@ def test_failed_civis_read_falls_back_to_the_github_reason(tmp_path):
     assert results[106].obj.scan_status is ScanStatus.NOT_SCANNED
     assert results[106].findings == []
     assert gh.NO_TOKEN in results[106].obj.scan_note and "(HTTP 403)" in results[106].obj.scan_note
+
+
+def test_git_backed_workflow_findings_come_from_its_git_file(tmp_path):
+    from tests.test_inventory import git_workflow_data
+    results, _, session = scan_all(tmp_path, data=git_workflow_data())
+    result = results[601]
+    assert result.obj.scan_status is ScanStatus.SCANNED and result.coverage == []
+    assert rules(result) == {("CV3-ML", "code")}
+    assert not any("example-workflows" in url for url, _ in session.requests)  # Never read from GitHub.

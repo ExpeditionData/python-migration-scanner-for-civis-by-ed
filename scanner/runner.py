@@ -143,7 +143,7 @@ def run_scan(
     tables.run("scan_runs", lambda: sink.append(SCAN_RUNS, run_id, [status_row("running", None)]))
 
     scan_log.phase("inventory", "start")
-    inventory = build_inventory(civis)
+    inventory = build_inventory(civis, civis_git=civis_git)
     total = len(inventory.items)
     scan_log.progress("inventory", total, total)
     scan_log.phase("inventory", "done")

@@ -100,14 +100,15 @@ def process_item(item: InventoryItem, deps: ScanDeps) -> ObjectResult:
         except NotebookUnavailable as exc:
             problems.append(exc.reason)
 
-    # Repository files (notebooks are read from the notebook file instead).
+    # Repository files. Notebooks are read from the notebook file instead, and a git-backed
+    # workflow's definition was read through Civis during inventory.
     if obj.object_type is ObjectType.SERVICE and not obj.git_repo:
         needed = True
         problems.append("The Service has no git repository set, so its code is inside its Docker image. Review it manually.")
     if obj.object_type is ObjectType.DBT_SCRIPT and not obj.git_repo:
         needed = True
         problems.append("The dbt script has no git repository set, so its project could not be read. Review it manually.")
-    if obj.git_repo and obj.object_type is not ObjectType.NOTEBOOK:
+    if obj.git_repo and obj.object_type not in (ObjectType.NOTEBOOK, ObjectType.WORKFLOW):
         needed = True
         try:
             repo = deps.repos.files(obj.git_repo, obj.git_ref)

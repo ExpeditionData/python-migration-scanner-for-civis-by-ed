@@ -197,6 +197,12 @@ class FakeClient:
     def _workflows__get(self, object_id):
         return self._get(self.data.get("workflows", []), object_id)
 
+    def _workflows__get_git(self, object_id):
+        git = self.data.get("workflows_git", {}).get(str(object_id))
+        if git is None:
+            return {"git_ref": None, "git_branch": None, "git_path": None, "git_repo": None, "pull_from_git": False}
+        return git
+
     def _workflows__list_git_commits(self, object_id):
         return self._git_commits(f"workflows/{object_id}")
 

@@ -11,7 +11,8 @@ from common.models import Impact, ObjectType, ScanStatus, WorkflowRef
 from scanner.inventory import build_inventory
 from scanner.inventory.base import classify_image, normalize_image, schedule_summary
 from scanner.inventory.users import load_users, scanning_user
-from scanner.inventory.workflows import parse_definition
+from scanner.inventory.workflows import SAVED_COPY_NOTE, parse_definition
+from scanner.retrieval.civis_git import CivisGitFiles
 from tests.fake_civis import FakeClient
 
 
@@ -290,3 +291,77 @@ def test_parse_definition_handles_workbooks_and_bad_input():
     assert parse_definition("").job_ids == set()
     assert parse_definition("- just\n- a list\n").error
     assert parse_definition("a: [unclosed").error
+
+# --- Git-backed workflows -------------------------------------------------------------------
+
+WORKFLOW_SHA = "c3d4e5f60718293a4b5c6d7e8f9012345678a1b2"  # pragma: allowlist secret  gitleaks:allow (a made-up commit SHA)
+GIT_DEFINITION = (
+    "version: '2.0'\ndaily:\n  tasks:\n    from_git:\n      action: civis.scripts.python3\n"
+    "      input:\n        source: |\n          import civis.ml\n    load:\n      action: civis.run_job\n"
+    "      input:\n        job_id: 102\n"
+)
+
+
+def git_workflow_data(workflow_id: int = 601, **entry) -> dict:
+    data = copy.deepcopy(FakeClient.from_fixture("synthetic_instance.json").data)
+    data.setdefault("workflows_git", {})[str(workflow_id)] = {
+        "git_ref": "main", "git_branch": "main", "git_path": "workflows/daily.yml", "git_ref_type": "branch",
+        "pull_from_git": False, "git_repo": {"id": 78, "repo_url": "https://github.com/example-org/example-workflows.git"},
+    }
+    data.setdefault("civis_git", {})[f"workflows/{workflow_id}"] = {
+        "commits": [{"commit_hash": WORKFLOW_SHA, "author_name": "Example Analyst", "date": "2026-10-02T09:00:00Z",
+                     "message": "Example change"}],
+        "files": {WORKFLOW_SHA: GIT_DEFINITION},
+        **entry,
+    }
+    return data
+
+
+def git_inventory(data):
+    client = FakeClient(data)
+    reader = CivisGitFiles(client)
+    return client, build_inventory(client, civis_git=reader), reader
+
+
+def test_git_backed_workflow_is_parsed_from_its_git_file():
+    client, inventory, reader = git_inventory(git_workflow_data())
+    workflow = inventory.by_id()[601]
+    assert [t.task for t in workflow.code["inline_tasks"]] == ["from_git"]
+    assert "civis.ml" in workflow.code["inline_tasks"][0].source
+    assert (workflow.obj.git_repo, workflow.obj.git_ref, workflow.obj.git_path) == (
+        "https://github.com/example-org/example-workflows.git", "main", "workflows/daily.yml")
+    assert workflow.obj.scan_status is not ScanStatus.PARTIAL and workflow.obj.scan_note is None
+    by_id = inventory.by_id()
+    assert by_id[102].obj.workflow_ids == [601]  # Job references come from the git file too,
+    assert 601 not in by_id[201].obj.workflow_ids  # not from the saved definition.
+    assert (reader.reads, reader.failures) == (1, 0)
+
+
+def test_git_backed_workflow_falls_back_to_its_saved_definition():
+    _, inventory, reader = git_inventory(git_workflow_data(file_error=403))
+    workflow = inventory.by_id()[601]
+    assert [t.task for t in workflow.code["inline_tasks"]] == ["inline_step"]
+    assert workflow.obj.scan_status is ScanStatus.PARTIAL
+    assert workflow.obj.scan_note == (
+        "The workflow's own file could not be read through Civis (HTTP 403). " + SAVED_COPY_NOTE
+    )
+    assert inventory.by_id()[201].obj.workflow_ids == [601]
+    assert (reader.reads, reader.failures) == (0, 1)
+
+
+def test_git_backed_workflow_that_only_runs_jobs_reports_a_failed_read_in_coverage():
+    _, inventory, _ = git_inventory(git_workflow_data(604, commits_error=404))
+    assert 604 not in inventory.by_id()
+    notes = [c.reason for c in inventory.coverage if (c.object_type, c.object_id) == (ObjectType.WORKFLOW, 604)]
+    assert notes == ["The workflow's own file could not be read through Civis (HTTP 404). " + SAVED_COPY_NOTE]
+
+
+def test_get_git_is_called_once_per_active_workflow():
+    client, _, _ = git_inventory(git_workflow_data())
+    active = [w["id"] for w in client.data["workflows"] if not w.get("archived")]
+    assert sorted(a[0] for a, _ in client.called("workflows.get_git")) == sorted(active)
+    assert client.called("workflows.list_git_commits") == [((601,), {})]
+    assert client.called("workflows.get_git_commits") == [((601, WORKFLOW_SHA), {})]
+    plain = FakeClient.from_fixture("synthetic_instance.json")
+    build_inventory(plain)
+    assert not plain.called("workflows.get_git")  # Without a reader, no git calls.
