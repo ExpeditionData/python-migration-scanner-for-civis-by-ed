@@ -100,7 +100,7 @@ You need:
    needs to create tables in the schema and to select, insert, and delete rows
    in them (delete is used only by `RETENTION_DAYS`). Grant read access to
    Civis admins only. The scanner creates its five tables on the first run.
-4. **No GitHub token.** The normal setup has no GitHub token. Without one, the
+4. **A GitHub token is optional.** The normal setup has no GitHub token. Without one, the
    scanner reads:
    - inline code: Python script source, container commands, template code,
      and inline workflow tasks
@@ -123,7 +123,7 @@ You need:
    deprecation warnings, but they miss most Python 3.15 changes, because the
    code still runs on the current image.
 
-   **A GitHub token (optional)** adds the rest of each git-backed repository:
+   **If you add a token**, it adds the rest of each git-backed repository:
    the other Python files in the object's folder and its dependency files, and
    the repository code of git-backed container scripts, Services, and dbt
    scripts. Workflows are read through Civis either way. The token is only for
