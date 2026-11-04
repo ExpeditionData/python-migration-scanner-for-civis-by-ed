@@ -98,12 +98,21 @@ You need:
    so it should run as your organization's Robot user (or another service
    account that can read every object you want scanned). The web app's Civis
    API key belongs to the Service's owner, and scans started from the app run
-   as that user, so the Robot user should own the Service too.
-3. **A dedicated results schema**, created by a database admin. The scanner
-   does not create schemas. The user behind the scanner's database credential
-   needs to create tables in the schema and to select, insert, and delete rows
-   in them (delete is used only by `RETENTION_DAYS`). Grant read access to
-   Civis admins only. The scanner creates its five tables on the first run.
+   as that user, so the Robot user should own the Service too, and the
+   database credential you choose for the results should be the Robot user's.
+
+   **If you have no Robot user**, use a dedicated service account, not a
+   personal account. If a person's account is deactivated, the Service stops
+   working, and the results schema belongs to that person's database user, so
+   a database admin then has to reassign it. The app's Setup page checks that
+   one account owns the scanner job, the Service, and the database credential.
+3. **A name for the results schema**: a schema used only for this tool, with
+   letters, numbers, and underscores only (for example
+   `python_migration_results`). You do not need to create it. The web app
+   creates the schema and its five tables when you click **Set up results
+   storage** (see "Set up results storage and check the setup" below). A
+   database admin is needed only if the app says the database user cannot
+   create schemas; the app then shows the one statement for them to run.
 4. **A GitHub token is optional.** The normal setup has no GitHub token. Without one, the
    scanner reads:
    - inline code: Python script source, container commands, template code,
@@ -172,30 +181,36 @@ You need:
    `latest`. See [Pinned Docker images](#pinned-docker-images) to confirm the
    image has not changed.
 
-4. Click **Set Parameters** and add these parameters, in this order. For each,
-   set the Parameter Name and Type (labels to confirm), **Required**, and
-   **Default Value** as shown. The **Input Display Name** and **Input Helper
-   Text** are up to you.
+4. Click **Set Parameters** and add these parameters. For each, set the
+   Parameter Name and Type (labels to confirm) and **Required** as shown. The
+   **Input Display Name** and **Input Helper Text** are up to you.
 
-   | Parameter Name | Type | Required | Default Value | Meaning |
-   |---|---|---|---|---|
-   | `RESULTS_DB` | Database | Yes | (none) | Database and credential for the result tables. |
-   | `RESULTS_SCHEMA` | String | Yes | (none) | The dedicated results schema. Letters, numbers, and underscores only. |
-   | `GITHUB` | Custom Credential | No | (none) | Optional, and not part of the normal setup. A GitHub token for your own repositories. Adds the rest of each git-backed repository and the code of git-backed container scripts, Services, and dbt scripts. |
-   | `LOOKBACK_DAYS` | Integer | No | `200` | Read the most recent run log only for objects that ran in this many days (1 to 3,650). |
-   | `MAX_CONCURRENCY` | Integer | No | `4` | Worker threads (1 to 16). For each thread above 4, add 512 MB to **Memory**. |
-   | `REQUEST_BUDGET` | Integer | No | `500` | Civis API requests per 5 minutes (10 to 1,000). Civis allows 1,000 per user, shared with the web app and any other jobs that run as the Robot user. |
-   | `RETENTION_DAYS` | Integer | No | (blank) | Blank or 0 keeps every scan. A number deletes scans older than that many days. The newest scan is not deleted. |
-   | `RUN_ID` | String | No | (blank) | Blank starts a new scan. A run ID resumes that scan (see below). |
+   | Parameter Name | Type | Required | Meaning |
+   |---|---|---|---|
+   | `RESULTS_DB` | Database | Yes | Database and credential for the result tables. Choose the Robot user's credential. The web app reads this setting from the job too. |
+   | `RESULTS_SCHEMA` | String | Yes | The results schema name you chose. Letters, numbers, and underscores only. The web app reads this setting from the job too. |
+   | `GITHUB` | Custom Credential | No | Optional, and not part of the normal setup. A GitHub token for your own repositories. Adds the rest of each git-backed repository and the code of git-backed container scripts, Services, and dbt scripts. |
+
+   **Optional parameters (add only to change the default).** Leave these out
+   unless you need a different value. When a parameter does not exist, the
+   scanner uses its default.
+
+   | Parameter Name | Type | Default | Meaning |
+   |---|---|---|---|
+   | `LOOKBACK_DAYS` | Integer | `200` | Read the most recent run log only for objects that ran in this many days (1 to 3,650). |
+   | `MAX_CONCURRENCY` | Integer | `4` | Worker threads (1 to 16). For each thread above 4, add 512 MB to **Memory**. |
+   | `REQUEST_BUDGET` | Integer | `500` | Civis API requests per 5 minutes (10 to 1,000). Civis allows 1,000 per user, shared with the web app and any other jobs that run as the Robot user. |
+   | `RETENTION_DAYS` | Integer | blank (keep every scan) | A number deletes scans older than that many days. Blank or 0 keeps every scan. The newest scan is not deleted. |
+   | `RUN_ID` | String | blank (start a new scan) | A run ID resumes that scan (see below). Add it only to resume. |
 
    Click **Add** after each parameter, then **Save**. The names must match
    exactly; `DATABASE` is reserved by Civis, which is why the database
-   parameter is `RESULTS_DB`.
+   parameter is `RESULTS_DB`. The app's Setup page flags any other parameter
+   name, to catch typos.
 
 5. Set the parameter values on the script page: choose the database and its
    credential for `RESULTS_DB`, type the schema name for `RESULTS_SCHEMA`, and,
-   if you made one, choose the GitHub credential for `GITHUB`. Leave the others
-   at their defaults. Save the script.
+   if you made one, choose the GitHub credential for `GITHUB`. Save the script.
 6. Note the job's ID: it is the number at the end of the script page's address
    (`.../spa/#/scripts/containers/<ID>`).
 7. Share the job with Civis admins only. Do not schedule it.
@@ -212,7 +227,8 @@ give the same answer:
 **Resuming a stopped scan.** If a scan stops partway (for example, it was
 cancelled or hit the 5-day limit for container scripts):
 
-1. Sign in as the Robot user if you can. On the scanner job, set `RUN_ID` to
+1. Sign in as the Robot user if you can. On the scanner job, add the `RUN_ID`
+   parameter (String, not required) if the job does not have it, set it to
    the run ID from the `RUN run_id=... status=running` line near the top of
    the stopped run's log, and save.
 2. Click **Run scan** in the web app. The scan skips the objects it already
@@ -220,6 +236,7 @@ cancelled or hit the 5-day limit for container scripts):
 3. When it finishes, clear `RUN_ID` the same way (signed in as the Robot user)
    and save. The web app starts the job with its saved parameters, so a
    leftover `RUN_ID` would make every later scan try to resume a finished run.
+   The Setup page warns while `RUN_ID` has a value.
 
 ### Create the Service
 
@@ -264,6 +281,28 @@ cancelled or hit the 5-day limit for container scripts):
     Deployment**. If there is a warning, note the address it names and set
     `CIVIS_FRAME_ANCESTORS` to include it before you turn report-only off.
 
+### Set up results storage and check the setup
+
+1. Open the app (**View Report** on the Service). The Overview page says the
+   results schema does not exist yet, and **Run scan** is off until it does.
+2. Click **Set up results storage**. The app creates the schema named in the
+   scanner job's `RESULTS_SCHEMA` parameter and its five tables, with the
+   `RESULTS_DB` database and credential. It runs no `GRANT`, `DROP`, or
+   `ALTER` statements.
+3. If the app says the database user cannot create schemas, send the one
+   statement it shows to a database admin. It has the form
+   `CREATE SCHEMA <schema> AUTHORIZATION <database user>;`. After they run it,
+   click **Set up results storage** again to create the tables.
+4. Open the **Setup** page. It reads the scanner job, the Service, and the
+   results storage, changes nothing, and shows each check as pass, warning,
+   fail, or review, with the fix. Fix any line that is not a pass. The sharing
+   line is always "review": confirm that only Civis admins have access. The
+   frame rule line is a warning until you finish step 10 above.
+5. If you need help, click **Build test summary** on the Setup page, copy the
+   text, and send it to whoever supports your setup. It holds counts, fixed
+   labels, and error types only. Do not send the Setup page itself, which can
+   list user and group names.
+
 ### Run the first scan
 
 1. Open the app (**View Report** on the Service).
@@ -300,7 +339,9 @@ share it with whoever supports your setup.
    Repository Reference** to the new tag and save. The next scan uses it.
 3. On the Service, change **Branch** to the same tag, save, and click
    **Update Deployment**.
-4. Run a new scan. Earlier scans and checklist statuses are kept.
+4. Open the app's **Setup** page and check that every line still passes. Line 7
+   compares the Service's tag with the scanner job's.
+5. Run a new scan. Earlier scans and checklist statuses are kept.
 
 Always change both parts to the same tag.
 
@@ -311,8 +352,9 @@ Always change both parts to the same tag.
    Services).
 2. The CSV reports stay attached to the archived job's runs. Keep the archived
    job shared with Civis admins only.
-3. Ask a database admin to drop the results schema, for example
-   `DROP SCHEMA results_schema CASCADE;` with your schema's name.
+3. Drop the results schema, for example `DROP SCHEMA results_schema CASCADE;`
+   with your schema's name. Run it with the `RESULTS_DB` credential (its
+   database user owns the schema), or ask a database admin.
 4. If you made a GitHub token, delete the Custom Credential in Civis and revoke
    the token in GitHub.
 

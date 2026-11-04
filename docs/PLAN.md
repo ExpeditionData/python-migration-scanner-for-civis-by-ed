@@ -133,10 +133,14 @@ python-migration-scanner-for-civis-by-ed/
   app/                      Flask Service: gunicorn "app:create_app()"
     __init__.py             create_app()
     pages.py                Routes: Overview, Scan history, Inventory, Findings and
-                            checklist, CSV download, /healthz, /api/scan-status
+                            checklist, Setup, test summary, CSV download, the
+                            "Set up results storage" POST, /healthz, /api/scan-status
     services.py             Connects pages to the Civis or local data layer
     views.py                Pure shaping of rows for templates
     settings.py             Service environment variables
+    job_settings.py         Results database, credential, and schema from the scanner job
+    setup.py                The Setup page's ten read-only checks
+    summary.py              The test summary, built from an allow list
     security.py             Headers, CSP, CSRF, safe JSON and links
     local.py                Local preview on 127.0.0.1 (python -m app.local)
     backends/               base.py, civis_backend.py (civis 2.7.1 calls only),
@@ -154,6 +158,8 @@ python-migration-scanner-for-civis-by-ed/
     models.py               Object, Finding, CoverageItem, ChecklistEntry
     schema.py               Table definitions and column names
     urls.py                 Civis URL builders
+    release.py              What the README sets: pinned images (from the requirements
+                            files), repository URL, command, resources, release tags
     redact.py               Redacting log filter
     retention.py            RETENTION_DAYS cleanup
     disclaimer.py           The one disclaimer string used everywhere
@@ -191,7 +197,7 @@ python-migration-scanner-for-civis-by-ed/
 
 | Action | How it works |
 |---|---|
-| **Find the scanner job** | The admin creates the scanner container script once, then sets these Service environment variables: `SCANNER_JOB_ID`, `RESULTS_DATABASE`, `RESULTS_SCHEMA`. None of them are secret. |
+| **Find the scanner job** | The admin creates the scanner container script once, then sets these Service environment variables: `SCANNER_JOB_ID`, `RESULTS_DATABASE`, `RESULTS_SCHEMA`. None of them are secret. **Changed November 4, 2026 (17.2, Part B):** only `SCANNER_JOB_ID` remains; the app reads the results database, credential, and schema from the scanner job's parameters. |
 | **Launch a scan** | "Run scan" calls `scripts.post_containers_runs(SCANNER_JOB_ID)`. The scan uses the parameters saved on the job. Before starting, the app checks `list_containers_runs` and refuses to start a second scan while one is queued or running. The run executes as the Service owner (the Robot user), because the app's key belongs to that user. |
 | **Show progress** | The scanner writes a short structured log line about every 30 seconds, for example `PROGRESS phase=code objects_done=420 objects_total=2000`. The browser polls `/api/scan-status` every 15 seconds. The app reads the run state (`get_containers_runs`) and the newest log lines (`list_containers_runs_logs`) and caches the answer for 10 seconds. These are cheap read calls, and they create no query runs. |
 | **Read results** | After a run succeeds, the app loads that run's rows from `scan_runs`, `objects`, `findings`, and `coverage` with `civis.io.read_civis_sql(..., return_as="list")`. It caches them in memory by run ID; a finished run never changes. Filtering and search happen in Python, not in SQL. |
@@ -505,7 +511,7 @@ How each object runs:
 | 12.6 | Job logs are read in pages of 10,000 lines with `last_id`, up to 200,000 lines. Service deployment logs are read in one call of up to 10,000 lines. Longer logs make the object "partial." | Bounded memory and API calls. |
 | 12.7 | `scan_runs` gets two rows per run (start and end) and a new `recorded_at` column. The current status is the newest row, preferring a final status over "running" on a tie. Statuses: `running`, `succeeded`, `tables_failed`, `failed`. | Append-only by run ID. |
 | 12.8 | If the tables cannot be written, the scan continues, saves the CSV report, records `tables_failed` where it can, and exits with code 3, so the Civis run shows as failed with the CSV attached. Exit codes: 0 succeeded, 3 tables failed, 2 configuration problem, 1 other failure. | "Record the failure in the run status." |
-| 12.9 | The results schema is never created. A missing schema means the table writes fail (see 12.8). | Creating schemas is the admin's decision, like granting access. |
+| 12.9 | The results schema is never created. A missing schema means the table writes fail (see 12.8). **Replaced by 17.2 (Part A) on November 4, 2026:** the web app creates the schema when an admin clicks "Set up results storage"; the scanner still does not. | Creating schemas is the admin's decision, like granting access. |
 | 12.10 | If a run stops between writing an object's findings and its object row, the rerun writes those findings again. The CSV report and readers drop exact duplicate finding rows. | Losing findings would be worse than a duplicate. |
 | 12.11 | The CSV report has one row per finding, plus one row for every object with no findings, so every inventoried object appears. Cells starting with `=`, `+`, `-`, `@`, tab, or carriage return get a leading `'`. UTF-8 with a byte order mark, so Excel reads accents correctly. Since October 26, 2026, the file starts with two notice lines (the disclaimer, then the non-affiliation statement, each one quoted cell); the column names are on line 3 (16.24). | Object names and paths are user-controlled (spreadsheet formula injection). |
 | 12.12 | New "open" checklist rows use `changed_by = scanner`. | Shows they came from a scan, not a person. |
@@ -523,7 +529,7 @@ How each object runs:
 | # | Question | Recommended option | Status |
 |---|---|---|---|
 | 13.1 | Should a run whose table writes failed show as failed in Civis, even though the CSV report was saved? | Yes. Keep exit code 3, so the Civis run shows failed with the CSV attached and the problem is not missed. | Approved |
-| 13.2 | Should the scanner create the results schema if it is missing? | No. Creating schemas stays the admin's decision, like granting access. A missing schema ends the run as `tables_failed` with the CSV saved. | Approved |
+| 13.2 | Should the scanner create the results schema if it is missing? | No. Creating schemas stays the admin's decision, like granting access. A missing schema ends the run as `tables_failed` with the CSV saved. **Replaced by 17.2 (Part A) on November 4, 2026:** an admin creates it from the web app with one click, or a database admin runs the statement the app shows. | Approved |
 | 13.3 | May gitleaks be installed? | Yes. Installed for the current user with `winget install Gitleaks.Gitleaks` (8.30.1). The pre-commit hook now runs gitleaks and detect-secrets. One fake test value already in history is listed in `.gitleaksignore`. | Approved |
 | 13.4 | Is a blank or `latest` tag on a dbt script the Civis default Python image? | Treat it as the default image, as now. The dbt script API returns only a tag. Confirm in Phase 7. | Approved |
 | 13.5 | Should dbt scripts that are not created from a template follow the same image rule as dbt templates? | Yes. New object type `dbt_script`: inventoried and scanned (repo and most recent run log) on a Civis default image, otherwise counted as not Python with language `dbt`. Its Civis link path (`/spa/#/scripts/dbt/<id>`) is checked in Phase 7. | Approved |
@@ -540,9 +546,9 @@ How each object runs:
 | Variable | Meaning |
 |---|---|
 | `SCANNER_JOB_ID` | ID of the scanner container script. Without it, Run scan is off and a banner says so. |
-| `RESULTS_DATABASE` | Database that holds the results schema. |
-| `RESULTS_SCHEMA` | The results schema. Must be a plain SQL identifier. |
-| `RESULTS_CREDENTIAL_ID` | Optional database credential ID. Blank uses the Service owner's default credential. |
+| `RESULTS_DATABASE` | Database that holds the results schema. **Removed November 4, 2026 (17.2, Part B).** |
+| `RESULTS_SCHEMA` | The results schema. Must be a plain SQL identifier. **Removed November 4, 2026 (17.2, Part B).** |
+| `RESULTS_CREDENTIAL_ID` | Optional database credential ID. Blank uses the Service owner's default credential. **Removed November 4, 2026 (17.2, Part B).** |
 | `CIVIS_PLATFORM_URL`, `CIVIS_FRAME_ANCESTORS` | Optional, as before (sections 10.14 and 11.3). |
 | `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` | Optional, `true` or `false` (default). Added in Phase 6 as a setup aid (section 16). |
 
@@ -765,3 +771,69 @@ On the organization's GitHub Free plan, private vulnerability reporting and rule
 - Which GitHub connection Civis uses to read these files, and whether the Robot user can call these endpoints. If every read fails with the same error, the error type and status show which.
 - Whether the commits endpoint returns an array or one object, and whether its newest commit for a tag is the tagged commit or the newest on the branch. Until then, a file read for a tag carries the 17.1.13 note.
 - Whether `content` is plain text or base64.
+
+### 17.2 Results storage from the app, job settings, Setup page, and test summary (November 4, 2026)
+
+**Why.** Setup asked the admin to copy the database and schema into the Service, and to find a database admin to create the schema before the first scan. Both were extra steps, and the first test had no way to report its setup state without someone reading client data. These changes shorten the path, check the setup from inside the app, and give a summary of counts that can be shared. Approved by Rob on November 4, 2026, before release candidate `v0.1.0-rc3`.
+
+**Standing rule (Rob, November 4, 2026).** The tool treats everything in Civis as read-only. The only things it writes are: the results schema and the five tables it creates in it, rows in those tables, runs of the scanner job (started from the app), and the CSV run output attached to each scanner run. It never creates, edits, shares, archives, or deletes any other Civis object, including the scanner job's settings and the Service. Decision 2 (section 9) stands. The "By design" section of SECURITY.md stays exactly as written.
+
+**Robot user note.** Without a Robot user, admins use a dedicated service account, not a personal account: if a person's account is deactivated, the Service stops working and the schema belongs to that person's database user, which a database admin then has to reassign. The Setup page checks that one account owns the scanner job, the Service, and the database credential (README "Before you start").
+
+#### Part A: set up results storage from the app (replaces 12.9 and 13.2)
+
+| # | Choice | Status |
+|---|---|---|
+| 17.2.1 | When the results state is "schema missing" or "no tables", every page shows a **Set up results storage** button: a POST form with the existing CSRF check. Nothing runs on page load or on a GET. | Approved by Rob on November 4, 2026 |
+| 17.2.2 | The POST reads the job's settings fresh, then runs `CREATE SCHEMA IF NOT EXISTS <schema>` and the five `CREATE TABLE IF NOT EXISTS` statements from `common/schema.py` (the scanner's own DDL), through `civis.io.query_civis` with the job's database and credential. No `GRANT`, `DROP`, or `ALTER`. **Implementation choice:** the schema is first looked up in `information_schema.schemata`, and `CREATE SCHEMA` runs only if it is missing. PostgreSQL checks the CREATE privilege on the database before it applies `IF NOT EXISTS`, so without the lookup a user who cannot create schemas would fail again after a database admin created the schema for them, and the button could never create the tables. | Approved by Rob on November 4, 2026 |
+| 17.2.3 | If the schema step fails, the app says the database user cannot create schemas and shows one statement for a database admin: `CREATE SCHEMA <schema> AUTHORIZATION <database user>;`. The user is the `username` from `credentials.get` on the `RESULTS_DB` credential: used as is when it is a plain identifier, double-quoted with inner quotes doubled otherwise, and `<database user>` with one sentence on where to find it when it is empty, too long, or has a backslash or control character (`sql.quoted_identifier`). After the admin runs it, the same button creates the tables. If the existence lookup itself fails, no statement is shown. | Approved by Rob on November 4, 2026 |
+| 17.2.4 | Failures show the step (schema or tables) and the error type (class name and HTTP status) only, never the SQL error text. | Approved by Rob on November 4, 2026 |
+| 17.2.5 | **Run scan** stays off while the schema is missing, with one line pointing to the button. With the schema but no tables, Run scan stays on. The scanner still creates its tables at the start of each run. | Approved by Rob on November 4, 2026 |
+| 17.2.6 | The results cache is cleared after setup. | Approved by Rob on November 4, 2026 |
+
+#### Part B: the app reads its database settings from the scanner job
+
+| # | Choice | Status |
+|---|---|---|
+| 17.2.7 | The app reads the job with `scripts.get_containers(SCANNER_JOB_ID)` and takes the database and credential from the `RESULTS_DB` argument (or a fixed value set on the parameter) and the schema from `RESULTS_SCHEMA`. The database ID is passed to `civis.io`. civis 2.7.1 keeps the case of keys inside `arguments`, so `RESULTS_DB` is read as is (checked in the 2.7.1 wheel's `response.py`). | Approved by Rob on November 4, 2026 |
+| 17.2.8 | **Accepted Database parameter shapes** (`app/job_settings.py`), recorded as a label, never the values: `object` (`{"database": <id>, "credential": <id>}`, the shape Civis's "Script Parameters" help describes for a Database argument); `object_without_credential` (`{"database": <id>}`, default credential); `json_text` (the same object as JSON text, as in that help article's API example); `object_id_keys` (`database_id` and `credential_id`, or camelCase, plausible); `database_id_only` (a bare ID, plausible). Anything else is `not_recognized`, and an empty value is `missing`. The civis 2.10 API spec types `arguments` only as an object. **The live test confirms the real shape** (TESTING item 1.10 records the label). | Approved by Rob on November 4, 2026 |
+| 17.2.9 | `RESULTS_DATABASE`, `RESULTS_SCHEMA`, and `RESULTS_CREDENTIAL_ID` are removed from the app, README, TESTING.md, `.env.example`, and the local preview, with no fallback, since no release used them outside testing. | Approved by Rob on November 4, 2026 |
+| 17.2.10 | Each worker keeps the job settings for 5 minutes (a failed read for 20 seconds). The Setup page, the test summary, and the setup POST read them fresh. A change clears the results cache. A missing SCANNER_JOB_ID keeps the "no job ID" state; an unreadable job turns Run scan off with a clear message, and unusable settings show a configuration message and send no SQL. | Approved by Rob on November 4, 2026 |
+| 17.2.11 | The schema from the job goes through `sql.identifier`, as before. | Approved by Rob on November 4, 2026 |
+
+#### Part C: Setup page
+
+| # | Choice | Status |
+|---|---|---|
+| 17.2.12 | A **Setup** page in the navigation runs ten read-only checks (`app/setup.py`), each with pass, warning, fail, or review, a one-line reason, and the fix: (1) job found and readable; (2) job settings match the README: image and tag, repository, a release tag (fail on `main` or a branch; warning for a `v` name that is not a release tag), command, CPU, memory (plus 512 MB per `MAX_CONCURRENCY` thread above 4), and disk, with larger resources a warning; (3) job git credential blank; (4) parameters; (5) one owner; (6) sharing counts (review); (7) this app's Service; (8) frame rule; (9) results storage; (10) latest scan. Users are compared by ID where the response has one, otherwise by user name. | Approved by Rob on November 4, 2026 |
+| 17.2.13 | The pinned image names and tags come from the header of each requirements file (`common/release.py`), the same files `docker/check_image.py` reads, so there is one source of truth. A test checks that the README shows the same values. | Approved by Rob on November 4, 2026 |
+| 17.2.14 | **Service lookup.** Neither the civis 2.10 API spec nor Civis's public help names an environment variable that holds a Service's own ID (read November 4, 2026: "Advanced Deployments" names `CIVIS_SERVICE_PORT`, `CIVIS_SERVICE_HEALTH_PATH`, `CIVIS_SERVICE_VERSION`, `CIVIS_PERMISSION_SET_ID`, and `REPO_PATH_DIR`; "Civis Service Deployment" names `REPO_HTTP_TOKEN`, a GitHub token Civis inserts when the deploying user's profile has GitHub credentials, which the app never reads). So the app lists the Services its user can see (`services.list`, at most 1,000) and keeps those whose git repository is this one. Exactly one match is checked: same git reference as the job, the README image, and no credentials attached. Otherwise the line is review with the count. Methods: `environment_variable` (unused), `single_match`, `several_matches`, `none`, `list_failed`. Variables in the app's own process that end in `_PASSWORD` are counted, never named. | Approved by Rob on November 4, 2026 |
+| 17.2.15 | **Implementation choices.** Line 5 also compares the job's `running_as` user (the spec's "the user this job will run as") when the response has it, as the role "job runs as". The app's user is read with `users.get_me` where it exists and `users.list_me` otherwise: the Service image's civis 2.7.1 has only `list_me`, and the tool's own v3 rules flag a direct `list_me` call. Line 9 reads all five tables with one `SELECT ... UNION ALL` statement. The page names the `GITHUB` parameter only to check its type; the token test now bans the token's variable names (`GITHUB_PASSWORD`, `GITHUB_USERNAME`, `GITHUB_ID`, `GH_TOKEN`, `REPO_HTTP_TOKEN`) instead of the word. Civis calls: `scripts.get_containers`, `scripts.list_containers_shares`, `users.list_me`, `credentials.get`, `services.list`, `services.get`, and `services.list_shares`, all in civis 2.7.1. The page logs nothing; errors show as an error type. | Approved by Rob on November 4, 2026 |
+
+#### Part D: test summary
+
+| # | Choice | Status |
+|---|---|---|
+| 17.2.16 | **Build test summary** on the Setup page (a GET) opens a text box with a Copy button (`app/static/js/copy-summary.js`; without JavaScript the text is copied by hand). It holds the tool version (the job's reference if it is `v` plus numbers and dots with an optional `-rcN`, otherwise "other"), the ten Setup lines by number, short ID, and result, the Database shape label, the Service lookup method, sharing counts, and for one scan (newest by default, with a select list of run IDs): status, minutes, the `RUN` line counts, scanned, partly scanned, and not scanned per object type, affected and advisory objects and total findings, error lines counted by error type and status, the number of other log lines, and the TESTING 4.8 counts; then checklist rows saved by people and the number of runs in `scan_runs`. | Approved by Rob on November 4, 2026 |
+| 17.2.17 | Built from an allow list (`app/summary.py`): every value is an integer, a run ID that matches the scanner's generated pattern (`run-<UTC time>-<6 hex>`), a fixed label, or an error token (a class name starting with a capital letter, with an optional `status=NNN`). Anything else becomes "other". The log is read with the existing paging, at most 50 pages of 1,000 lines; past that it says "log partly read" with the line count. **Implementation choice:** `TABLE_WRITE_FAILED`, `OUTPUT_FAILED`, and `FATAL` lines are counted too, the same way. | Approved by Rob on November 4, 2026 |
+| 17.2.18 | Tests seed made-up names, log lines, and error messages with a marker string and check that no marker reaches the summary, and check that the 4.8 counts equal the TESTING.md query run in SQLite on the same dry-run data. | Approved by Rob on November 4, 2026 |
+
+#### Part E: SQL scope test and SECURITY.md
+
+| # | Choice | Status |
+|---|---|---|
+| 17.2.19 | `tests/test_sql_scope.py` drives every code path that sends SQL with a recording fake `civis.io` and checks each statement: it starts with `CREATE SCHEMA IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`, `SELECT`, `INSERT`, or `DELETE`; names only the results schema's five tables or reads `information_schema`; contains no `GRANT`, `REVOKE`, `DROP`, `ALTER`, `TRUNCATE`, `UPDATE`, `COPY`, or `UNLOAD`; and holds one statement. Another test fails if a new module starts sending SQL. The write-call test in `tests/test_security.py` stays. | Approved by Rob on November 4, 2026 |
+| 17.2.20 | SECURITY.md, outside "By design": what the tool writes (the standing rule above); a new section, "What Civis records when the tool runs" (hidden query records, hidden import records and files, and a run plus its CSV per scan, all new records); and who owns the schema (the database user behind `RESULTS_DB`; others have no access by default, apart from superusers). The README says the same, which closes its gap about default privileges. | Approved by Rob on November 4, 2026 |
+
+#### Local preview
+
+New `--state` values: `job-unreadable`, `database-unrecognized`, `schema-refused` (shows the admin statement), `tables-missing`, and `setup-failures` (several Setup lines fail). `schema-missing` now looks like a new install, and the button succeeds there. The preview's made-up scanner job and Service match the README, except in `setup-failures`.
+
+#### Approved for after the live test, before v0.1.0
+
+- **Resume a stopped scan from the app.** This removes the `RUN_ID` parameter, so the app starts a resume without anyone editing the job.
+- **Frame rule enforced by default** once TESTING item 2.1 confirms the parent address, so `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` is no longer a setup step.
+
+#### Considered and rejected
+
+- **The app creating the scanner job.** Rejected under the standing read-only rule: the app would create and edit a Civis object other than the results schema, its tables, scanner runs, and their CSV outputs.

@@ -16,24 +16,28 @@ README setup and every fact that could not be confirmed from documentation
   `error=CivisAPIError status=403`) are fine to record; they hold no content.
 - If something you would need to record looks like client content, write
   "content withheld" and describe it in general terms instead.
-- **Release tags:** setup (section 1) can start on `v0.1.0-rc1`. Every scan
-  uses `v0.1.0-rc2`: item 5.6 moves both objects to it before the first scan.
-  Use the tag in place wherever the README says `<release tag>`.
+- **Release tag:** every step, setup and scans, uses `v0.1.0-rc3`. Use it in
+  place wherever the README says `<release tag>`. Item 5.6 (update to a new
+  release) waits for the first release tag after `v0.1.0-rc3`.
 - **Browser:** Chrome, Edge, or Firefox. Safari ignores the report-only frame
   rule (item 2.1).
 
 ## Order
 
-1. Section 1 (setup) on `v0.1.0-rc1`, with no GitHub token attached to the
+1. Section 1 (setup) on `v0.1.0-rc3`, with no GitHub token attached to the
    scanner job.
-2. Section 2 (frame rule).
-3. Item 5.6, first part: update both objects to `v0.1.0-rc2`.
-4. Section 3 (the first scan, with no GitHub token) and the first-scan part
+2. Section 2 (frame rule), then the Setup page again (end of item 1.10).
+3. Section 3 (the first scan, with no GitHub token) and the first-scan part
    of item 4.8.
-5. Items 4.1 to 4.3, 4.6, 4.7, and 5.1.
-6. Attach the GitHub token (item 4.8), then item 5.2 (the second scan), the
+4. Items 4.1 to 4.3, 4.6, 4.7, and 5.1.
+5. Attach the GitHub token (item 4.8), then item 5.2 (the second scan), the
    second-scan part of item 4.8, and item 1.4.
-7. Items 4.4, 4.5, 5.3 to 5.5, and the rest of item 5.6.
+6. Items 4.4, 4.5, and 5.3 to 5.5.
+7. Item 5.7: build the final test summary, copy it, and send it with these
+   results.
+
+Item 5.6 is not part of this run. It waits for the first release tag after
+`v0.1.0-rc3`.
 
 ## Prepare the test organization
 
@@ -60,17 +64,20 @@ finish the step the way the interface allows and record the difference.
 
 ### 1.1 Before you start
 
-- **Steps:** Follow README "Before you start": confirm the Robot user and have
-  a database admin create the results schema with the privileges listed. Do
-  not attach a GitHub token yet: the first scan runs without one on purpose
-  (item 4.8). The GitHub Custom Credential can be created now or at item 4.8.
+- **Steps:** Follow README "Before you start": confirm the Robot user (or a
+  dedicated service account) and choose the results schema name. Do not
+  create the schema: the app does that in item 1.9. Do not attach a GitHub
+  token yet: the first scan runs without one on purpose (item 4.8). The
+  GitHub Custom Credential can be created now or at item 4.8.
 - **Expected:** Each step works as written.
-- **Record:** pass or fail per step.
+- **Record:** pass or fail per step; Robot user or dedicated service account.
 
 ### 1.2 Create the scanner job
 
-- **Steps:** Follow README "Create the scanner job", steps 1 to 7.
-- **Expected:** The job saves with all eight parameters. **GitHub Repository
+- **Steps:** Follow README "Create the scanner job", steps 1 to 7. Add only
+  the required parameters (`RESULTS_DB` and `RESULTS_SCHEMA`), not the
+  optional ones.
+- **Expected:** The job saves with its two parameters. **GitHub Repository
   URL** accepts the typed public URL (the help article describes picking a
   repository from a list).
 - **Record:** pass or fail per step; whether the URL could be typed (yes or no).
@@ -98,7 +105,8 @@ finish the step the way the interface allows and record the difference.
   After the first scan (item 3.4) and the second scan (item 5.2), check each
   run for memory or disk errors. Read the GitHub counts on the last line of
   the run log of the first scan with the token attached (the second scan,
-  item 4.8). The first scan has no token, so its GitHub counts are zero.
+  item 4.8), or from the test summary's `run_line` for that scan (item 5.7).
+  The first scan has no token, so its GitHub counts are zero.
 - **Expected:** No out-of-memory or disk-full failure. `github_cache_peak_bytes`
   is at most 1073741824 (the 1 GB cache cap).
 - **Record:** pass or fail; peak memory if Civis shows it;
@@ -108,7 +116,9 @@ finish the step the way the interface allows and record the difference.
 ### 1.5 Create the Service
 
 - **Steps:** Follow README "Create the Service", steps 1 to 9, with
-  `CIVIS_FRAME_ANCESTORS_REPORT_ONLY=true`.
+  `CIVIS_FRAME_ANCESTORS_REPORT_ONLY=true`. The environment variables are
+  `SCANNER_JOB_ID`, `CIVIS_SERVICE_HEALTH_PATH`, and
+  `CIVIS_FRAME_ANCESTORS_REPORT_ONLY`; leave out the two optional ones.
 - **Expected:** The deployment starts and stays running. Civis's health check
   uses `/healthz`.
 - **Record:** pass or fail per step; minutes from **Start Deployment** to running.
@@ -126,14 +136,49 @@ finish the step the way the interface allows and record the difference.
 - **Steps:** Check the Service's and the scanner job's sharing.
 - **Expected:** Only Civis admins (and the Robot user) have access. The default
   group was removed from the Service.
-- **Record:** pass or fail for each object.
+- **Record:** pass or fail for each object. The user and group counts come
+  from the Setup page's line 6 (item 1.10) and the test summary.
 
-### 1.8 Results schema check before the first scan
+### 1.8 Results schema check before setup
 
-- **Steps:** Open the app before any scan.
-- **Expected:** "No scan yet". This confirms the `information_schema.schemata`
-  check finds the schema on Redshift (PLAN.md 14.11).
+- **Steps:** Open the app before clicking anything.
+- **Expected:** "The results schema does not exist yet", a **Set up results
+  storage** button, and **Run scan** off with one line pointing to the button.
+  This confirms the `information_schema.schemata` check on Redshift for a
+  missing schema (PLAN.md 14.11).
 - **Record:** pass or fail; the heading shown if different.
+
+### 1.9 Set up results storage
+
+- **Steps:** Follow README "Set up results storage and check the setup",
+  steps 2 and 3. One of two outcomes happens:
+  - **a. Created by the app.** The page says "Results storage is set up."
+  - **b. Refused.** The page says the database user cannot create schemas
+    (step: schema), shows an error type, and shows one statement of the form
+    `CREATE SCHEMA <schema> AUTHORIZATION <database user>;`. A database admin
+    runs that statement as shown. Then click **Set up results storage**
+    again: the page says the schema already existed and its five tables are
+    ready.
+- **Expected:** After either outcome, the Overview page shows "No scan yet"
+  and **Run scan** is on. This confirms the check finds the schema on
+  Redshift. Nothing else changes in Civis.
+- **Record:** outcome a or b; for b, the error type shown, whether the
+  statement showed a database user name or the `<database user>` placeholder
+  (yes or no, never the name), and pass or fail for the admin's statement and
+  for the second click; if a table step failed, the step and error type. Do
+  not record the schema name or the user name.
+
+### 1.10 Setup page
+
+- **Steps:** Open the **Setup** page. Do not copy or record the user and group
+  names that line 6 lists. After item 2.2, open the Setup page again.
+- **Expected:** Lines 1 to 5, 7, and 9 pass; line 6 (sharing) is "review";
+  line 8 (frame rule) is a warning while report-only is on and a pass after
+  item 2.2; line 10 (latest scan) is "review" before the first scan.
+- **Record:** the result of each line (1 to 10), first visit and after item
+  2.2; the `RESULTS_DB` value shape shown under line 4; the Service lookup
+  method shown under line 7; the user and group counts in line 6. For any
+  line that is not as expected, its reason in general terms.
 
 ## 2. Frame rule (PLAN.md 11.3)
 
@@ -154,7 +199,7 @@ finish the step the way the interface allows and record the difference.
   `CIVIS_FRAME_ANCESTORS` first if item 2.1 found another parent address),
   click **Update Deployment**, and reload the app with the console open.
 - **Expected:** The app shows, and the console has no Content Security Policy
-  errors.
+  errors. The Setup page's line 8 is a pass.
 - **Record:** pass or fail.
 
 ### 2.3 Safari (optional)
@@ -194,13 +239,11 @@ finish the step the way the interface allows and record the difference.
 
 ### 3.4 Scan results
 
-- **Steps:** When the scan finishes, read the last line of the scanner job's
-  run log. It has the form
-  `RUN run_id=... status=succeeded objects_total=N objects_scanned=N api_calls=N
-  github_tarball_requests=N github_cache_peak_bytes=N github_cache_evictions=N
-  civis_git_reads=N civis_git_failures=N`.
-  Then read the counts on the Overview page.
-- **Expected:** Status `succeeded`; Overview counts match the run log.
+- **Steps:** When the scan finishes, build the test summary (item 5.7) for
+  this scan. Its `run_line`, `objects_by_type`, and `findings` lines give the
+  counts below, so you do not need to copy them from the run log. Then read
+  the counts on the Overview page.
+- **Expected:** Status `succeeded`; Overview counts match the summary.
 - **Record:** status; minutes from start to finish; `objects_total`,
   `objects_scanned`, `api_calls`, `civis_git_reads`, `civis_git_failures`;
   objects scanned, partly scanned, and not scanned; affected and advisory
@@ -224,15 +267,18 @@ finish the step the way the interface allows and record the difference.
 
 ### 3.6 The run log holds only structured lines
 
-- **Steps:** Scan the scanner's run log without copying it. Scanner lines
-  start with `RUN`, `PHASE`, `PROGRESS`, `CHECKPOINT`, `FINDINGS`,
-  `OBJECT_ERROR`, `CIVIS_GIT_FAILED`, `PARSE_ERROR`, `TABLE_WRITE_FAILED`,
-  `OUTPUT_FAILED`, or `FATAL`.
+- **Steps:** The test summary's `log_errors` and `log_other_lines` lines count
+  these for you. Scanner lines start with `RUN`, `PHASE`, `PROGRESS`,
+  `CHECKPOINT`, `FINDINGS`, `OBJECT_ERROR`, `CIVIS_GIT_FAILED`,
+  `PARSE_ERROR`, `TABLE_WRITE_FAILED`, `OUTPUT_FAILED`, or `FATAL`. If
+  `log_other_lines` is not 0, scan the run log without copying it to see what
+  kind of lines they are.
 - **Expected:** No other lines, apart from Civis's own container messages. No
   "pip" lines.
-- **Record:** the number of other lines, and the count of each error type in
-  `OBJECT_ERROR`, `CIVIS_GIT_FAILED`, and `PARSE_ERROR` lines (for example
-  `CivisAPIError status=403: 2`).
+- **Record:** `log_other_lines` and what kind of lines they are in general
+  terms, and the count of each error type in `OBJECT_ERROR`,
+  `CIVIS_GIT_FAILED`, and `PARSE_ERROR` lines (for example
+  `CivisAPIError status=403: 2`), from the summary.
 
 ### 3.7 First page loads after a scan
 
@@ -269,25 +315,30 @@ finish the step the way the interface allows and record the difference.
   file, and record only the shape of its host with the account parts replaced
   (for example `<bucket>.s3.<region>.amazonaws.com`).
 
-### 4.3 Results schema check on Redshift (PLAN.md 14.11)
+### 4.3 Missing schema after setup (PLAN.md 14.11 and 17.2)
 
-- **Steps:** Item 1.8 checked the "No scan yet" state. Now set the scanner
-  job's `RESULTS_SCHEMA` parameter to a schema that does not exist (for
-  example `pmsc_no_such_schema`), save the job, wait 5 minutes (the app reads
-  the job's settings again after that), and open the app. Then set it back,
-  save, and wait again.
-- **Expected:** "The results schema does not exist yet". After setting it
-  back, the results show again.
+- **Steps:** Item 1.8 checked a missing schema before setup. Now, signed in as
+  the Robot user, set the scanner job's `RESULTS_SCHEMA` parameter to a schema
+  that does not exist (for example `pmsc_no_such_schema`) and save. Open the
+  app's Setup page (it reads the job's settings at once), then the Overview
+  page. **Do not click Set up results storage**, which would create that
+  schema. Then set the parameter back, save, and open the Setup page again.
+- **Expected:** The Setup page's line 9 fails with "The results schema does
+  not exist." The Overview page says "The results schema does not exist yet",
+  with **Run scan** off. The other worker process may show the old schema for
+  up to 5 minutes. After setting it back, line 9 passes and the results show
+  again.
 - **Record:** pass or fail for each state.
 
 ### 4.4 `DELETE ... USING` on Redshift (PLAN.md 11.2)
 
 - **Steps:** After at least two scans, pick the older run's ID (the
   `run_id=` value in the `RUN run_id=... status=running` line near the top of
-  that run's log). In a Civis query
+  that run's log, or from the test summary's select list). In a Civis query
   against the results database, count that run's rows in each of the five
   tables, run the manual deletion SQL from SECURITY.md for that run ID, and
-  count again.
+  count again. Run the query with the `RESULTS_DB` credential, since its
+  database user owns the schema.
 - **Expected:** All five statements succeed. The run's rows are gone from
   `findings`, `coverage`, `objects`, and `scan_runs`. In `checklist_status`, only
   rows that have a newer row for the same object and rule are deleted.
@@ -295,9 +346,11 @@ finish the step the way the interface allows and record the difference.
 
 ### 4.5 `RETENTION_DAYS` (PLAN.md 11.2)
 
-- **Steps:** Do item 5.1 first. On a later day than an earlier scan, set the scanner job's
-  `RETENTION_DAYS` to `1` and click **Run scan** in the app. Count rows per run
-  in `scan_runs` before and after. Then clear `RETENTION_DAYS`.
+- **Steps:** Do item 5.1 first. On a later day than an earlier scan, add the
+  `RETENTION_DAYS` parameter (Integer, not required) to the scanner job, set
+  it to `1`, and click **Run scan** in the app. Read `runs_in_scan_runs` from
+  the test summary before and after; it replaces a manual count of runs in
+  `scan_runs`. Then clear `RETENTION_DAYS`.
 - **Expected:** Scans started more than one day earlier are deleted from all
   five tables; the newest scan is kept; checklist statuses set in item 5.1 are
   still shown in the app.
@@ -324,11 +377,18 @@ finish the step the way the interface allows and record the difference.
 
 - **Steps:**
   1. The first scan (item 3.1) runs with no GitHub token, on purpose. After
-     it, read `civis_git_reads` and `civis_git_failures` on the last line of
-     its run log, and count the `CIVIS_GIT_FAILED` lines by error type and
-     status (for example `CivisAPIError status=403: 3`), as in item 3.6.
-  2. In a Civis query against the results database, run this with the scan's
-     run ID (the `run_id=` value on its `RUN` lines) and your schema's name:
+     it, read `civis_git_reads` and `civis_git_failures` from the test
+     summary's `run_line`, and the `CIVIS_GIT_FAILED` counts by error type and
+     status from its `log_errors` lines (for example
+     `CIVIS_GIT_FAILED CivisAPIError status=403: 3`).
+  2. Read the summary's `testing_4_8` lines for the scan. They give
+     `git_backed`, `read_through_civis`, and `civis_read_failed` per object
+     type, computed the same way as the query below. **Once, for the first
+     scan only,** also run the query as a manual cross-check, in a Civis
+     query against the results database with the `RESULTS_DB` credential,
+     with the scan's run ID (the `run_id=` value on its `RUN` lines, or the
+     summary's `scan:` line) and your schema's name, and confirm it matches
+     the summary:
 
      ```sql
      SELECT object_type,
@@ -346,32 +406,36 @@ finish the step the way the interface allows and record the difference.
      tag was read at the branch's newest commit, so for workflows the number
      read is `git_backed` minus `civis_read_failed`. Workflows that
      only run other jobs have no row here; they are in the `RUN` line counts.
-  3. Create the GitHub Custom Credential if you have not, attach it to the
-     scanner job's `GITHUB` parameter (README "Before you start", item 4),
-     signed in as the Robot user, and save.
+  3. Create the GitHub Custom Credential if you have not, add the `GITHUB`
+     parameter to the scanner job if it does not have it, attach the
+     credential to it (README "Before you start", item 4), signed in as the
+     Robot user, and save.
   4. The second scan (item 5.2) runs with the token. Repeat steps 1 and 2 for
-     it. For Python scripts, the number read from GitHub is `git_backed` minus
-     `read_through_civis` minus `civis_read_failed`.
+     it, from the summary only. For Python scripts, the number read from
+     GitHub is `git_backed` minus `read_through_civis` minus
+     `civis_read_failed`.
 - **Expected:** Without the token, git-backed Python scripts and workflows are
   read through Civis, with few or no failures. With the token, most
   git-backed Python scripts are read from GitHub, and only those GitHub cannot
   read are read through Civis. Workflows are read through Civis in both scans.
-  If every read fails with the same error, record it: it may show which
-  GitHub connection Civis uses for these endpoints, or that the Robot user
-  cannot call them.
+  The manual query matches the summary. If every read fails with the same
+  error, record it: it may show which GitHub connection Civis uses for these
+  endpoints, or that the Robot user cannot call them.
 - **Record:** for each scan: git-backed Python scripts and git-backed workflows
   (`git_backed`); how many of each were read through Civis;
   `civis_git_reads` and `civis_git_failures`; the error type and status of each
   kind of `CIVIS_GIT_FAILED` line, with counts. For the second scan, also how
-  many git-backed Python scripts were read from GitHub.
+  many git-backed Python scripts were read from GitHub. For the first scan,
+  whether the manual query matched the summary (yes or no).
 
 ## 5. App functions
 
 ### 5.1 Checklist save with the Civis-Username header
 
 - **Steps:** On the Findings page, change two statuses and click **Save
-  changes**. Reload. In a Civis query, count `checklist_status` rows where
-  `changed_by` is not `scanner`.
+  changes**. Reload. Read `checklist_rows_by_people` from the test summary; it
+  replaces a manual count of `checklist_status` rows where `changed_by` is not
+  `scanner`.
 - **Expected:** The dropdowns are enabled (the app sees your user name), the
   page says "Saved 2 status changes.", the statuses stay after reload, and the
   count is 2.
@@ -399,11 +463,13 @@ finish the step the way the interface allows and record the difference.
      the "x" next to the spinner.
   2. Copy the `run_id=` value from the `RUN run_id=... status=running` line
      near the top of that run's log. It is a generated ID, not client data.
-  3. Sign in as yourself, not the Robot user. Set the job's `RUN_ID`
-     parameter to the run ID, save, then click **Run scan** in the app.
+  3. Sign in as yourself, not the Robot user. Add the `RUN_ID` parameter
+     (String, not required) to the job if it does not have it, set it to the
+     run ID, save, then click **Run scan** in the app.
   4. When it finishes, read the Scan history page's "Started ... as <user>"
      line for the resumed run. Then clear `RUN_ID`, signed in as the Robot
-     user if you can (otherwise as yourself), and save.
+     user if you can (otherwise as yourself), and save. The Setup page's line
+     4 warns while `RUN_ID` has a value and passes again after.
   5. Click **Run scan** in the app again and, when it starts, read the same
      line for this next run.
 - **Expected:** The resumed run succeeds. Its last log line shows
@@ -429,23 +495,42 @@ finish the step the way the interface allows and record the difference.
 
 ### 5.6 Update to a new release, and removal
 
+This item waits for the first release tag after `v0.1.0-rc3`. It is not part
+of this run.
+
 - **Steps:**
-  1. After section 2 and before the first scan (item 3.1), follow README
-     "Update to a new release" to move both objects from `v0.1.0-rc1` to
-     `v0.1.0-rc2`. Its step 4 ("Run a new scan") is item 3.1.
-  2. Optional, at the end of the test: follow README "Remove the tool".
+  1. Follow README "Update to a new release" to move both objects from
+     `v0.1.0-rc3` to the new tag. Its last step ("Run a new scan") is a new
+     scan from the app.
+  2. Optional, at the end of that test: follow README "Remove the tool".
 - **Expected:** Each step works as written. After the update, the Service
-  starts again and both objects show `v0.1.0-rc2`.
+  starts again, both objects show the new tag, and the Setup page's lines 2
+  and 7 pass.
 - **Record:** pass or fail per step.
+
+### 5.7 Test summary
+
+- **Steps:** On the Setup page, click **Build test summary**. Choose the scan
+  in the select list (the newest is chosen by default) and click **Build
+  summary**. Read the text before you copy it. Click **Copy** (or select the
+  text and copy it by hand if the button reports that copying did not work),
+  and paste it below the results template when you send the results.
+- **Expected:** The summary builds and holds only counts, fixed labels, run
+  IDs, and error types. It names no object, user, group, database, schema, or
+  credential. If the log has more than 50,000 lines, it says "log partly
+  read". Its setup lines match the Setup page.
+- **Record:** pass or fail for built, copied (with the button or by hand), and
+  sent; yes or no: any value looked like a name or other content (if yes,
+  "content withheld" and do not send that summary).
 
 ## Results to report back
 
-Copy this template, fill it in, and send it. Counts and redacted error types
-only.
+Copy this template, fill it in, and send it with the final test summary from
+item 5.7 pasted below it. Counts and redacted error types only.
 
 ```
 Python Migration Scanner: first live test results
-Release tags: setup on v0.1.0-rc1, scans on v0.1.0-rc2
+Release tag: v0.1.0-rc3 (setup and scans)
 Date (MM/DD/YYYY):
 Browser:
 
@@ -454,14 +539,19 @@ Prepared objects by type: python_script=  container_script=  custom_script=
   git_python_branch=  git_python_tag_or_commit=  git_workflow=
 
 Item  Result (pass/fail/skipped)  Counts or note
-1.1
+1.1   Robot user or service account:
 1.2   URL typed: yes/no
 1.3   a=  b=  c=  d=  e=   (matches, or the label shown)
 1.4   peak memory (scan 1, scan 2):   from scan 2: github_tarball_requests=  github_cache_peak_bytes=  github_cache_evictions=
 1.5   minutes to start:
 1.6
 1.7   Service:  job:
-1.8
+1.8   heading (if different):
+1.9   outcome (a/b):   b: error type=  user name shown: yes/no  admin statement:  second click:
+      table step failed (step, error type):
+1.10  first visit: 1=  2=  3=  4=  5=  6=  7=  8=  9=  10=
+      after 2.2:   1=  2=  3=  4=  5=  6=  7=  8=  9=  10=
+      RESULTS_DB shape:   Service lookup:   line 6 job users=  groups=  Service users=  groups=
 2.1   report-only warnings:   parent address (if any):
 2.2
 2.3   seen/not seen
@@ -472,11 +562,11 @@ Item  Result (pass/fail/skipped)  Counts or note
       civis_git_reads=  civis_git_failures=
       scanned=  partly scanned=  not scanned=  affected=  advisory=  findings=
 3.5   calls per object=  minutes per 100 objects=  github_tarball_requests=  github_cache_evictions=
-3.6   other lines=   error types: (line type, error type, and count)
+3.6   other lines=   kind (general terms):   error types: (line type, error type, and count)
 3.7   seconds: overview=  inventory=  findings=  slowest=   any failed or timed out: yes/no
 4.1   python3=  custom=  notebooks=  services=  workflows=  dbt=
 4.2   notebooks scanned=  refused for host=   host shape (if any):
-4.3   missing schema state:   restored:
+4.3   missing schema state (Setup line 9, Overview):   restored:
 4.4   per table rows before/after:
 4.5   runs before=  after=
 4.6   python=  container=  custom=
@@ -484,6 +574,7 @@ Item  Result (pass/fail/skipped)  Counts or note
 4.8   scan 1 (no token): python git_backed=  read_through_civis=  civis_read_failed=
                          workflow git_backed=  civis_read_failed=
                          civis_git_reads=  civis_git_failures=   failures by type:
+                         manual query matches summary: yes/no
       scan 2 (token):    python git_backed=  read_through_civis=  civis_read_failed=  read_from_github=
                          workflow git_backed=  civis_read_failed=
                          civis_git_reads=  civis_git_failures=   failures by type:
@@ -494,8 +585,11 @@ Item  Result (pass/fail/skipped)  Counts or note
       step 3 edit by Robot user: yes/no   resumed run shows Robot user: yes/no
       step 4 edit by Robot user: yes/no   next run shows Robot user: yes/no
 5.5   minutes to wake=
-5.6   update to rc2:   removal:
+5.6   waits for the first tag after v0.1.0-rc3
+5.7   built:  copied (button/by hand):  sent:  looked like a name: yes/no
 
 Error types seen (from the scanner's log only), with counts:
 Anything that did not match the README (general terms only):
+
+Test summary (item 5.7):
 ```

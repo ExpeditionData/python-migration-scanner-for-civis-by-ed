@@ -484,3 +484,30 @@ def test_cli_stop_after_then_resume(tmp_path, capsys):
     run_id = sqlite3.connect(out / "results.sqlite").execute("SELECT run_id FROM scan_runs").fetchone()[0]
     assert main(["--dry-run", "--out", str(out), "--run-id", run_id]) == 0
     assert main(["--dry-run", "--out", str(out), "--run-id", run_id]) == 2
+
+
+def test_optional_parameters_that_do_not_exist_use_their_defaults():
+    """README: the optional parameters are added only to change the default. Civis sets no environment
+    variable for a parameter the job does not have, so the scanner must use the default for each."""
+    env = {"RESULTS_DB_ID": "31", "RESULTS_DB_CREDENTIAL_ID": "41", "RESULTS_SCHEMA": "results",
+           "CIVIS_JOB_ID": "5", "CIVIS_RUN_ID": "9"}
+    for name in ("LOOKBACK_DAYS", "MAX_CONCURRENCY", "REQUEST_BUDGET", "RETENTION_DAYS", "RUN_ID", "GITHUB_PASSWORD"):
+        assert name not in env
+    config = ScanConfig.from_env(env)
+    assert (config.lookback_days, config.max_concurrency, config.request_budget) == (200, 4, 500)
+    assert config.retention_days is None and config.run_id is None and config.github_token is None
+    blank = ScanConfig.from_env({**env, "LOOKBACK_DAYS": "", "MAX_CONCURRENCY": " ", "REQUEST_BUDGET": "",
+                                 "RETENTION_DAYS": "", "RUN_ID": ""})
+    assert (blank.lookback_days, blank.max_concurrency, blank.request_budget, blank.retention_days, blank.run_id) == (
+        200, 4, 500, None, None)
+
+
+def test_readme_optional_parameter_defaults_match_the_scanner():
+    from scanner import config as scanner_config
+
+    readme = (Path(__file__).resolve().parent.parent / "README.md").read_text(encoding="utf-8")
+    for name, default in (("LOOKBACK_DAYS", scanner_config.DEFAULT_LOOKBACK_DAYS),
+                          ("MAX_CONCURRENCY", scanner_config.DEFAULT_MAX_CONCURRENCY),
+                          ("REQUEST_BUDGET", scanner_config.DEFAULT_REQUEST_BUDGET)):
+        row = next(line for line in readme.splitlines() if line.startswith(f"   | `{name}` |"))
+        assert f"| `{default}` |" in row, row

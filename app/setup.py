@@ -137,7 +137,7 @@ def gather(source: Any, job_id: int | None, settings: JobSettings | None, *, rep
 
 
 def _plural(count: int, noun: str) -> str:
-    return f"{count} {noun}" + ("" if count == 1 else "s")
+    return f"{count} {noun}" + ("" if count == 1 else "es" if noun.endswith(("ch", "s")) else "s")
 
 
 def _sentence(texts: list[str]) -> str:
@@ -408,6 +408,12 @@ def _sharing(facts: SetupFacts) -> Line:
 
 
 def _service(facts: SetupFacts) -> Line:
+    line = _service_line(facts)
+    method = f"Service lookup: {facts.service_method} ({_plural(facts.service_matches, 'match')})"
+    return Line(line.number, line.key, line.title, line.result, line.reason, line.fix, line.details + (method,))
+
+
+def _service_line(facts: SetupFacts) -> Line:
     title = "This app's own Service"
     passwords = facts.password_env_count
     password_issue = (("fail", f"{_plural(passwords, 'environment variable')} in the app end in _PASSWORD")

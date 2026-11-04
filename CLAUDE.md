@@ -37,6 +37,14 @@ be made public at any time.
   aggregate counts, or error messages with client details removed. If something
   pasted into the session looks like client data, stop and say so instead of
   using it.
+- **The tool treats everything in Civis as read-only** (Rob, November 4,
+  2026). The only things it writes are: the results schema and the five
+  tables it creates in it, rows in those tables, runs of the scanner job
+  (started from the app), and the CSV run output attached to each scanner
+  run. It never creates, edits, shares, archives, or deletes any other Civis
+  object, including the scanner job's settings and the Service. Every SQL
+  statement is CREATE SCHEMA IF NOT EXISTS, CREATE TABLE IF NOT EXISTS,
+  SELECT, INSERT, or DELETE in the results schema (`tests/test_sql_scope.py`).
 - **Security and privacy requirements** are in [SECURITY.md](SECURITY.md). Code
   must follow them: Civis content (code, logs, notebook outputs) stays in
   memory and only object ID, rule ID, file, and line number are stored; the
@@ -47,13 +55,13 @@ be made public at any time.
 ## Git workflow
 
 - Default branch is `main`. Remote is `origin`
-  (`ExpeditionData/python-migration-scanner-for-civis-by-ed`). The repository is private
-  until the public release. Rob changes its visibility himself; never change it
-  from a session. Live tests run only after it is public, because both Civis
-  objects clone it with no git credential.
-- Releases are git tags (the first live test sets up on `v0.1.0-rc1` and runs
-  its scans on `v0.1.0-rc2`). Rob creates tags; never create one from a
+  (`ExpeditionData/python-migration-scanner-for-civis-by-ed`). The repository is public
+  (since November 2, 2026), because both Civis objects clone it with no git
+  credential. Rob changes its visibility himself; never change it from a
   session.
+- Releases are git tags, protected by the "release tags" ruleset. The first
+  live test sets up and runs its scans on `v0.1.0-rc3`. Create a tag or a
+  GitHub Release only when Rob's prompt says to.
 - Commit after each completed step, with a clear message that says what changed
   and why.
 - Before every commit, review the staged files (`git diff --cached --name-only`
@@ -103,11 +111,23 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   the repo root, which execs gunicorn on port 3838 with two gthread workers
   of four threads each.
   It only runs the scanner job the admin created (`SCANNER_JOB_ID`), using the
-  job's saved parameters. It never creates or edits scripts. Shared with Civis
+  job's saved parameters. It never creates or edits scripts. It reads the
+  results database, credential, and schema from that job's `RESULTS_DB` and
+  `RESULTS_SCHEMA` parameters (`app/job_settings.py`, cached 5 minutes per
+  worker). Its only writes are the checklist INSERT and the "Set up results
+  storage" button (CREATE SCHEMA IF NOT EXISTS when the schema is missing,
+  then the five CREATE TABLE IF NOT EXISTS). A read-only Setup page runs ten
+  checks, and its "Build test summary" page gives counts, fixed labels, and
+  error types only, from an allow list (`app/summary.py`). Shared with Civis
   admins only.
-- **Connection.** No direct link between app and scanner. The app starts runs and
-  reads status and `PROGRESS` log lines through the Civis API, and reads results
-  from the tables. Checklist status is append-only.
+- **Connection.** No direct link between app and scanner. The app reads the
+  job's settings, starts runs, and reads status and `PROGRESS` log lines
+  through the Civis API, and reads results from the tables. Checklist status
+  is append-only.
+- **Service settings.** `SCANNER_JOB_ID`, `CIVIS_SERVICE_HEALTH_PATH`
+  (`/healthz`), and `CIVIS_FRAME_ANCESTORS_REPORT_ONLY`, plus the optional
+  `CIVIS_PLATFORM_URL` and `CIVIS_FRAME_ANCESTORS`. There are no results
+  settings on the Service.
 - **Data storage.** Five tables in the user's schema: `scan_runs`, `objects`,
   `findings`, `coverage`, `checklist_status`. Every row carries a run ID.
 - **Rules.** YAML files in `common/rules/` (`civis_v3.yaml`, `python315.yaml`),
@@ -125,12 +145,20 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   TESTING.md. On November 2, 2026, Phase 7 added reading git-backed Python
   scripts' and workflows' own files through Civis without a GitHub token, and
   marked objects with only a log read as partial (docs/PLAN.md section 17).
+  On November 4, 2026, Phase 7 added results storage setup from the app, job
+  settings read from the scanner job, the Setup page, the test summary, and
+  the SQL scope test (docs/PLAN.md 17.2).
   Implementation choices not in the approved plan are in docs/PLAN.md
   sections 10 to 17.
 - **App flow.** `app/__init__.create_app` -> `app/services.py` (Civis or local
-  data layer) -> `app/pages.py` routes -> `app/views.py` (pure shaping) ->
-  `app/templates/`. Data layer: `app/backends/civis_backend.py` (civis 2.7.1
-  calls only), `local_backend.py` (dry-run preview files), `cache.py`.
+  data layer, job settings cache) -> `app/pages.py` routes -> `app/views.py`
+  (pure shaping) -> `app/templates/`. Data layer:
+  `app/backends/civis_backend.py` (civis 2.7.1 calls only: `CivisResults`,
+  `CivisJobs`, `CivisSetup`), `local_backend.py` (dry-run preview files and
+  a made-up job and Service), `cache.py`. `app/job_settings.py` parses the
+  job's parameters, `app/setup.py` gathers and evaluates the Setup checks,
+  `app/summary.py` builds the test summary, and `common/release.py` holds
+  what the README sets (pinned images read from the requirements files).
   Styles in `app/static/css/app.css`, scripts in `app/static/js/`, fonts in
   `app/static/fonts/`, the logo in `app/static/img/`.
 - **Look.** Expedition Data's style: navy `--primary` (#26304F) for headings,
@@ -232,8 +260,13 @@ app on 127.0.0.1 only:
 ```
 
 Open http://127.0.0.1:8050. Add `--state no-scan` (or `first-scan-running`,
-`failed`, `tables-failed`, `schema-missing`, `no-job-id`) to see the empty and
-error states. Local preview refuses to start if `CIVIS_API_KEY` is set.
+`failed`, `tables-failed`, `schema-missing`, `no-job-id`, `job-unreadable`,
+`database-unrecognized`, `schema-refused`, `tables-missing`, or
+`setup-failures`) to see the empty and error states. `schema-missing`,
+`schema-refused`, and `tables-missing` look like a new install with the "Set
+up results storage" button (`schema-refused` shows the statement for a
+database admin); `setup-failures` makes several Setup page lines fail. Local
+preview refuses to start if `CIVIS_API_KEY` is set.
 
 ## Testing commands
 
@@ -260,6 +293,12 @@ Run the full suite on both Python versions before every commit:
   method missing from civis 2.7.1, including calls through an injected
   `civis.io` module.
 - `tests/test_local_time.py` runs `app/static/js/local-time.js` under Node (skipped if Node is not installed) to check local times and the UTC fallback.
+- `tests/test_job_settings.py`, `tests/test_storage_setup.py`,
+  `tests/test_setup_page.py`, and `tests/test_summary.py` cover the job
+  settings, the setup button, the Setup page, and the test summary (including
+  the marker test and the TESTING 4.8 match). `tests/test_sql_scope.py` checks
+  every SQL statement the tool sends. `tests/civis_fakes.py` holds the made-up
+  civis client and recording `civis.io`.
 - `tests/test_app.py` covers every page and API, CSRF on every POST, escaping
   of hostile object names, security headers, the concurrent-run guard, the
   batched checklist save, the empty and error states, text contrast, and local

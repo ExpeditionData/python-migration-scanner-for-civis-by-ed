@@ -15,7 +15,8 @@ Safety rules (SECURITY.md, "How we build and test it"):
 
 ``--state`` shows the app's empty and error states with the same data:
 normal, no-scan, first-scan-running, failed, tables-failed, schema-missing,
-and no-job-id.
+no-job-id, job-unreadable, database-unrecognized, schema-refused,
+tables-missing, and setup-failures.
 """
 
 from __future__ import annotations
