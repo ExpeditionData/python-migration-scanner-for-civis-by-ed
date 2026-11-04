@@ -327,7 +327,9 @@ def test_app_never_reads_a_github_token():
     token Civis may insert into a Service). The summary's github_* counts from the scanner's RUN line are fine.
     The bare parameter name GITHUB appears only where the Setup page checks the parameter's type and in the
     preview's made-up job, and never on a line that reads the environment. "GitHub" in Civis field labels
-    (GitHub Repository URL) is fine."""
+    (GitHub Repository URL) is fine. The one exception for REPO_HTTP_TOKEN is the constant in app/setup.py that
+    Setup line 7 uses to check whether the variable is set (never its value), and the summary's
+    repo_http_token_present label (tests/test_setup_page.py checks the value never reaches any output)."""
     token_names = re.compile(r"GITHUB_(PASSWORD|USERNAME|ID|TOKEN)\b|GH_TOKEN|REPO_HTTP_TOKEN|github_token", re.IGNORECASE)
     parameter = re.compile(r"\bGITHUB\b")
     allowed = {"app/setup.py", "app/backends/local_backend.py"}
@@ -337,6 +339,9 @@ def test_app_never_reads_a_github_token():
             continue
         rel = p.relative_to(ROOT).as_posix()
         for number, line in enumerate(p.read_text(encoding="utf-8").splitlines(), start=1):
+            if rel == "app/setup.py" and line == 'REPO_TOKEN_VARIABLE = "REPO_HTTP_TOKEN"':
+                continue
+            line = line.replace("repo_http_token_present", "")
             if token_names.search(line):
                 offenders.append(f"{rel}:{number}")
             elif parameter.search(line) and (rel not in allowed or re.search(r"environ|getenv", line)):

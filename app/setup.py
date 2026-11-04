@@ -40,6 +40,13 @@ OPTIONAL_PARAMETERS = ("GITHUB", "LOOKBACK_DAYS", "MAX_CONCURRENCY", "REQUEST_BU
 README_PARAMETERS = (DATABASE_PARAMETER, SCHEMA_PARAMETER) + OPTIONAL_PARAMETERS
 TOKEN_PARAMETER = OPTIONAL_PARAMETERS[0]  # The optional GitHub token parameter. The app never reads its value.
 MAX_SERVICES = 1000
+# Civis puts the deploying user's GitHub token into a Service under this name when that user's Civis profile has
+# GitHub credentials ("Civis Service Deployment" help). The app checks only that it is set and not empty; it never
+# keeps, shows, or logs the value, and never contacts GitHub.
+REPO_TOKEN_VARIABLE = "REPO_HTTP_TOKEN"
+REPO_TOKEN_REASON = ("Civis added the deploying user's GitHub token to this Service; the app does not read it or "
+                     "contact GitHub.")
+REPO_TOKEN_FIX = "To keep it out, deploy the Service as a user with no GitHub credentials on their Civis profile."
 TABLE_NAMES = tuple(t.name for t in TABLES)
 
 
@@ -70,6 +77,7 @@ class SetupFacts:
     service: Fetch | None = None
     service_shares: Fetch | None = None
     password_env_count: int = 0
+    repo_token_present: bool = False
     report_only: bool = False
     storage: StorageFacts | None = None
     latest: str = "none"
@@ -96,11 +104,17 @@ def password_env_count(env: Mapping[str, str] | None = None) -> int:
     return sum(1 for name in env if name.upper().endswith("_PASSWORD"))
 
 
+def repo_token_present(env: Mapping[str, str] | None = None) -> bool:
+    """Whether Civis put a GitHub token into this Service: set and not empty. The value is not kept."""
+    env = os.environ if env is None else env
+    return bool((env.get(REPO_TOKEN_VARIABLE) or "").strip())
+
+
 def gather(source: Any, job_id: int | None, settings: JobSettings | None, *, report_only: bool, latest: str,
            env: Mapping[str, str] | None = None) -> SetupFacts:
     """Read everything the checks need. ``source`` makes read calls only."""
     facts = SetupFacts(job_id=job_id, settings=settings, report_only=report_only,
-                       password_env_count=password_env_count(env),
+                       password_env_count=password_env_count(env), repo_token_present=repo_token_present(env),
                        latest=latest if latest in LATEST_STATES else "none")
     if source is None:
         return facts
@@ -410,7 +424,16 @@ def _sharing(facts: SetupFacts) -> Line:
 def _service(facts: SetupFacts) -> Line:
     line = _service_line(facts)
     method = f"Service lookup: {facts.service_method} ({_plural(facts.service_matches, 'match')})"
-    return Line(line.number, line.key, line.title, line.result, line.reason, line.fix, line.details + (method,))
+    result, reason, fix = line.result, line.reason, line.fix
+    if facts.repo_token_present:
+        # Review, not fail: the deploying user (often the Robot user) may need its GitHub connection elsewhere.
+        if result == "pass":
+            result, reason, fix = "review", REPO_TOKEN_REASON, REPO_TOKEN_FIX
+        else:
+            result = _worst([result, "review"])
+            reason = f"{reason} {REPO_TOKEN_REASON}"
+            fix = f"{fix} {REPO_TOKEN_FIX}" if fix else REPO_TOKEN_FIX
+    return Line(line.number, line.key, line.title, result, reason, fix, line.details + (method,))
 
 
 def _service_line(facts: SetupFacts) -> Line:

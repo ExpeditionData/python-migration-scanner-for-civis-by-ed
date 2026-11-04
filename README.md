@@ -265,7 +265,10 @@ cancelled or hit the 5-day limit for container scripts):
 6. Do not attach any credentials under **Security and Access**, then
    **Credentials**. Credentials attached to a Service become environment
    variables inside the app. The app needs none, and the GitHub token must
-   never be attached here.
+   never be attached here. If the deploying user's Civis profile has GitHub
+   credentials, Civis adds their token to the Service as `REPO_HTTP_TOKEN`;
+   the app does not read it, and to keep it out, deploy as a user with no
+   GitHub credentials.
 7. Leave the resources at their defaults with one replica. Under
    **Multischedule**, choose **On Demand**. The app sleeps after an hour
    without viewers and wakes when someone opens it.

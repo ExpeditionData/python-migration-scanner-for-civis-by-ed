@@ -208,6 +208,7 @@ class SummaryInputs:
     service_method: str
     sharing: dict[str, tuple[int, int] | None]
     results_state: str
+    repo_token_present: bool = False
     scan: ScanData | None = None
     checklist: list[dict] | None = None
     scan_run_rows: list[dict] | None = None
@@ -227,6 +228,7 @@ def build(inputs: SummaryInputs) -> str:
         out.append(f"  {_n(line.number)} {_label(line.key, LINE_KEYS)}: {_label(line.result, RESULTS)}")
     out.append(f"database_parameter_shape: {_label(inputs.database_shape, DATABASE_SHAPES) if inputs.database_shape else 'not_read'}")
     out.append(f"service_lookup: {_label(inputs.service_method, SERVICE_METHODS)}")
+    out.append(f"repo_http_token_present: {'yes' if inputs.repo_token_present is True else 'no'}")
     for part in ("job", "service"):
         counts = inputs.sharing.get(part)
         if counts is None:

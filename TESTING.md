@@ -177,12 +177,16 @@ finish the step the way the interface allows and record the difference.
 
 - **Steps:** Open the **Setup** page. Do not copy or record the user and group
   names that line 6 lists. After item 2.2, open the Setup page again.
-- **Expected:** Lines 1 to 5, 7, and 9 pass; line 6 (sharing) is "review";
+- **Expected:** Lines 1 to 5, 7, and 9 pass (line 7 is "review" instead if
+  Civis added the deploying user's GitHub token to the Service as
+  `REPO_HTTP_TOKEN`); line 6 (sharing) is "review";
   line 8 (frame rule) is a warning while report-only is on and a pass after
   item 2.2; line 10 (latest scan) is "review" before the first scan.
 - **Record:** the result of each line (1 to 10), first visit and after item
   2.2; the `RESULTS_DB` value shape shown under line 4; the Service lookup
-  method shown under line 7; the user and group counts in line 6. For any
+  method shown under line 7; the user and group counts in line 6; whether line
+  7 reports the deploying user's GitHub token (yes or no; the summary's
+  `repo_http_token_present`). For any
   line that is not as expected, its reason in general terms.
 
 ## 2. Frame rule (PLAN.md 11.3)
@@ -558,6 +562,7 @@ Item  Result (pass/fail/skipped)  Counts or note
 1.10  first visit: 1=  2=  3=  4=  5=  6=  7=  8=  9=  10=
       after 2.2:   1=  2=  3=  4=  5=  6=  7=  8=  9=  10=
       RESULTS_DB shape:   Service lookup:   line 6 job users=  groups=  Service users=  groups=
+      repo_http_token_present: yes/no
 2.1   report-only warnings:   parent address (if any):
 2.2
 2.3   seen/not seen

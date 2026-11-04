@@ -555,6 +555,7 @@ def setup_summary():
         tool_ref=(facts.job or {}).get("repo_ref"), lines=setup.evaluate(facts),
         database_shape=settings.database_shape if settings is not None and settings.job is not None else None,
         service_method=facts.service_method, sharing=setup.sharing_counts(facts),
+        repo_token_present=facts.repo_token_present,
         results_state=situation.results_state, scan=scan_data, checklist=checklist, scan_run_rows=run_rows,
     ))
     return render_template("summary.html", **base_context("setup", situation), text=text, scans=scans,

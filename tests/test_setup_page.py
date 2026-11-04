@@ -376,3 +376,46 @@ def test_every_preview_state_renders_the_setup_page(tmp_path, monkeypatch):
         assert words in failures
     assert "results_storage Fail The results schema does not exist." in results["schema-missing"]
     assert "job_found Fail SCANNER_JOB_ID is not set" in results["no-job-id"]
+
+
+# --- REPO_HTTP_TOKEN (17.2.26) -----------------------------------------------------------------
+
+FAKE_REPO_TOKEN = "ghp_zqmarkFAKEREPOTOKEN000000000000000000"  # pragma: allowlist secret  gitleaks:allow
+
+
+@pytest.mark.parametrize("env, result", [
+    ({}, "pass"),
+    ({"REPO_HTTP_TOKEN": ""}, "pass"),
+    ({"REPO_HTTP_TOKEN": "   "}, "pass"),
+    ({"REPO_HTTP_TOKEN": FAKE_REPO_TOKEN}, "review"),
+])
+def test_repo_http_token_is_review_by_presence_only(env, result):
+    line = lines_for(env=env)["service"]
+    assert line.result == result
+    if result == "review":
+        assert line.reason == "Civis added the deploying user's GitHub token to this Service; the app does not read it or contact GitHub."
+        assert line.fix == "To keep it out, deploy the Service as a user with no GitHub credentials on their Civis profile."
+    assert FAKE_REPO_TOKEN not in repr(line)
+
+
+def test_repo_http_token_does_not_hide_a_failure():
+    source = Source(service=app_service(credentials=[{"id": 9, "name": "x"}]))
+    line = lines_for(source=source, env={"REPO_HTTP_TOKEN": FAKE_REPO_TOKEN})["service"]
+    assert line.result == "fail" and "1 credential attached" in line.reason and "GitHub token" in line.reason
+    assert line.fix.endswith("with no GitHub credentials on their Civis profile.")
+
+
+def test_repo_http_token_value_never_reaches_the_page_the_summary_or_a_log(civis_app, monkeypatch, caplog):
+    monkeypatch.setenv("REPO_HTTP_TOKEN", FAKE_REPO_TOKEN)
+    app, _, _ = civis_app()
+    with caplog.at_level(logging.DEBUG):
+        setup_body = app.test_client().get("/setup").get_data(as_text=True)
+        summary_body = app.test_client().get("/setup/summary").get_data(as_text=True)
+        other = [app.test_client().get(url).get_data(as_text=True) for url in ("/", "/scan", "/api/scan-status")]
+    for body in [setup_body, summary_body, *other]:
+        assert FAKE_REPO_TOKEN not in body and "zqmark" not in body
+    assert all(FAKE_REPO_TOKEN not in r.getMessage() for r in caplog.records)
+    assert "7 This app's own Service service Review Civis added the deploying user's GitHub token" in _text(setup_body)
+    assert "repo_http_token_present: yes" in summary_body
+    monkeypatch.delenv("REPO_HTTP_TOKEN")
+    assert "repo_http_token_present: no" in app.test_client().get("/setup/summary").get_data(as_text=True)
