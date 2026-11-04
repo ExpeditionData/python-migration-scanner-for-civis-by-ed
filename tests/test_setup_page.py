@@ -11,6 +11,9 @@ import re
 
 import pytest
 
+# The scanner image has no Flask, and importing any app module loads it. These tests run in the Service image.
+pytest.importorskip("flask", reason="Flask is not in this image (the scanner image)")
+
 from app import setup
 from app.backends.base import StorageFacts
 from app.job_settings import parse_job, unreadable

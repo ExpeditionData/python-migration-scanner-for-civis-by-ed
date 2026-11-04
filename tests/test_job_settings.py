@@ -9,6 +9,9 @@ import json
 
 import pytest
 
+# The scanner image has no Flask, and importing any app module loads it. These tests run in the Service image.
+pytest.importorskip("flask", reason="Flask is not in this image (the scanner image)")
+
 from app.backends.base import error_token, plain
 from app.job_settings import DATABASE_SHAPES, database_value, parse_job
 from tests.civis_fakes import FakeAPIError, FakeCivisClient, FakeResponse, RecordingIO, scanner_job

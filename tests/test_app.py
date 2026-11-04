@@ -625,6 +625,8 @@ def test_the_service_has_no_results_settings_of_its_own():
     removed = ("RESULTS_DATABASE", "RESULTS_CREDENTIAL_ID")
     root = Path(__file__).resolve().parent.parent
     for path in [*(root / "app").rglob("*.py"), root / "README.md", root / "TESTING.md", root / ".env.example"]:
+        if not path.exists():  # .dockerignore keeps .env files out of the test images.
+            continue
         text = path.read_text(encoding="utf-8")
         assert not any(name in text for name in removed), path.name
     assert not hasattr(Settings(), "results_schema")
