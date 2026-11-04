@@ -6,8 +6,10 @@ the SQL text is validated and escaped by ``common/sql.py`` and every name is
 validated as an identifier. Each read starts a query run in Civis, so the app
 caches results (see app/backends/cache.py).
 
-Scanner job calls: scripts.list_containers_runs, list_containers_runs_logs,
-post_containers_runs, list_containers_runs_outputs, and files.get.
+Scanner job calls: scripts.get_containers (the job's settings, which hold the
+results database, credential, and schema), list_containers_runs,
+list_containers_runs_logs, post_containers_runs, list_containers_runs_outputs,
+and files.get.
 """
 
 from __future__ import annotations
@@ -17,7 +19,10 @@ from typing import Any
 
 from common import sql
 from common.schema import CHECKLIST_STATUS, SCAN_RUNS, TABLES, checklist_insert_sql
-from app.backends.base import ChecklistSaveError, JobRun, LogLine, ResultsUnavailable, normalize_row
+from app.backends.base import (
+    ChecklistSaveError, JobRun, LogLine, ResultsUnavailable, error_token, normalize_row, plain,
+)
+from app.job_settings import JobSettings, parse_job, unreadable
 
 TABLE_NAMES = {t.name for t in TABLES}
 LOG_PAGE = 1000
@@ -32,7 +37,10 @@ def _get(obj: Any, key: str, default: Any = None) -> Any:
 
 
 class CivisResults:
-    def __init__(self, client: Any, io_module: Any, database: str, schema: str, credential_id: int | None):
+    """``database`` is a database ID (from the scanner job's RESULTS_DB parameter) or a name;
+    civis.io accepts either."""
+
+    def __init__(self, client: Any, io_module: Any, database: int | str, schema: str, credential_id: int | None):
         self.client = client
         self.io = io_module
         self.database = database
@@ -103,6 +111,16 @@ class CivisJobs:
     def __init__(self, client: Any, job_id: int | None):
         self.client = client
         self.job_id = job_id
+
+    def settings(self) -> JobSettings:
+        """The results database, credential, and schema from the job's parameters. Reads only."""
+        try:
+            job = plain(self.client.scripts.get_containers(self.job_id))
+        except Exception as exc:
+            return unreadable(error_token(exc))
+        if not isinstance(job, dict):
+            return unreadable("Exception")
+        return parse_job(job)
 
     def runs(self, limit: int = 20) -> list[JobRun]:
         rows = self.client.scripts.list_containers_runs(self.job_id, limit=limit)

@@ -235,12 +235,9 @@ cancelled or hit the 5-day limit for container scripts):
 
    | Key | Value |
    |---|---|
-   | `SCANNER_JOB_ID` | The scanner job's ID from step 6 above. |
-   | `RESULTS_DATABASE` | The name of the database chosen in the job's `RESULTS_DB` parameter. |
-   | `RESULTS_SCHEMA` | The same schema as the job's `RESULTS_SCHEMA` parameter. |
+   | `SCANNER_JOB_ID` | The scanner job's ID from step 6 above. The app reads the results database, credential, and schema from the job's `RESULTS_DB` and `RESULTS_SCHEMA` parameters. |
    | `CIVIS_SERVICE_HEALTH_PATH` | `/healthz` |
    | `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` | `true` for the first deployment only. Change it to `false` once the app shows correctly inside Civis (see below). |
-   | `RESULTS_CREDENTIAL_ID` | Optional. A database credential ID for reading results. Leave it out to use the Robot user's default credential. |
    | `CIVIS_PLATFORM_URL` | Optional. Leave it out unless your Civis web interface is not at `https://platform.civisanalytics.com`. |
    | `CIVIS_FRAME_ANCESTORS` | Optional. Leave it out unless Civis shows Services from a different address. |
 

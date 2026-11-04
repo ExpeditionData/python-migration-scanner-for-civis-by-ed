@@ -322,12 +322,17 @@ def test_safe_error_never_includes_the_message():
 
 
 def test_app_never_reads_a_github_token():
+    """The app names the scanner job's GITHUB parameter only as the string "GITHUB", to check its type on
+    the Setup page and in the preview's made-up job. It reads no token and no environment variable for it.
+    REPO_HTTP_TOKEN is the token Civis may insert into a Service; the app never names it."""
     pattern = re.compile(r"GITHUB|GH_TOKEN|REPO_HTTP_TOKEN|github_token", re.IGNORECASE)
-    offenders = [
-        p.relative_to(ROOT).as_posix()
-        for p in (ROOT / "app").rglob("*")
-        if p.is_file() and p.suffix in (".py", ".html", ".js") and pattern.search(p.read_text(encoding="utf-8"))
-    ]
+    offenders = []
+    for p in (ROOT / "app").rglob("*"):
+        if not (p.is_file() and p.suffix in (".py", ".html", ".js")):
+            continue
+        for number, line in enumerate(p.read_text(encoding="utf-8").splitlines(), start=1):
+            if pattern.search(line.replace('"GITHUB"', "")) or ('"GITHUB"' in line and "environ" in line):
+                offenders.append(f"{p.relative_to(ROOT).as_posix()}:{number}")
     assert offenders == []
 
 

@@ -296,6 +296,8 @@ def test_checklist_save_rejects_values_that_are_not_allowed(app, monkeypatch):
     ("failed", "The last scan failed before it finished."),
     ("tables-failed", "could not save its results tables"),
     ("no-job-id", "Run scan is turned off because SCANNER_JOB_ID is not set"),
+    ("job-unreadable", "Run scan is turned off because the scanner job could not be read"),
+    ("database-unrecognized", "The scanner job's database setting could not be read"),
 ])
 def test_empty_and_error_states(preview, monkeypatch, state, expected):
     monkeypatch.delenv("FLASK_DEBUG", raising=False)
@@ -315,11 +317,11 @@ def test_no_job_id_turns_off_run_scan(preview, monkeypatch):
     assert response.headers["Location"].endswith("/scan?notice=no-job")
 
 
-def test_results_not_configured_in_civis_mode(monkeypatch):
+def test_no_job_id_in_civis_mode(monkeypatch):
     monkeypatch.delenv("FLASK_DEBUG", raising=False)
     app = create_app({"SECRET_KEY": SECRET, "SERVICES": Services(Settings(), None, None)})
     page = text_of(app.test_client().get("/"))
-    assert "The results schema is not set" in page and "SCANNER_JOB_ID is not set" in page
+    assert "The scanner job is not set" in page and "SCANNER_JOB_ID is not set" in page
 
 
 def test_saving_needs_a_civis_user(monkeypatch):
@@ -612,10 +614,20 @@ def test_normalize_row_types():
 
 
 def test_settings_from_env():
-    settings = Settings.from_env({"SCANNER_JOB_ID": "77", "RESULTS_DATABASE": "analytics", "RESULTS_SCHEMA": "results"})
-    assert (settings.scanner_job_id, settings.results_configured, settings.problem) == (77, True, None)
-    bad = Settings.from_env({"SCANNER_JOB_ID": "abc", "RESULTS_SCHEMA": "results; DROP"})
-    assert bad.scanner_job_id is None and bad.results_schema is None and "SCANNER_JOB_ID" in bad.problem
+    settings = Settings.from_env({"SCANNER_JOB_ID": "77"})
+    assert (settings.scanner_job_id, settings.problem) == (77, None)
+    bad = Settings.from_env({"SCANNER_JOB_ID": "abc"})
+    assert bad.scanner_job_id is None and "SCANNER_JOB_ID" in bad.problem
+
+
+def test_the_service_has_no_results_settings_of_its_own():
+    """The results database, credential, and schema come from the scanner job only (docs/PLAN.md 17.2)."""
+    removed = ("RESULTS_DATABASE", "RESULTS_CREDENTIAL_ID")
+    root = Path(__file__).resolve().parent.parent
+    for path in [*(root / "app").rglob("*.py"), root / "README.md", root / "TESTING.md", root / ".env.example"]:
+        text = path.read_text(encoding="utf-8")
+        assert not any(name in text for name in removed), path.name
+    assert not hasattr(Settings(), "results_schema")
 
 
 # --- Accessibility: text contrast ----------------------------------------------------------

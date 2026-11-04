@@ -179,12 +179,13 @@ def summarize_scan_runs(rows: list[dict]) -> list[ScanRun]:
 
 @dataclass
 class Situation:
-    results_state: str  # ok, no_tables, schema_missing, not_configured, error
+    results_state: str  # ok, no_tables, schema_missing, not_configured, job_unreadable, error
     job_configured: bool
     jobs_error: bool = False
     runs: list[JobRun] = field(default_factory=list)
     scans: list[ScanRun] = field(default_factory=list)
     settings_problem: str | None = None
+    job_problem: str | None = None  # Why the scanner job's settings cannot be used (app/job_settings.py).
 
     @property
     def active_run(self) -> JobRun | None:
@@ -220,8 +221,12 @@ class Situation:
         return None
 
     @property
+    def job_readable(self) -> bool:
+        return self.job_configured and self.job_problem != "job_unreadable"
+
+    @property
     def can_start(self) -> bool:
-        return self.job_configured and not self.jobs_error and self.active_run is None
+        return self.job_readable and not self.jobs_error and self.active_run is None
 
 
 # ---------------------------------------------------------------------------

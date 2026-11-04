@@ -16,15 +16,45 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from common.schema import TABLES
 
+if TYPE_CHECKING:
+    from app.job_settings import JobSettings
+
 ACTIVE_STATES = frozenset({"queued", "running"})
+_ERROR_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,99}$")
+
+
+def plain(value: Any) -> Any:
+    """A civis Response (or a list of them) as plain dicts and lists.
+
+    civis 2.7.1's ``Response.json()`` gives snake_case keys, except inside
+    ``arguments`` and ``environmentVariables``, whose keys keep their case
+    (RESULTS_DB stays RESULTS_DB)."""
+    if isinstance(value, dict):
+        return {k: plain(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [plain(v) for v in value]
+    to_json = getattr(value, "json", None)
+    if callable(to_json) and not isinstance(value, (str, bytes)):
+        return plain(to_json())
+    return value
+
+
+def error_token(exc: BaseException) -> str:
+    """An exception's class name, plus its HTTP status if it has one. Never its message."""
+    name = type(exc).__name__
+    name = name if _ERROR_NAME.match(name) else "Exception"
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int) and not isinstance(status, bool) and 100 <= status <= 599:
+        return f"{name} status={status}"
+    return name
 
 
 class ResultsUnavailable(Exception):
-    """The results cannot be read. ``kind``: not_configured, schema_missing, or error."""
+    """The results cannot be read. ``kind``: not_configured, job_unreadable, schema_missing, or error."""
 
     def __init__(self, kind: str):
         super().__init__(kind)
@@ -69,6 +99,7 @@ class Results(Protocol):
 
 class Jobs(Protocol):
     job_id: int | None
+    def settings(self) -> "JobSettings": ...  # The results database, credential, and schema from the job.
     def runs(self, limit: int = 20) -> list[JobRun]: ...
     def logs(self, run_id: int, last_id: int | None = None) -> list[LogLine]: ...
     def start(self) -> JobRun: ...

@@ -22,10 +22,35 @@ from typing import Any
 from common.schema import CHECKLIST_STATUS, SCAN_RUNS, TABLES
 from common import sql
 from app.backends.base import ChecklistSaveError, JobRun, LogLine, ResultsUnavailable, normalize_row
+from app.job_settings import JobSettings, parse_job, unreadable
 
 LOCAL_SCHEMA = "dry_run_results"
 TABLE_NAMES = {t.name for t in TABLES}
-STATES = ("normal", "no-scan", "first-scan-running", "failed", "tables-failed", "schema-missing", "no-job-id")
+STATES = (
+    "normal", "no-scan", "first-scan-running", "failed", "tables-failed", "schema-missing", "no-job-id",
+    "job-unreadable", "database-unrecognized",
+)
+# Made-up IDs for the preview's scanner job settings.
+PREVIEW_DATABASE_ID = 3
+PREVIEW_CREDENTIAL_ID = 4
+PREVIEW_ROBOT = {"id": 15, "name": "Example Robot", "username": "example_robot"}
+
+
+def preview_job(job_id: int, state: str = "normal") -> dict:
+    """Made-up scanner job settings, shaped like civis's get_containers response (snake_case keys)."""
+    database = {"database": PREVIEW_DATABASE_ID, "credential": PREVIEW_CREDENTIAL_ID}
+    if state == "database-unrecognized":
+        database = "example-database-name"
+    return {
+        "id": job_id, "name": "Example scanner job", "author": dict(PREVIEW_ROBOT), "running_as": dict(PREVIEW_ROBOT),
+        "params": [
+            {"name": "RESULTS_DB", "type": "database", "required": True},
+            {"name": "RESULTS_SCHEMA", "type": "string", "required": True},
+            {"name": "GITHUB", "type": "credential_custom", "required": False},
+            {"name": "LOOKBACK_DAYS", "type": "integer", "required": False, "default": "200"},
+        ],
+        "arguments": {"RESULTS_DB": database, "RESULTS_SCHEMA": LOCAL_SCHEMA},
+    }
 
 
 class LocalResults:
@@ -113,6 +138,11 @@ class LocalJobs:
         self._outputs = data.get("outputs", {})
         self._lock = threading.Lock()
         self._apply_state()
+
+    def settings(self) -> JobSettings:
+        if self.state == "job-unreadable":
+            return unreadable("CivisAPIError status=404")
+        return parse_job(preview_job(self.job_id, self.state))
 
     def _apply_state(self) -> None:
         if self.state == "no-scan":

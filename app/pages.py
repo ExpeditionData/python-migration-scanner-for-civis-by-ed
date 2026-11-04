@@ -49,8 +49,29 @@ def viewer_name() -> str | None:
     return name or None
 
 
+JOB_PROBLEMS = {
+    "database_missing": {
+        "title": "The results database is not set",
+        "body": "Choose the results database and its credential in the scanner job's RESULTS_DB parameter, and save "
+                "the job. The app reads the job's settings again within 5 minutes."},
+    "database_unrecognized": {
+        "title": "The scanner job's database setting could not be read",
+        "body": "The app did not recognize the value of the scanner job's RESULTS_DB parameter. Choose the database "
+                "and its credential in that parameter again, and save the job."},
+    "schema_missing": {
+        "title": "The results schema is not set",
+        "body": "Type the results schema name in the scanner job's RESULTS_SCHEMA parameter, and save the job. The "
+                "app reads the job's settings again within 5 minutes."},
+    "schema_invalid": {
+        "title": "The results schema name is not valid",
+        "body": "The scanner job's RESULTS_SCHEMA parameter must be a plain schema name: letters, numbers, and "
+                "underscores, starting with a letter or underscore."},
+}
+
+
 def load_situation() -> views.Situation:
     svc = services()
+    job_settings = svc.job_settings() if svc.jobs_provider else None
     if svc.results is None:
         results_state = "not_configured"
     else:
@@ -74,6 +95,7 @@ def load_situation() -> views.Situation:
     return views.Situation(
         results_state=results_state, job_configured=jobs is not None, jobs_error=jobs_error,
         runs=runs, scans=scans, settings_problem=svc.settings.problem,
+        job_problem=job_settings.problem if job_settings else None,
     )
 
 
@@ -84,6 +106,10 @@ def banners(situation: views.Situation) -> list[dict]:
     if not situation.job_configured:
         items.append({"kind": "warning", "text": "Run scan is turned off because SCANNER_JOB_ID is not set on this "
                       "Service. Ask the admin who set up the tool to add the scanner job's ID."})
+    elif not situation.job_readable:
+        items.append({"kind": "error", "text": "Run scan is turned off because the scanner job could not be read "
+                      "from Civis. Check that SCANNER_JOB_ID is the scanner job's ID and that the Service owner can "
+                      "see that job."})
     elif situation.jobs_error:
         items.append({"kind": "error", "text": "The scanner job's runs could not be read from Civis. Check that "
                       "SCANNER_JOB_ID is correct and that the Service owner can see that job."})
@@ -111,18 +137,26 @@ def empty_state(situation: views.Situation) -> dict | None:
     if situation.current is not None:
         return None
     state = situation.results_state
+    if not situation.job_configured:
+        return {"title": "The scanner job is not set",
+                "body": "Set SCANNER_JOB_ID on this Service to the scanner job's ID, then redeploy the Service. The "
+                        "app reads the results database and schema from the scanner job's parameters."}
+    if state == "job_unreadable" or not situation.job_readable:
+        return {"title": "The scanner job could not be read",
+                "body": "The app reads the results database and schema from the scanner job, and Civis did not "
+                        "return the job. Check that SCANNER_JOB_ID is the scanner job's ID and that the Service "
+                        "owner can see that job."}
     if state == "not_configured":
-        return {"title": "The results schema is not set",
-                "body": "Set RESULTS_DATABASE and RESULTS_SCHEMA on this Service to the database and schema the "
-                        "scanner job writes to, then redeploy the Service."}
+        return dict(JOB_PROBLEMS.get(situation.job_problem or "", JOB_PROBLEMS["database_missing"]))
     if state == "schema_missing":
         return {"title": "The results schema does not exist yet",
-                "body": "Ask a database admin to create the schema named in RESULTS_SCHEMA and give the Service "
-                        "owner access to it. The scanner creates its tables there on its first run."}
+                "body": "Ask a database admin to create the schema named in the scanner job's RESULTS_SCHEMA "
+                        "parameter and give the Service owner access to it. The scanner creates its tables there "
+                        "on its first run."}
     if state == "error":
         return {"title": "Results could not be read",
-                "body": "The app could not read the results tables. Check that RESULTS_DATABASE and "
-                        "RESULTS_SCHEMA are correct and that the Service owner can read the schema."}
+                "body": "The app could not read the results tables. Check the scanner job's RESULTS_DB and "
+                        "RESULTS_SCHEMA parameters, and that the Service owner can read the schema."}
     if situation.active_run is not None:
         return {"title": "The first scan is running", "body": "Results appear here when it finishes.",
                 "link": url_for("pages.scan"), "link_text": "See progress"}

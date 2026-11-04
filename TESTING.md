@@ -271,10 +271,11 @@ finish the step the way the interface allows and record the difference.
 
 ### 4.3 Results schema check on Redshift (PLAN.md 14.11)
 
-- **Steps:** Item 1.8 checked the "No scan yet" state. Now set the Service's
-  `RESULTS_SCHEMA` to a schema that does not exist (for example
-  `pmsc_no_such_schema`), click **Update Deployment**, and open the app. Then
-  set it back and update again.
+- **Steps:** Item 1.8 checked the "No scan yet" state. Now set the scanner
+  job's `RESULTS_SCHEMA` parameter to a schema that does not exist (for
+  example `pmsc_no_such_schema`), save the job, wait 5 minutes (the app reads
+  the job's settings again after that), and open the app. Then set it back,
+  save, and wait again.
 - **Expected:** "The results schema does not exist yet". After setting it
   back, the results show again.
 - **Record:** pass or fail for each state.
