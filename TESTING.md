@@ -144,8 +144,8 @@ finish the step the way the interface allows and record the difference.
 - **Steps:** Open the app before clicking anything.
 - **Expected:** "The results schema does not exist yet", a **Set up results
   storage** button, and **Run scan** off with one line pointing to the button.
-  This confirms the `information_schema.schemata` check on Redshift for a
-  missing schema (PLAN.md 14.11).
+  This confirms the `pg_catalog.pg_namespace` check on Redshift for a
+  missing schema (PLAN.md 14.11 and 17.2.21).
 - **Record:** pass or fail; the heading shown if different.
 
 ### 1.9 Set up results storage

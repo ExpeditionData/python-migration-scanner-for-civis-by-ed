@@ -24,7 +24,7 @@ from tests.civis_fakes import FakeAPIError, FakeCivisClient, RecordingIO, scanne
 SECRET = "storage-setup-test-secret-key-long-enough-1"  # pragma: allowlist secret  gitleaks:allow
 SCHEMA = "migration_results"
 SQL_ERROR_TEXT = "permission denied for database example_secret_db owned by example_person"
-SCHEMA_ROWS = {"information_schema.schemata": [["schema_name"], [SCHEMA]]}
+SCHEMA_ROWS = {"pg_catalog.pg_namespace": [["nspname"], [SCHEMA]]}
 
 
 def build(client=None, io=None):
@@ -78,6 +78,24 @@ def test_admin_statement_uses_a_placeholder_when_the_user_cannot_be_written_safe
 
 
 # --- Inside Civis ----------------------------------------------------------------------------
+
+
+def test_existence_checks_read_pg_catalog_with_the_lower_case_name():
+    """Redshift (PostgreSQL 8.0) lists in information_schema only schemas the user owns; pg_catalog lists all.
+    Unquoted names are stored in lower case."""
+    from app.backends.civis_backend import CivisResults
+
+    io = RecordingIO({"pg_catalog.pg_namespace": [["nspname"], ["migration_results"]],
+                      "pg_catalog.pg_tables": [["tablename"], ["scan_runs"], ["objects"]]})
+    store = CivisResults(FakeCivisClient(), io, 31, "Migration_Results", 41)
+    assert store.check() == "ok"
+    assert io.reads == [
+        "SELECT nspname FROM pg_catalog.pg_namespace WHERE nspname = 'migration_results'",
+        "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'migration_results' AND tablename IN "
+        "('scan_runs', 'objects', 'findings', 'coverage', 'checklist_status')",
+    ]
+    facts = store.storage_facts()
+    assert facts.schema_exists and facts.tables == frozenset({"scan_runs", "objects"}) and facts.readable is None
 
 
 def test_nothing_runs_on_a_get_and_the_button_is_a_csrf_post():

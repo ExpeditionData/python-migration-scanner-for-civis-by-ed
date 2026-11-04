@@ -362,8 +362,8 @@ class FakeCivisIO:
 
 def test_civis_results_reads_escaped_sql_and_normalizes_text():
     fake = FakeCivisIO({
-        "information_schema.schemata": [["schema_name"], ["results"]],
-        "information_schema.tables": [["table_name"], ["scan_runs"]],
+        "pg_catalog.pg_namespace": [["nspname"], ["results"]],
+        "pg_catalog.pg_tables": [["tablename"], ["scan_runs"]],
         "results.objects": [["run_id", "object_id", "owner_active", "name"], ["run-1", "101", "f", "Example"]],
     })
     store = CivisResults(object(), fake, "analytics", "results", 77)

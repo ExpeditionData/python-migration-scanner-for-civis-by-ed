@@ -7,7 +7,8 @@ Drives every code path that sends SQL, with a recording fake civis.io:
   the Setup page, and the test summary
 
 Each statement must start with CREATE SCHEMA IF NOT EXISTS, CREATE TABLE IF NOT EXISTS, SELECT, INSERT, or
-DELETE; name only the results schema's five tables, or read information_schema; contain no GRANT, REVOKE,
+DELETE; name only the results schema's five tables, or read pg_catalog.pg_namespace or pg_catalog.pg_tables (the
+existence checks; no other pg_catalog object, and no information_schema); contain no GRANT, REVOKE,
 DROP, ALTER, TRUNCATE, UPDATE, COPY, or UNLOAD; and hold one statement only. Made-up data only.
 """
 
@@ -25,7 +26,7 @@ STARTS = re.compile(r"^(CREATE SCHEMA IF NOT EXISTS|CREATE TABLE IF NOT EXISTS|S
 FORBIDDEN = re.compile(r"\b(GRANT|REVOKE|DROP|ALTER|TRUNCATE|UPDATE|COPY|UNLOAD)\b", re.IGNORECASE)
 TARGET = re.compile(r"\b(?:FROM|INTO|USING|JOIN|TABLE IF NOT EXISTS|SCHEMA IF NOT EXISTS)\s+([A-Za-z_][\w.]*)", re.IGNORECASE)
 QUALIFIED = re.compile(r"\b([A-Za-z_]\w*)\.([A-Za-z_]\w*)")
-INFORMATION_SCHEMA = {"schemata", "tables"}
+CATALOG = {"pg_namespace", "pg_tables"}  # Existence checks only.
 
 
 def _without_literals(statement: str) -> str:
@@ -46,13 +47,13 @@ def scope_problems(statement: str, schema: str) -> list[str]:
             owner, _, name = target.partition(".")
             if owner == schema and name in TABLE_NAMES:
                 continue
-            if owner == "information_schema" and name in INFORMATION_SCHEMA:
+            if owner == "pg_catalog" and name in CATALOG:
                 continue
             problems.append(f"names {target}")
         elif not (text.startswith("CREATE SCHEMA IF NOT EXISTS") and target == schema):
             problems.append(f"names {target}")
     for owner, _ in QUALIFIED.findall(text):
-        if owner not in (schema, "information_schema", "newer"):  # "newer" is the retention DELETE's alias.
+        if owner not in (schema, "pg_catalog", "newer"):  # "newer" is the retention DELETE's alias.
             problems.append(f"names schema {owner}")
     return problems
 
@@ -69,9 +70,18 @@ def scope_problems(statement: str, schema: str) -> list[str]:
     "CREATE SCHEMA IF NOT EXISTS other_schema",
     "INSERT INTO results.findings SELECT * FROM other_schema.findings",
     "ALTER TABLE results.findings ADD COLUMN x INT",
+    "SELECT table_name FROM information_schema.tables WHERE table_schema = 'results'",
+    "SELECT usename FROM pg_catalog.pg_user",
+    "SELECT * FROM pg_catalog.pg_class",
 ])
 def test_the_checker_catches_statements_outside_the_scope(statement):
     assert scope_problems(statement, "results")
+
+
+def test_the_checker_allows_the_two_catalog_reads():
+    assert scope_problems("SELECT nspname FROM pg_catalog.pg_namespace WHERE nspname = 'results'", "results") == []
+    assert scope_problems("SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'results' "
+                          "AND tablename IN ('scan_runs')", "results") == []
 
 
 def test_the_checker_allows_literals_that_look_like_sql():
@@ -140,7 +150,7 @@ def test_app_statements_stay_in_the_results_schema(monkeypatch):
     assert web.post("/setup/storage", headers=headers, data={"csrf_token": token}).status_code == 200
     _assert_in_scope(io, schema)
     kinds = {" ".join(s.split()[:2]) for s in io.statements}
-    assert {"SELECT schema_name", "INSERT INTO", "CREATE TABLE"} <= kinds
+    assert {"SELECT nspname", "SELECT tablename", "INSERT INTO", "CREATE TABLE"} <= kinds
 
     # A missing schema: the button also sends CREATE SCHEMA IF NOT EXISTS.
     empty = RecordingIO()

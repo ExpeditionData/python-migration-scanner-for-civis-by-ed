@@ -63,31 +63,40 @@ class CivisResults:
 
     def check(self) -> str:
         try:
-            schemas = self._read(
-                "SELECT schema_name FROM information_schema.schemata WHERE schema_name = " + sql.string(self.schema)
-            )
-            if not schemas:
+            if not self._schema_exists():
                 raise ResultsUnavailable("schema_missing")
-            tables = self._read(
-                "SELECT table_name FROM information_schema.tables WHERE table_schema = " + sql.string(self.schema)
-                + " AND table_name = " + sql.string(SCAN_RUNS.name)
-            )
+            tables = self._existing_tables()
         except ResultsUnavailable:
             raise
         except Exception:
             raise ResultsUnavailable("error") from None
-        return "ok" if tables else "no_tables"
+        return "ok" if SCAN_RUNS.name in tables else "no_tables"
 
     def _query(self, statement: str) -> None:
         self.io.query_civis(
             statement, self.database, client=self.client, credential_id=self.credential_id, hidden=True
         ).result()
 
+    # Existence checks read pg_catalog, not information_schema. Redshift is based on PostgreSQL 8.0, and before
+    # PostgreSQL 9.3 information_schema.schemata lists only schemas owned by a currently enabled role, so a schema
+    # a database admin created and granted to the RESULTS_DB user would look missing. pg_namespace and pg_tables
+    # list every schema and table whatever the user's privileges. Every name in this app's SQL is an unquoted
+    # identifier, which the database stores in lower case, so the catalogs are searched for the lower-case name.
+
+    def _catalog_name(self) -> str:
+        return sql.string(self.schema.lower())
+
     def _schema_exists(self) -> bool:
-        rows = self._read(
-            "SELECT schema_name FROM information_schema.schemata WHERE schema_name = " + sql.string(self.schema)
-        )
+        rows = self._read(f"SELECT nspname FROM pg_catalog.pg_namespace WHERE nspname = {self._catalog_name()}")
         return bool(rows)
+
+    def _existing_tables(self) -> frozenset:
+        names = ", ".join(sql.string(t.name) for t in TABLES)
+        rows = self._read(
+            f"SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = {self._catalog_name()} "
+            f"AND tablename IN ({names})"
+        )
+        return frozenset(str(r.get("tablename")) for r in rows) & TABLE_NAMES
 
     def database_user(self) -> str | None:
         """The user name on the RESULTS_DB credential (credentials.get). None if there is no credential or it
@@ -134,12 +143,9 @@ class CivisResults:
         except Exception as exc:
             return StorageFacts(error=error_token(exc), step="schema")
         try:
-            rows = self._read(
-                "SELECT table_name FROM information_schema.tables WHERE table_schema = " + sql.string(self.schema)
-            )
+            tables = self._existing_tables()
         except Exception as exc:
             return StorageFacts(schema_exists=True, error=error_token(exc), step="tables")
-        tables = frozenset(str(r.get("table_name")) for r in rows) & TABLE_NAMES
         if tables != TABLE_NAMES:
             return StorageFacts(schema_exists=True, tables=tables)
         statement = " UNION ALL ".join(

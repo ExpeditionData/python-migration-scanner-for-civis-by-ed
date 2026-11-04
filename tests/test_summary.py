@@ -193,8 +193,8 @@ def _marked_io():
                  [RUN_B, "101", "CV3-ML", "fixed", f"{MARK}_admin", "2026-11-03 10:00:00"],
                  [RUN_B, "102", "CV3-ML", "open", "scanner", "2026-11-02 12:40:00"]]
     return RecordingIO({
-        "information_schema.schemata": [["schema_name"], [schema]],
-        "information_schema.tables": [["table_name"]] + [[t.name] for t in TABLES],
+        "pg_catalog.pg_namespace": [["nspname"], [schema]],
+        "pg_catalog.pg_tables": [["tablename"]] + [[t.name] for t in TABLES],
         "COUNT(*)": [["table_name", "row_count"], ["scan_runs", "4"]],
         f"{schema}.scan_runs": scan_runs,
         f"{schema}.objects": objects,

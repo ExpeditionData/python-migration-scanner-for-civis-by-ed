@@ -116,8 +116,8 @@ def civis_app(monkeypatch):
 
     def build(client, io=None, now=None):
         io = io or RecordingIO({
-            "information_schema.schemata": [["schema_name"], ["migration_results"]],
-            "information_schema.tables": [["table_name"], ["scan_runs"]],
+            "pg_catalog.pg_namespace": [["nspname"], ["migration_results"]],
+            "pg_catalog.pg_tables": [["tablename"], ["scan_runs"]],
         })
         services = civis_services(Settings(scanner_job_id=1234), client_factory=lambda: client, io_factory=lambda: io)
         if now is not None:
@@ -132,7 +132,7 @@ def test_the_app_reads_results_with_the_job_database_id_and_credential(civis_app
     app, _, io = civis_app(client)
     assert app.test_client().get("/").status_code == 200
     assert io.reads and set(io.databases) == {31} and set(io.credentials) == {41}
-    assert all("migration_results" in s for s in io.reads if "information_schema" not in s)
+    assert all("migration_results" in s for s in io.reads if "pg_catalog" not in s)
 
 
 def test_job_settings_are_cached_for_five_minutes_and_read_fresh_on_request(civis_app):

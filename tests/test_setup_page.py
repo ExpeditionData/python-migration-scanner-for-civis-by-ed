@@ -272,8 +272,8 @@ def civis_app(monkeypatch):
     def build(client=None, io=None, **config):
         client = client or FakeCivisClient()
         io = io or RecordingIO({
-            "information_schema.schemata": [["schema_name"], ["migration_results"]],
-            "information_schema.tables": [["table_name"]] + [[t.name] for t in TABLES],
+            "pg_catalog.pg_namespace": [["nspname"], ["migration_results"]],
+            "pg_catalog.pg_tables": [["tablename"]] + [[t.name] for t in TABLES],
             "COUNT(*)": [["table_name", "row_count"], ["scan_runs", "0"]],
         })
         services = civis_services(Settings(scanner_job_id=1234), client_factory=lambda: client, io_factory=lambda: io)
