@@ -52,9 +52,13 @@ for your review.
 ### Setup guidance for admins
 
 - **Run as the Robot user.** The scanner sees only what its user can see.
-- **Use a dedicated results schema.** Choose a schema used only for this tool,
-  and grant read access to Civis admins only. The tool does not run `GRANT`
-  statements.
+- **Use a dedicated results schema.** Choose a schema used only for this tool.
+  When the app creates it (or a database admin creates it with
+  `AUTHORIZATION`), the database user behind the scanner job's `RESULTS_DB`
+  credential owns it. Other database users have no access by default, apart
+  from superusers, so admins read results through the app. To query the
+  tables directly, use that credential, or ask a database admin to grant read
+  access. The tool does not run `GRANT` statements.
 - **Share the web app with Civis admins only.** Anyone who can open it sees the
   names, owners, and links of every object the scanning user can see, including
   private objects.

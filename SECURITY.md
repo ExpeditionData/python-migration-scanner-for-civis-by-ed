@@ -52,7 +52,9 @@ when a viewer clicks them, and they send no referrer.
 
 By design, the tool writes to two places, both inside Civis:
 
-- **The schema you name**, where it saves its result tables.
+- **The schema you name**, where it saves its result tables. If the schema
+  does not exist, the web app creates it, and its five tables, when an admin
+  clicks **Set up results storage**.
 - **The scanner job's own run outputs**, where it saves a CSV copy of the report.
 
 The web app starts runs of the scanner job you created, through the Civis API.
@@ -75,10 +77,36 @@ does not edit, archive, share, or delete your scripts, notebooks, Services, or
 workflows. The only job it runs is the scanner job you created, when someone
 clicks **Run scan** in the web app.
 
-**Writes:** to the schema you name and to the scanner job's run outputs.
+**Writes:** the tool is designed to write only these:
+
+- the results schema you name, and the five tables it creates in it
+- rows in those five tables
+- runs of the scanner job, started from the web app
+- the CSV run output attached to each scanner run
+
+It is designed not to create, edit, share, archive, or delete any other Civis
+object, including the scanner job's settings and the Service. Every SQL
+statement it sends is designed to be one of `CREATE SCHEMA IF NOT EXISTS`,
+`CREATE TABLE IF NOT EXISTS`, `SELECT`, `INSERT`, or `DELETE` (the last only
+for `RETENTION_DAYS`), naming only the results schema or reading
+`information_schema` (`test_app_statements_stay_in_the_results_schema` and
+`test_scanner_sink_statements_stay_in_the_results_schema` in
+[tests/test_sql_scope.py](tests/test_sql_scope.py)).
 
 **Sees:** what the Civis user the scan runs as can see, and no more. We
 recommend running it as your Robot user.
+
+## What Civis records when the tool runs
+
+Civis creates records for any use of its API, including this tool's. They are
+new records; the tool is designed not to change existing objects.
+
+- **Query records.** Civis saves each SQL statement the tool sends (result
+  table reads and writes, the checklist save, and the setup and Setup page
+  checks) as a hidden query record owned by the Civis user it runs as.
+- **Import records.** Each table write adds hidden import records and files.
+- **Scanner runs.** Each scan adds a run on the scanner job, with the CSV file
+  attached to it.
 
 ## Sensitive content in code, logs, and notebooks
 
@@ -129,8 +157,9 @@ all of it as sensitive.
     read it (`test_app_never_reads_a_github_token` in
     [tests/test_security.py](tests/test_security.py)).
 - **Database credential.** The scanner writes results with the Civis database
-  credential you choose in its Database parameter. The tool is designed not to
-  print, log, or store it.
+  credential you choose in its Database parameter, and the web app reads the
+  same choice from the scanner job and uses it to read results. The tool is
+  designed not to print, log, or store it.
 
 ## Who can see the results
 
@@ -138,7 +167,12 @@ The results list the names, owners, and links of every object the scanning user
 can see, including private objects. Treat them as internal and confidential.
 
 - **Use a dedicated schema.** Write results to a schema used only for this tool.
-  Grant read access to Civis admins only.
+- **Who owns the schema.** When the web app creates the results schema, or a
+  database admin creates it with `AUTHORIZATION`, the database user behind the
+  scanner job's `RESULTS_DB` credential owns it. Other database users have no
+  access by default, apart from superusers, so admins read results through the
+  app. To query the tables directly, use that credential, or ask a database
+  admin to grant read access.
 - **The tool does not change permissions.** It does not run `GRANT` statements
   (`test_no_code_runs_grant_statements` in
   [tests/test_security.py](tests/test_security.py)). You decide who can read
