@@ -322,12 +322,13 @@ def test_safe_error_never_includes_the_message():
 
 
 def test_app_never_reads_a_github_token():
-    """The app reads no GitHub token. It never names the token's environment variables (GITHUB_PASSWORD and the
-    other GITHUB_ names Civis sets), GH_TOKEN, or REPO_HTTP_TOKEN (a token Civis may insert into a Service).
+    """The app reads no GitHub token. It never names the token's environment variables (GITHUB_PASSWORD,
+    GITHUB_USERNAME, and GITHUB_ID, which Civis sets for the GITHUB parameter), GH_TOKEN, or REPO_HTTP_TOKEN (a
+    token Civis may insert into a Service). The summary's github_* counts from the scanner's RUN line are fine.
     The bare parameter name GITHUB appears only where the Setup page checks the parameter's type and in the
     preview's made-up job, and never on a line that reads the environment. "GitHub" in Civis field labels
     (GitHub Repository URL) is fine."""
-    token_names = re.compile(r"GITHUB_|GH_TOKEN|REPO_HTTP_TOKEN|github_token", re.IGNORECASE)
+    token_names = re.compile(r"GITHUB_(PASSWORD|USERNAME|ID|TOKEN)\b|GH_TOKEN|REPO_HTTP_TOKEN|github_token", re.IGNORECASE)
     parameter = re.compile(r"\bGITHUB\b")
     allowed = {"app/setup.py", "app/backends/local_backend.py"}
     offenders = []

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Test summary{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/copy-summary.js') }}" defer></script>{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Test summary</h1>
+    <p class="subtitle">Counts, fixed labels, and error types only, so you can share it with whoever supports your setup. It holds no names, addresses, code, or log text. Read it before you send it.</p>
+  </div>
+  <div class="actions">
+    <a class="button button-secondary" href="{{ url_for('pages.setup_page') }}">Back to Setup</a>
+  </div>
+</div>
+
+<section class="card" aria-labelledby="summary-heading">
+  <h2 id="summary-heading">Summary</h2>
+  {% if scans %}
+  <form method="get" action="{{ url_for('pages.setup_summary') }}" class="filters">
+    <label for="summary-run">Scan</label>
+    <select id="summary-run" name="run">
+      {% for scan in scans %}
+      <option value="{{ scan.run_id }}"{% if chosen and scan.run_id == chosen.run_id %} selected{% endif %}>{{ scan.label }} ({{ scan.run_id }})</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="button button-secondary">Build summary</button>
+  </form>
+  {% endif %}
+  <label for="summary-text" class="sr-only">Test summary text</label>
+  <textarea id="summary-text" class="summary-text" rows="30" readonly spellcheck="false">{{ text }}</textarea>
+  <p class="actions-row">
+    <button type="button" id="copy-summary" class="button button-primary" hidden>Copy</button>
+    <span id="copy-status" class="note" role="status" aria-live="polite">Select the text and copy it, then paste it into your message.</span>
+  </p>
+</section>
+{% endblock %}

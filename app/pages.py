@@ -480,6 +480,46 @@ def setup_page():
     return render_template("setup.html", **base_context("setup", situation), lines=setup.evaluate(facts))
 
 
+@bp.get("/setup/summary")
+def setup_summary():
+    """The test summary: counts, fixed labels, and error types only (app/summary.py). Reads only."""
+    from app import setup, summary
+
+    svc = services()
+    settings = svc.job_settings(fresh=True) if svc.jobs_provider else None
+    situation = load_situation()
+    facts = setup_facts(situation, settings)
+    scans = [s for s in situation.scans if summary.is_run_id(s.run_id)]
+    wanted = request.args.get("run", "")
+    chosen = next((s for s in scans if s.run_id == wanted), scans[0] if scans else None)
+    scan_data = checklist = run_rows = None
+    if chosen is not None:
+        scan_data = summary.ScanData(chosen.run_id, chosen.status, chosen.started_at, chosen.finished_at)
+        finished = chosen.status == "succeeded"
+        try:
+            scan_data.objects = svc.results.rows("objects", chosen.run_id, finished=finished)
+            scan_data.findings = svc.results.rows("findings", chosen.run_id, finished=finished)
+        except Exception:
+            scan_data.objects = scan_data.findings = None
+        jobs = svc.jobs()
+        if jobs is not None and chosen.civis_run_id:
+            scan_data.log = summary.read_log(jobs, chosen.civis_run_id)
+    if situation.results_state == "ok":
+        try:
+            checklist = svc.results.checklist()
+            run_rows = svc.results.scan_runs()
+        except Exception:
+            checklist = run_rows = None
+    text = summary.build(summary.SummaryInputs(
+        tool_ref=(facts.job or {}).get("repo_ref"), lines=setup.evaluate(facts),
+        database_shape=settings.database_shape if settings is not None and settings.job is not None else None,
+        service_method=facts.service_method, sharing=setup.sharing_counts(facts),
+        results_state=situation.results_state, scan=scan_data, checklist=checklist, scan_run_rows=run_rows,
+    ))
+    return render_template("summary.html", **base_context("setup", situation), text=text, scans=scans,
+                           chosen=chosen)
+
+
 @bp.get("/healthz")
 def healthz():
     return Response("ok", mimetype="text/plain")

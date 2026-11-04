@@ -323,6 +323,8 @@ tbody tr:nth-child(even) th { background: var(--stripe); }
 .setup-table th[scope="row"] { font-weight: 700; color: var(--primary); }
 .setup-reason, .setup-fix { margin: 0; }
 .setup-fix { margin-top: 4px; }
+.summary-text { display: block; width: 100%; box-sizing: border-box; margin-top: 12px; padding: 10px; font-family: var(--mono); font-size: 13px; color: var(--text); background: var(--surface); border: 1px solid var(--input-border); border-radius: 4px; resize: vertical; }
+.actions-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 12px 0 0; }
 
 .status-scanned { color: var(--primary); }
 .status-partial, .status-not_scanned, .status-pending { color: var(--affected); }

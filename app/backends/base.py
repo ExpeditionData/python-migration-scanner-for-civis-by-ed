@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from app.job_settings import JobSettings
 
 ACTIVE_STATES = frozenset({"queued", "running"})
+LOG_PAGE = 1000  # Log lines per read of a scanner run's log (Jobs.logs pages with last_id).
 _ERROR_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,99}$")
 
 

@@ -22,14 +22,14 @@ from typing import Any
 from common import sql
 from common.schema import CHECKLIST_STATUS, SCAN_RUNS, TABLES, admin_schema_sql, checklist_insert_sql, create_schema_sql
 from app.backends.base import (
-    ChecklistSaveError, JobRun, LogLine, ResultsUnavailable, StorageFacts, StorageSetup, error_token, normalize_row,
+    LOG_PAGE, ChecklistSaveError, JobRun, LogLine, ResultsUnavailable, StorageFacts, StorageSetup, error_token,
+    normalize_row,
     plain,
 )
 from app.job_settings import JobSettings, parse_job, unreadable
 
 TABLE_NAMES = frozenset(t.name for t in TABLES)
 MAX_SERVICES = 1000  # The Setup page looks at no more Services than this.
-LOG_PAGE = 1000
 
 
 def _get(obj: Any, key: str, default: Any = None) -> Any:
