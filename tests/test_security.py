@@ -363,7 +363,8 @@ def test_civis_writes_are_limited_to_the_scanner_job_and_the_results_schema():
         # Result tables in the schema the admin chose (create, insert, retention deletes).
         ("query_civis", "scanner/output.py"),
         ("dataframe_to_civis", "scanner/output.py"),
-        # The checklist save: one INSERT into the results schema.
+        # The web app, in the results schema only: the checklist save (one INSERT), and the "Set up results
+        # storage" button (CREATE SCHEMA IF NOT EXISTS, then CREATE TABLE IF NOT EXISTS for the five tables).
         ("query_civis", "app/backends/civis_backend.py"),
         # RETENTION_DAYS: the scanner's own result sink deletes expired runs from the results
         # schema, using the DELETE statements common/retention.py builds for that schema.

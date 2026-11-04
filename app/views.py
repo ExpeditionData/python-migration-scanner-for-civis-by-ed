@@ -225,8 +225,15 @@ class Situation:
         return self.job_configured and self.job_problem != "job_unreadable"
 
     @property
+    def storage_button(self) -> bool:
+        """Show "Set up results storage" while the schema or its tables are missing."""
+        return self.results_state in ("schema_missing", "no_tables")
+
+    @property
     def can_start(self) -> bool:
-        return self.job_readable and not self.jobs_error and self.active_run is None
+        """Run scan stays off while the results schema is missing (the button creates it)."""
+        return (self.job_readable and not self.jobs_error and self.active_run is None
+                and self.results_state != "schema_missing")
 
 
 # ---------------------------------------------------------------------------

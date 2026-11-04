@@ -13,7 +13,7 @@ from pathlib import Path
 from flask import Blueprint, Response, abort, current_app, jsonify, redirect, render_template, request, send_file, url_for
 
 from app import views
-from app.backends.base import ChecklistSaveError, Progress, ResultsUnavailable
+from app.backends.base import ChecklistSaveError, Progress, ResultsUnavailable, StorageSetup
 from app.security import safe_href
 from app.services import Services
 from common.disclaimer import DISCLAIMER, NON_AFFILIATION
@@ -110,6 +110,9 @@ def banners(situation: views.Situation) -> list[dict]:
         items.append({"kind": "error", "text": "Run scan is turned off because the scanner job could not be read "
                       "from Civis. Check that SCANNER_JOB_ID is the scanner job's ID and that the Service owner can "
                       "see that job."})
+    elif situation.results_state == "schema_missing":
+        items.append({"kind": "warning", "text": "Run scan is turned off because the results schema does not exist "
+                      "yet. Click Set up results storage below to create it."})
     elif situation.jobs_error:
         items.append({"kind": "error", "text": "The scanner job's runs could not be read from Civis. Check that "
                       "SCANNER_JOB_ID is correct and that the Service owner can see that job."})
@@ -136,6 +139,13 @@ def banners(situation: views.Situation) -> list[dict]:
 def empty_state(situation: views.Situation) -> dict | None:
     if situation.current is not None:
         return None
+    empty = _empty_state(situation)
+    if empty is not None and situation.storage_button:
+        empty["storage_button"] = True
+    return empty
+
+
+def _empty_state(situation: views.Situation) -> dict | None:
     state = situation.results_state
     if not situation.job_configured:
         return {"title": "The scanner job is not set",
@@ -150,9 +160,9 @@ def empty_state(situation: views.Situation) -> dict | None:
         return dict(JOB_PROBLEMS.get(situation.job_problem or "", JOB_PROBLEMS["database_missing"]))
     if state == "schema_missing":
         return {"title": "The results schema does not exist yet",
-                "body": "Ask a database admin to create the schema named in the scanner job's RESULTS_SCHEMA "
-                        "parameter and give the Service owner access to it. The scanner creates its tables there "
-                        "on its first run."}
+                "body": "Click Set up results storage to create the schema named in the scanner job's "
+                        "RESULTS_SCHEMA parameter and its five result tables. If the database user cannot create "
+                        "schemas, the app shows one statement to send to a database admin."}
     if state == "error":
         return {"title": "Results could not be read",
                 "body": "The app could not read the results tables. Check the scanner job's RESULTS_DB and "
@@ -170,6 +180,10 @@ def empty_state(situation: views.Situation) -> dict | None:
         return {"title": "No completed scan yet",
                 "body": "The last scan failed before it finished. Check the scanner job's run log in Civis, then run "
                         "the scan again."}
+    if state == "no_tables":
+        return {"title": "No scan yet",
+                "body": "Run the first scan to find code affected by the February 2027 update. The scanner creates "
+                        "its five result tables when it starts, or click Set up results storage to create them now."}
     return {"title": "No scan yet", "body": "Run the first scan to find code affected by the February 2027 update."}
 
 
@@ -209,8 +223,58 @@ def _page_number() -> int:
     return int(value) if value.isdigit() else 1
 
 
+STORAGE_MESSAGES = {
+    "created": ("success", "Results storage is set up. The results schema and its five tables are ready."),
+    "created_existing": ("success", "Results storage is set up. The results schema already existed, and its five "
+                                    "tables are ready."),
+    "schema_failed": ("error", "The results schema could not be created (step: schema). The database user behind "
+                               "the scanner job's RESULTS_DB credential cannot create schemas."),
+    "schema_check_failed": ("error", "The app could not check whether the results schema exists (step: schema). "
+                                     "Nothing was created."),
+    "tables_failed": ("error", "The results schema exists, but its tables could not be created (step: tables). "
+                               "Check that the database user behind the scanner job's RESULTS_DB credential can "
+                               "create tables in the schema, then try again."),
+    "not_ready": ("error", "Nothing was created, because the scanner job's settings could not be read or are not "
+                           "complete. See the message below."),
+}
+
+
+def storage_message(result) -> dict | None:
+    """What to show after the "Set up results storage" button. Error types only, never SQL error text."""
+    if result is None:
+        return None
+    key = result.outcome
+    if key == "created" and result.schema_existed:
+        key = "created_existing"
+    elif key == "schema_failed" and not result.admin_statement:
+        key = "schema_check_failed"
+    kind, text = STORAGE_MESSAGES.get(key, STORAGE_MESSAGES["not_ready"])
+    return {"kind": kind, "text": text, "error_type": result.error_type,
+            "statement": result.admin_statement, "user_known": result.user_known}
+
+
+@bp.post("/setup/storage")
+def setup_storage():
+    """The "Set up results storage" button. Reads the job's settings fresh, creates the schema if it is
+    missing and then the five tables (IF NOT EXISTS), and clears the results cache. Nothing runs on a GET."""
+    svc = services()
+    settings = svc.job_settings(fresh=True) if svc.jobs_provider else None
+    if svc.results is None or settings is None or not settings.usable:
+        result = StorageSetup("not_ready")
+    else:
+        try:
+            result = svc.results.setup_storage()
+        except Exception:
+            result = StorageSetup("not_ready")
+    return _overview(storage=storage_message(result))
+
+
 @bp.get("/")
 def overview():
+    return _overview()
+
+
+def _overview(storage: dict | None = None):
     situation = load_situation()
     objects, findings, coverage, checklist = current_tables(situation)
     stats = views.overview(objects, findings, coverage, checklist, RULES) if situation.current else None
@@ -221,7 +285,7 @@ def overview():
         last_scan=views.when(current.started_at) if current else None,
         duration=views.format_duration(run.started_at, run.finished_at) if run else (
             views.format_duration(current.started_at, current.finished_at) if current else None),
-        scan_label=current.label if current else None,
+        scan_label=current.label if current else None, storage=storage,
     )
 
 

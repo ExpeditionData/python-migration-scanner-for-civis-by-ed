@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import run_scan_button, empty_block, local_time %}
+{% from "macros.html" import run_scan_button, empty_block, local_time, storage_result %}
 {% block title %}Overview{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -15,6 +15,7 @@
   </div>
 </div>
 
+{% if storage %}{{ storage_result(storage) }}{% endif %}
 {% if empty %}
 {{ empty_block(empty) }}
 {% else %}

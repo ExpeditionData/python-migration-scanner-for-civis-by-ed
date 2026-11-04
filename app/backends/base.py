@@ -70,6 +70,23 @@ class ChecklistSaveError(Exception):
 
 
 @dataclass(frozen=True)
+class StorageSetup:
+    """What the "Set up results storage" button did.
+
+    ``outcome``: created, schema_failed, tables_failed, or not_ready (the job's settings cannot be used).
+    ``step`` names the step that failed (schema or tables). ``error_type`` is an exception class name with an
+    optional HTTP status, never the SQL error text. ``admin_statement`` is shown when the schema step failed.
+    """
+
+    outcome: str
+    step: str | None = None
+    error_type: str | None = None
+    schema_existed: bool = False
+    admin_statement: str | None = None
+    user_known: bool = True
+
+
+@dataclass(frozen=True)
 class JobRun:
     id: int
     state: str  # queued, running, succeeded, failed, cancelled
@@ -95,6 +112,7 @@ class Results(Protocol):
     def rows(self, table: str, run_id: str) -> list[dict]: ...
     def checklist(self) -> list[dict]: ...
     def save_checklist(self, run_id: str, entries: list[tuple[int, str, str]], changed_by: str, when: datetime) -> None: ...
+    def setup_storage(self) -> StorageSetup: ...  # Creates the schema if missing, then the five tables.
 
 
 class Jobs(Protocol):

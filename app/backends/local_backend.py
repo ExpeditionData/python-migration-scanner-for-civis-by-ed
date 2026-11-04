@@ -21,15 +21,19 @@ from typing import Any
 
 from common.schema import CHECKLIST_STATUS, SCAN_RUNS, TABLES
 from common import sql
-from app.backends.base import ChecklistSaveError, JobRun, LogLine, ResultsUnavailable, normalize_row
+from app.backends.base import ChecklistSaveError, JobRun, LogLine, ResultsUnavailable, StorageSetup, normalize_row
+from common.schema import admin_schema_sql
 from app.job_settings import JobSettings, parse_job, unreadable
 
 LOCAL_SCHEMA = "dry_run_results"
 TABLE_NAMES = {t.name for t in TABLES}
 STATES = (
     "normal", "no-scan", "first-scan-running", "failed", "tables-failed", "schema-missing", "no-job-id",
-    "job-unreadable", "database-unrecognized",
+    "job-unreadable", "database-unrecognized", "schema-refused", "tables-missing",
 )
+# States that look like a new install: no scans yet, and the results storage is not set up.
+FRESH_STATES = ("schema-missing", "schema-refused", "tables-missing")
+PREVIEW_DATABASE_USER = "example_robot_db"
 # Made-up IDs for the preview's scanner job settings.
 PREVIEW_DATABASE_ID = 3
 PREVIEW_CREDENTIAL_ID = 4
@@ -58,6 +62,10 @@ class LocalResults:
         self.path = Path(folder) / "results.sqlite"
         self.state = state
         self._lock = threading.Lock()
+        # missing_schema, missing_tables, or ready. The "Set up results storage" button changes it.
+        self.storage = ("missing_schema" if state in ("schema-missing", "schema-refused")
+                        else "missing_tables" if state in ("tables-missing", "no-scan", "first-scan-running")
+                        else "ready")
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, check_same_thread=False)
@@ -65,11 +73,21 @@ class LocalResults:
         return conn
 
     def check(self) -> str:
-        if self.state == "schema-missing":
+        if self.storage == "missing_schema":
             raise ResultsUnavailable("schema_missing")
-        if self.state in ("no-scan", "first-scan-running") or not self.path.exists():
+        if self.storage == "missing_tables" or not self.path.exists():
             return "no_tables"
         return "ok"
+
+    def setup_storage(self) -> StorageSetup:
+        """Made-up: schema-refused shows the statement for a database admin; the others succeed."""
+        with self._lock:
+            existed = self.storage != "missing_schema"
+            if self.state == "schema-refused" and not existed:
+                return StorageSetup("schema_failed", "schema", "CivisJobFailure",
+                                    admin_statement=admin_schema_sql(LOCAL_SCHEMA, PREVIEW_DATABASE_USER))
+            self.storage = "ready"
+            return StorageSetup("created", schema_existed=existed)
 
     def scan_runs(self) -> list[dict]:
         rows = self._select(SCAN_RUNS.name, None)
@@ -90,7 +108,7 @@ class LocalResults:
     def _select(self, table: str, run_id: str | None) -> list[dict]:
         if table not in TABLE_NAMES:
             raise ValueError("unknown table")
-        if self.check() != "ok":
+        if self.check() != "ok" or self.state in FRESH_STATES + ("no-scan", "first-scan-running"):
             return []
         statement = f"SELECT * FROM {sql.identifier(table)}"
         params: tuple = ()
@@ -145,7 +163,7 @@ class LocalJobs:
         return parse_job(preview_job(self.job_id, self.state))
 
     def _apply_state(self) -> None:
-        if self.state == "no-scan":
+        if self.state in ("no-scan",) + FRESH_STATES:
             self._runs = []
         elif self.state == "first-scan-running":
             self._runs = [r for r in self._runs if r.state == "running"]

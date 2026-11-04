@@ -30,6 +30,22 @@ def identifier(name: str) -> str:
     return name
 
 
+def quoted_identifier(name: object) -> str | None:
+    """A name to show in SQL for a person to run, or None if it cannot be written safely.
+
+    A plain identifier is returned as is. Anything else is double-quoted with
+    inner double quotes doubled, unless it is empty, too long, or holds control
+    characters or a backslash. Used only for text shown to an admin, never run.
+    """
+    if not isinstance(name, str) or not name:
+        return None
+    if _IDENTIFIER.match(name):
+        return name
+    if len(name.encode("utf-8")) > 127 or _CONTROL.search(name) or "\\" in name:
+        return None
+    return '"' + name.replace('"', '""') + '"'
+
+
 def qualified_table(schema: str, table: str) -> str:
     return f"{identifier(schema)}.{identifier(table)}"
 

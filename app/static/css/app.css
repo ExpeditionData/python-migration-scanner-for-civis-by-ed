@@ -212,6 +212,8 @@ h2 {
 .banner-error { background: var(--error-bg); border-color: var(--error-border); color: var(--error-text); }
 .banner-info { background: var(--info-bg); border-color: var(--info-border); color: var(--primary); }
 .banner-success { background: var(--success-bg); border-color: var(--success-border); color: var(--fixed); }
+.statement { margin: 8px 0; padding: 8px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-family: var(--mono); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.empty form { margin-top: 12px; }
 
 /* Buttons */
 

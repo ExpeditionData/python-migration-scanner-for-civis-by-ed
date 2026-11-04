@@ -90,6 +90,13 @@ class CachedResults:
             self._generation += 1
             self._short.pop("checklist", None)
 
+    def setup_storage(self):
+        """Run the "Set up results storage" button, then clear the cache so the next page sees the new state."""
+        try:
+            return self.provider().setup_storage()
+        finally:
+            self.clear()
+
     def clear(self) -> None:
         with self._lock:
             self._generation += 1

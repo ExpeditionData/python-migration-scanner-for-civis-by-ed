@@ -1,7 +1,9 @@
 """The data layer inside Civis, using only civis 2.7.1 calls (the Service image).
 
-Reads use ``civis.io.read_civis_sql`` and the checklist save uses
-``civis.io.query_civis``. Neither supports bound parameters, so every value in
+Reads use ``civis.io.read_civis_sql``. The checklist save and the "Set up
+results storage" button use ``civis.io.query_civis``: one INSERT, or CREATE
+SCHEMA IF NOT EXISTS and CREATE TABLE IF NOT EXISTS for the five tables. No
+GRANT, DROP, or ALTER. Neither supports bound parameters, so every value in
 the SQL text is validated and escaped by ``common/sql.py`` and every name is
 validated as an identifier. Each read starts a query run in Civis, so the app
 caches results (see app/backends/cache.py).
@@ -18,9 +20,9 @@ from datetime import datetime
 from typing import Any
 
 from common import sql
-from common.schema import CHECKLIST_STATUS, SCAN_RUNS, TABLES, checklist_insert_sql
+from common.schema import CHECKLIST_STATUS, SCAN_RUNS, TABLES, admin_schema_sql, checklist_insert_sql, create_schema_sql
 from app.backends.base import (
-    ChecklistSaveError, JobRun, LogLine, ResultsUnavailable, error_token, normalize_row, plain,
+    ChecklistSaveError, JobRun, LogLine, ResultsUnavailable, StorageSetup, error_token, normalize_row, plain,
 )
 from app.job_settings import JobSettings, parse_job, unreadable
 
@@ -74,6 +76,53 @@ class CivisResults:
             raise ResultsUnavailable("error") from None
         return "ok" if tables else "no_tables"
 
+    def _query(self, statement: str) -> None:
+        self.io.query_civis(
+            statement, self.database, client=self.client, credential_id=self.credential_id, hidden=True
+        ).result()
+
+    def _schema_exists(self) -> bool:
+        rows = self._read(
+            "SELECT schema_name FROM information_schema.schemata WHERE schema_name = " + sql.string(self.schema)
+        )
+        return bool(rows)
+
+    def database_user(self) -> str | None:
+        """The user name on the RESULTS_DB credential (credentials.get). None if there is no credential or it
+        cannot be read. Shown only to admins, in the statement for a database admin."""
+        if self.credential_id is None:
+            return None
+        try:
+            credential = plain(self.client.credentials.get(self.credential_id))
+        except Exception:
+            return None
+        name = credential.get("username") if isinstance(credential, dict) else None
+        return name if isinstance(name, str) and name else None
+
+    def setup_storage(self) -> StorageSetup:
+        """Create the results schema if it is missing, then the five tables (IF NOT EXISTS).
+
+        The schema is checked first, because the database may refuse CREATE SCHEMA, even with IF NOT
+        EXISTS, to a user who cannot create schemas, after a database admin has created it for them."""
+        try:
+            existed = self._schema_exists()
+        except Exception as exc:
+            return StorageSetup("schema_failed", "schema", error_token(exc))  # Could not even check: no statement.
+        if not existed:
+            try:
+                self._query(create_schema_sql(self.schema))
+            except Exception as exc:
+                user = self.database_user()
+                return StorageSetup("schema_failed", "schema", error_token(exc),
+                                    admin_statement=admin_schema_sql(self.schema, user),
+                                    user_known=sql.quoted_identifier(user) is not None)
+        for table in TABLES:
+            try:
+                self._query(table.create_sql(self.schema))
+            except Exception as exc:
+                return StorageSetup("tables_failed", "tables", error_token(exc), schema_existed=existed)
+        return StorageSetup("created", schema_existed=existed)
+
     def scan_runs(self) -> list[dict]:
         return self._table_rows(SCAN_RUNS.name, None)
 
@@ -100,9 +149,7 @@ class CivisResults:
         except sql.UnsafeValueError as exc:
             raise ChecklistSaveError(f"The changes could not be saved: {exc}") from None
         try:
-            self.io.query_civis(
-                statement, self.database, client=self.client, credential_id=self.credential_id, hidden=True
-            ).result()
+            self._query(statement)
         except Exception:
             raise ChecklistSaveError("The changes could not be saved because the database write failed.") from None
 

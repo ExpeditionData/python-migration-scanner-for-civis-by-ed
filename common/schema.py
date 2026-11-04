@@ -140,6 +140,19 @@ CHECKLIST_STATUS = Table(
 TABLES: tuple[Table, ...] = (SCAN_RUNS, OBJECTS, FINDINGS, COVERAGE, CHECKLIST_STATUS)
 
 CHECKLIST_STATUSES = frozenset(s.value for s in ChecklistStatus)
+DATABASE_USER_PLACEHOLDER = "<database user>"
+
+
+def create_schema_sql(schema: str) -> str:
+    """The web app's "Set up results storage" button runs this, then each table's create_sql."""
+    return f"CREATE SCHEMA IF NOT EXISTS {sql.identifier(schema)}"
+
+
+def admin_schema_sql(schema: str, database_user: str | None) -> str:
+    """The statement shown to a database admin when the app's database user cannot create schemas.
+    Shown only, never run. Unless it can be written safely, the user name becomes a placeholder."""
+    user = sql.quoted_identifier(database_user) or DATABASE_USER_PLACEHOLDER
+    return f"CREATE SCHEMA {sql.identifier(schema)} AUTHORIZATION {user};"
 
 
 def checklist_insert_sql(
