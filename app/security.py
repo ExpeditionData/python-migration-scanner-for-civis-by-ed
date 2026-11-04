@@ -142,6 +142,7 @@ def init_app(app: Flask) -> None:
     report_only = frame_ancestors_report_only(app.config.get("FRAME_ANCESTORS_REPORT_ONLY"))
     csp = content_security_policy(None if report_only else ancestors)
     csp_report_only = f"frame-ancestors {ancestors}" if report_only else None
+    app.config["PMSC_FRAME_REPORT_ONLY"] = report_only  # Shown on the Setup page (line 8).
 
     @app.before_request
     def _check_csrf():

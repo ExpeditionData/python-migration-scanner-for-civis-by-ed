@@ -87,6 +87,20 @@ class StorageSetup:
 
 
 @dataclass(frozen=True)
+class StorageFacts:
+    """What the Setup page found in the results storage. Reads only.
+
+    ``tables`` holds which of the five result tables exist. ``readable`` is True when one SELECT read all
+    five. ``error`` is an error type and ``step`` the step that failed (schema, tables, or read)."""
+
+    schema_exists: bool | None = None
+    tables: frozenset = frozenset()
+    readable: bool | None = None
+    error: str | None = None
+    step: str | None = None
+
+
+@dataclass(frozen=True)
 class JobRun:
     id: int
     state: str  # queued, running, succeeded, failed, cancelled

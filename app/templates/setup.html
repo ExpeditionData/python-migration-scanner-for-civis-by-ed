@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Setup{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Setup</h1>
+    <p class="subtitle">These checks read the scanner job, this Service, and the results storage, and change nothing. Fix any line that is not a pass.</p>
+  </div>
+</div>
+
+<section class="card" aria-labelledby="setup-checks">
+  <h2 id="setup-checks">Checks</h2>
+  <div class="table-wrap">
+    <table class="setup-table">
+      <thead>
+        <tr><th scope="col" class="num">#</th><th scope="col">Check</th><th scope="col">Result</th><th scope="col">Reason and fix</th></tr>
+      </thead>
+      <tbody>
+        {% for line in lines %}
+        <tr>
+          <td class="num">{{ line.number }}</td>
+          <th scope="row">{{ line.title }}<div class="cell-sub mono">{{ line.key }}</div></th>
+          <td><span class="badge result-{{ line.result }}">{{ {"pass": "Pass", "warning": "Warning", "fail": "Fail", "review": "Review"}[line.result] }}</span></td>
+          <td>
+            <p class="setup-reason">{{ line.reason }}</p>
+            {% if line.fix %}<p class="setup-fix"><strong>Fix:</strong> {{ line.fix }}</p>{% endif %}
+            {% for detail in line.details %}<p class="cell-sub">{{ detail }}</p>{% endfor %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -19,7 +19,7 @@
           <a class="brand-name" href="{{ url_for('pages.overview') }}"><span class="brand-title">Python Migration Scanner</span> <span class="brand-descriptor">for Civis Platform</span></a>
         </div>
         <nav aria-label="Main" class="main-nav">
-          {% for key, label, endpoint in [("overview", "Overview", "pages.overview"), ("inventory", "Inventory", "pages.inventory"), ("findings", "Findings", "pages.findings"), ("scan", "Scan history", "pages.scan")] %}
+          {% for key, label, endpoint in [("overview", "Overview", "pages.overview"), ("inventory", "Inventory", "pages.inventory"), ("findings", "Findings", "pages.findings"), ("scan", "Scan history", "pages.scan"), ("setup", "Setup", "pages.setup_page")] %}
           <a href="{{ url_for(endpoint) }}"{% if active == key %} class="active" aria-current="page"{% endif %}>{{ label }}</a>
           {% endfor %}
         </nav>

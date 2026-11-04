@@ -22,11 +22,13 @@ from typing import Any
 from common import sql
 from common.schema import CHECKLIST_STATUS, SCAN_RUNS, TABLES, admin_schema_sql, checklist_insert_sql, create_schema_sql
 from app.backends.base import (
-    ChecklistSaveError, JobRun, LogLine, ResultsUnavailable, StorageSetup, error_token, normalize_row, plain,
+    ChecklistSaveError, JobRun, LogLine, ResultsUnavailable, StorageFacts, StorageSetup, error_token, normalize_row,
+    plain,
 )
 from app.job_settings import JobSettings, parse_job, unreadable
 
-TABLE_NAMES = {t.name for t in TABLES}
+TABLE_NAMES = frozenset(t.name for t in TABLES)
+MAX_SERVICES = 1000  # The Setup page looks at no more Services than this.
 LOG_PAGE = 1000
 
 
@@ -123,6 +125,33 @@ class CivisResults:
                 return StorageSetup("tables_failed", "tables", error_token(exc), schema_existed=existed)
         return StorageSetup("created", schema_existed=existed)
 
+    def storage_facts(self) -> StorageFacts:
+        """For the Setup page: does the schema exist, which tables exist, and can the credential read them.
+        SELECT statements only; one more for the read check, over all five tables at once."""
+        try:
+            if not self._schema_exists():
+                return StorageFacts(schema_exists=False)
+        except Exception as exc:
+            return StorageFacts(error=error_token(exc), step="schema")
+        try:
+            rows = self._read(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = " + sql.string(self.schema)
+            )
+        except Exception as exc:
+            return StorageFacts(schema_exists=True, error=error_token(exc), step="tables")
+        tables = frozenset(str(r.get("table_name")) for r in rows) & TABLE_NAMES
+        if tables != TABLE_NAMES:
+            return StorageFacts(schema_exists=True, tables=tables)
+        statement = " UNION ALL ".join(
+            f"SELECT {sql.string(t.name)} AS table_name, COUNT(*) AS row_count FROM {sql.qualified_table(self.schema, t.name)}"
+            for t in TABLES
+        )
+        try:
+            self._read(statement)
+        except Exception as exc:
+            return StorageFacts(schema_exists=True, tables=tables, readable=False, error=error_token(exc), step="read")
+        return StorageFacts(schema_exists=True, tables=tables, readable=True)
+
     def scan_runs(self) -> list[dict]:
         return self._table_rows(SCAN_RUNS.name, None)
 
@@ -205,3 +234,50 @@ class CivisJobs:
                 url = _get(file, "file_url")
                 return ("url", url) if url else None
         return None
+
+
+class CivisSetup:
+    """The Setup page's reads (app/setup.py). Every call here is a read; none writes.
+
+    users.list_me, credentials.get, scripts.list_containers_shares, services.list, services.get, and
+    services.list_shares, all in civis 2.7.1. The results storage check uses CivisResults (SELECT only).
+    """
+
+    def __init__(self, client: Any, io_module: Any, job_id: int | None):
+        self.client = client
+        self.io = io_module
+        self.job_id = job_id
+
+    def me(self) -> dict:
+        """The user the app runs as. The Service image's civis 2.7.1 has only users.list_me; civis 2.8 and
+        later add users.get_me, and v3 removes list_me. Use get_me where it exists, so this keeps working."""
+        users = self.client.users
+        read_me = getattr(users, "get_me", None) or users.list_me
+        return plain(read_me())
+
+    def credential(self, credential_id: int) -> dict:
+        return plain(self.client.credentials.get(credential_id))
+
+    def job_shares(self) -> list:
+        return plain(self.client.scripts.list_containers_shares(self.job_id))
+
+    def services(self) -> list[dict]:
+        found = []
+        for item in self.client.services.list(iterator=True, limit=50):
+            found.append(plain(item))
+            if len(found) >= MAX_SERVICES:
+                break
+        return found
+
+    def service(self, service_id: int) -> dict:
+        return plain(self.client.services.get(service_id))
+
+    def service_shares(self, service_id: int) -> list:
+        return plain(self.client.services.list_shares(service_id))
+
+    def storage(self, settings: JobSettings) -> StorageFacts:
+        try:
+            results = CivisResults(self.client, self.io, settings.database_id, settings.schema, settings.credential_id)
+        except Exception as exc:
+            return StorageFacts(error=error_token(exc), step="schema")
+        return results.storage_facts()

@@ -92,6 +92,9 @@ class _Endpoint:
         self._name = name
 
     def __getattr__(self, method):
+        if f"{self._name}.{method}" not in self._client.handlers:
+            raise AttributeError(method)  # Like civis 2.7.1, which has no such method.
+
         def call(*args, **kwargs):
             self._client.calls.append((f"{self._name}.{method}", args, kwargs))
             handler = self._client.handlers.get(f"{self._name}.{method}")

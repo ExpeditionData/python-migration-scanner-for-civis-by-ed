@@ -105,7 +105,7 @@ def civis_services(
     io_factory: Callable[[], Any] = _civis_io,
 ) -> Services:
     """The Civis data layer. The factories are replaced only by tests."""
-    from app.backends.civis_backend import CivisJobs, CivisResults
+    from app.backends.civis_backend import CivisJobs, CivisResults, CivisSetup
 
     job_id = settings.scanner_job_id
     jobs_provider = (lambda: CivisJobs(client_factory(), job_id)) if job_id else None
@@ -116,11 +116,12 @@ def civis_services(
 
     if job_id:
         services.results = CachedResults(lambda: services.results_backend(make))
+    services.setup_provider = lambda: CivisSetup(client_factory(), io_factory(), job_id)
     return services
 
 
 def local_services(folder, state: str = "normal") -> Services:
-    from app.backends.local_backend import LocalJobs, LocalResults
+    from app.backends.local_backend import LocalJobs, LocalResults, LocalSetup
 
     results_backend = LocalResults(folder, state)
     jobs_backend = LocalJobs(folder, state)
@@ -134,4 +135,5 @@ def local_services(folder, state: str = "normal") -> Services:
     )
     if jobs_backend.job_id:
         services.results = CachedResults(lambda: services.results_backend(lambda job: results_backend))
+    services.setup_provider = lambda: LocalSetup(folder, state, results_backend)
     return services

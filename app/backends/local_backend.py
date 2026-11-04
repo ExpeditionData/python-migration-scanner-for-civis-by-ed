@@ -21,7 +21,10 @@ from typing import Any
 
 from common.schema import CHECKLIST_STATUS, SCAN_RUNS, TABLES
 from common import sql
-from app.backends.base import ChecklistSaveError, JobRun, LogLine, ResultsUnavailable, StorageSetup, normalize_row
+from app.backends.base import (
+    ChecklistSaveError, JobRun, LogLine, ResultsUnavailable, StorageFacts, StorageSetup, normalize_row,
+)
+from common import release
 from common.schema import admin_schema_sql
 from app.job_settings import JobSettings, parse_job, unreadable
 
@@ -29,7 +32,7 @@ LOCAL_SCHEMA = "dry_run_results"
 TABLE_NAMES = {t.name for t in TABLES}
 STATES = (
     "normal", "no-scan", "first-scan-running", "failed", "tables-failed", "schema-missing", "no-job-id",
-    "job-unreadable", "database-unrecognized", "schema-refused", "tables-missing",
+    "job-unreadable", "database-unrecognized", "schema-refused", "tables-missing", "setup-failures",
 )
 # States that look like a new install: no scans yet, and the results storage is not set up.
 FRESH_STATES = ("schema-missing", "schema-refused", "tables-missing")
@@ -38,15 +41,24 @@ PREVIEW_DATABASE_USER = "example_robot_db"
 PREVIEW_DATABASE_ID = 3
 PREVIEW_CREDENTIAL_ID = 4
 PREVIEW_ROBOT = {"id": 15, "name": "Example Robot", "username": "example_robot"}
+PREVIEW_OTHER_USER = {"id": 12, "name": "Example Owner Casey", "username": "example_owner_casey"}
+PREVIEW_TAG = "v0.1.0-rc3"
+PREVIEW_SERVICE_ID = 9200
 
 
 def preview_job(job_id: int, state: str = "normal") -> dict:
-    """Made-up scanner job settings, shaped like civis's get_containers response (snake_case keys)."""
+    """Made-up scanner job settings, shaped like civis's get_containers response (snake_case keys).
+    They match the README, except in the setup-failures state."""
     database = {"database": PREVIEW_DATABASE_ID, "credential": PREVIEW_CREDENTIAL_ID}
     if state == "database-unrecognized":
         database = "example-database-name"
-    return {
+    image = release.pinned_image("scanner") or ("", "")
+    job = {
         "id": job_id, "name": "Example scanner job", "author": dict(PREVIEW_ROBOT), "running_as": dict(PREVIEW_ROBOT),
+        "docker_image_name": image[0], "docker_image_tag": image[1], "repo_http_uri": release.REPOSITORY_URL,
+        "repo_ref": PREVIEW_TAG, "git_credential_id": None, "docker_command": release.SCANNER_COMMAND,
+        "required_resources": {"cpu": release.SCANNER_CPU, "memory": release.SCANNER_MEMORY_MB,
+                               "disk_space": float(release.SCANNER_DISK_GB)},
         "params": [
             {"name": "RESULTS_DB", "type": "database", "required": True},
             {"name": "RESULTS_SCHEMA", "type": "string", "required": True},
@@ -55,6 +67,67 @@ def preview_job(job_id: int, state: str = "normal") -> dict:
         ],
         "arguments": {"RESULTS_DB": database, "RESULTS_SCHEMA": LOCAL_SCHEMA},
     }
+    if state == "setup-failures":
+        job.update(author=dict(PREVIEW_OTHER_USER), running_as=dict(PREVIEW_OTHER_USER), git_credential_id=77,
+                   repo_ref="main", required_resources={"cpu": 1000, "memory": 8192, "disk_space": 4.0})
+        job["params"] = job["params"] + [{"name": "RESULTS_SHEMA", "type": "string"}, {"name": "RUN_ID", "type": "string"}]
+        job["arguments"] = dict(job["arguments"], RUN_ID="run-20261001T120000Z-abc123")
+    return job
+
+
+def preview_service(service_id: int, state: str = "normal") -> dict:
+    image = release.pinned_image("service") or ("", "")
+    return {
+        "id": service_id, "name": "Example scanner app", "user": dict(PREVIEW_ROBOT),
+        "docker_image_name": image[0], "docker_image_tag": image[1], "git_repo_url": release.REPOSITORY_URL,
+        "git_repo_ref": PREVIEW_TAG, "credentials": [],
+        "environment_variables": {"SCANNER_JOB_ID": "9100", "CIVIS_SERVICE_HEALTH_PATH": "/healthz"},
+    }
+
+
+def _preview_shares(users: list[dict], groups: list[dict]) -> list[dict]:
+    return [{"readers": {"users": users, "groups": groups}, "writers": {"users": [], "groups": []},
+             "owners": {"users": [{"id": PREVIEW_ROBOT["id"], "name": PREVIEW_ROBOT["name"]}], "groups": []}}]
+
+
+class LocalSetup:
+    """Made-up answers for the Setup page in local preview. Nothing here touches Civis."""
+
+    def __init__(self, folder: Path, state: str, results: "LocalResults"):
+        self.state = state
+        self.results = results
+
+    def me(self) -> dict:
+        return dict(PREVIEW_ROBOT)
+
+    def credential(self, credential_id: int) -> dict:
+        return {"id": credential_id, "name": "Example results credential", "username": PREVIEW_DATABASE_USER,
+                "user": dict(PREVIEW_ROBOT)}
+
+    def job_shares(self) -> list[dict]:
+        users = [{"id": 21, "name": "Example Admin Avery"}]
+        if self.state == "setup-failures":
+            users.append({"id": 22, "name": "Example Analyst <b>Blake</b>"})
+        return _preview_shares(users, [{"id": 61, "name": "Example Civis Admins"}])
+
+    def services(self) -> list[dict]:
+        found = [preview_service(PREVIEW_SERVICE_ID, self.state)]
+        if self.state == "setup-failures":
+            found.append(preview_service(PREVIEW_SERVICE_ID + 1, self.state))
+        return found
+
+    def service(self, service_id: int) -> dict:
+        return preview_service(service_id, self.state)
+
+    def service_shares(self, service_id: int) -> list[dict]:
+        return _preview_shares([{"id": 21, "name": "Example Admin Avery"}], [])
+
+    def storage(self, settings) -> StorageFacts:
+        if self.results.storage == "missing_schema":
+            return StorageFacts(schema_exists=False)
+        if self.results.storage == "missing_tables":
+            return StorageFacts(schema_exists=True)
+        return StorageFacts(schema_exists=True, tables=frozenset(TABLE_NAMES), readable=True)
 
 
 class LocalResults:

@@ -322,17 +322,24 @@ def test_safe_error_never_includes_the_message():
 
 
 def test_app_never_reads_a_github_token():
-    """The app names the scanner job's GITHUB parameter only as the string "GITHUB", to check its type on
-    the Setup page and in the preview's made-up job. It reads no token and no environment variable for it.
-    REPO_HTTP_TOKEN is the token Civis may insert into a Service; the app never names it."""
-    pattern = re.compile(r"GITHUB|GH_TOKEN|REPO_HTTP_TOKEN|github_token", re.IGNORECASE)
+    """The app reads no GitHub token. It never names the token's environment variables (GITHUB_PASSWORD and the
+    other GITHUB_ names Civis sets), GH_TOKEN, or REPO_HTTP_TOKEN (a token Civis may insert into a Service).
+    The bare parameter name GITHUB appears only where the Setup page checks the parameter's type and in the
+    preview's made-up job, and never on a line that reads the environment. "GitHub" in Civis field labels
+    (GitHub Repository URL) is fine."""
+    token_names = re.compile(r"GITHUB_|GH_TOKEN|REPO_HTTP_TOKEN|github_token", re.IGNORECASE)
+    parameter = re.compile(r"\bGITHUB\b")
+    allowed = {"app/setup.py", "app/backends/local_backend.py"}
     offenders = []
     for p in (ROOT / "app").rglob("*"):
         if not (p.is_file() and p.suffix in (".py", ".html", ".js")):
             continue
+        rel = p.relative_to(ROOT).as_posix()
         for number, line in enumerate(p.read_text(encoding="utf-8").splitlines(), start=1):
-            if pattern.search(line.replace('"GITHUB"', "")) or ('"GITHUB"' in line and "environ" in line):
-                offenders.append(f"{p.relative_to(ROOT).as_posix()}:{number}")
+            if token_names.search(line):
+                offenders.append(f"{rel}:{number}")
+            elif parameter.search(line) and (rel not in allowed or re.search(r"environ|getenv", line)):
+                offenders.append(f"{rel}:{number}")
     assert offenders == []
 
 

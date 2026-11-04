@@ -445,6 +445,41 @@ def download(civis_run_id: int):
     return redirect(link)
 
 
+def latest_state(situation: views.Situation) -> str:
+    """The newest scan's state, for Setup line 10: none, queued, running, succeeded, failed, cancelled, or
+    tables_failed."""
+    if situation.active_run is not None:
+        return situation.active_run.state
+    return situation.last_outcome or "none"
+
+
+def setup_facts(situation: views.Situation, settings):
+    """Read everything the Setup page checks. Reads only; errors become error types."""
+    from app import setup
+
+    svc = services()
+    try:
+        source = svc.setup_provider() if svc.setup_provider else None
+    except Exception:
+        source = None
+    return setup.gather(
+        source, svc.settings.scanner_job_id, settings,
+        report_only=bool(current_app.config.get("PMSC_FRAME_REPORT_ONLY")), latest=latest_state(situation),
+    )
+
+
+@bp.get("/setup")
+def setup_page():
+    """Ten read-only checks of the setup. Reads the scanner job's settings fresh. Writes nothing."""
+    from app import setup
+
+    svc = services()
+    settings = svc.job_settings(fresh=True) if svc.jobs_provider else None
+    situation = load_situation()
+    facts = setup_facts(situation, settings)
+    return render_template("setup.html", **base_context("setup", situation), lines=setup.evaluate(facts))
+
+
 @bp.get("/healthz")
 def healthz():
     return Response("ok", mimetype="text/plain")

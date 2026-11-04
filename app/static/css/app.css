@@ -316,6 +316,13 @@ tbody tr:nth-child(even) th { background: var(--stripe); }
 .badge-affected { background: var(--affected-bg); color: var(--affected); }
 .badge-advisory { background: var(--advisory-bg); color: var(--advisory); }
 .badge-unknown { background: var(--row-border); color: var(--text); }
+.result-pass { background: var(--success-bg); color: var(--fixed); }
+.result-warning { background: var(--warn-bg); color: var(--warn-text); }
+.result-fail { background: var(--error-bg); color: var(--error-text); }
+.result-review { background: var(--info-bg); color: var(--primary); }
+.setup-table th[scope="row"] { font-weight: 700; color: var(--primary); }
+.setup-reason, .setup-fix { margin: 0; }
+.setup-fix { margin-top: 4px; }
 
 .status-scanned { color: var(--primary); }
 .status-partial, .status-not_scanned, .status-pending { color: var(--affected); }
