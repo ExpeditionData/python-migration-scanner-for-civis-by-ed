@@ -97,6 +97,9 @@ class CachedResults:
         finally:
             self.clear()
 
+    def admin_statement(self, kind: str):
+        return self.provider().admin_statement(kind)
+
     def clear(self) -> None:
         with self._lock:
             self._generation += 1

@@ -142,6 +142,13 @@ class CivisResults:
                                     user_known=sql.quoted_identifier(user) is not None)
         return StorageSetup("created", schema_existed=existed)
 
+    def admin_statement(self, kind: str) -> tuple[str, bool]:
+        """Rebuild the statement for a database admin after the setup redirect: "schema" for CREATE SCHEMA
+        ... AUTHORIZATION, "owner" for ALTER SCHEMA ... OWNER TO. Returns it and whether the user name is in it."""
+        user = self.database_user()
+        build = admin_owner_sql if kind == "owner" else admin_schema_sql
+        return build(self.schema, user), sql.quoted_identifier(user) is not None
+
     def storage_facts(self) -> StorageFacts:
         """For the Setup page: does the schema exist, which tables exist, and can the credential read them.
         SELECT statements only; one more for the read check, over all five tables at once."""

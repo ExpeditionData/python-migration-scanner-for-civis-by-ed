@@ -147,7 +147,9 @@ def test_app_statements_stay_in_the_results_schema(monkeypatch):
     saved = web.post("/findings/save", headers=headers,
                      data={"csrf_token": token, "s:101:CV3-ML": "ignored", "o:101:CV3-ML": "fixed"})
     assert "saved=1" in saved.headers["Location"]
-    assert web.post("/setup/storage", headers=headers, data={"csrf_token": token}).status_code == 200
+    stored = web.post("/setup/storage", headers=headers, data={"csrf_token": token})
+    assert stored.status_code == 302
+    assert web.get(stored.headers["Location"], headers=headers).status_code == 200
     _assert_in_scope(io, schema)
     kinds = {" ".join(s.split()[:2]) for s in io.statements}
     assert {"SELECT nspname", "SELECT tablename", "INSERT INTO", "CREATE TABLE"} <= kinds

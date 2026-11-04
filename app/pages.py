@@ -13,7 +13,7 @@ from pathlib import Path
 from flask import Blueprint, Response, abort, current_app, jsonify, redirect, render_template, request, send_file, url_for
 
 from app import views
-from app.backends.base import ChecklistSaveError, Progress, ResultsUnavailable, StorageSetup
+from app.backends.base import ChecklistSaveError, Progress, ResultsUnavailable, StorageSetup, safe_error_token
 from app.security import safe_href
 from app.services import Services
 from common.disclaimer import DISCLAIMER, NON_AFFILIATION
@@ -262,20 +262,35 @@ def storage_key(result) -> str:
     return key if key in STORAGE_MESSAGES else "not_ready"
 
 
-def storage_message(result) -> dict | None:
-    """What to show after the "Set up results storage" button. Error types only, never SQL error text."""
-    if result is None:
+STATEMENT_KINDS = {"schema_failed": "schema", "tables_owner": "owner"}
+
+
+def storage_message() -> dict | None:
+    """The outcome of the "Set up results storage" button, from the redirect's query string.
+
+    Only an allow-listed result key and a strict error token are read. The statement for a database admin is
+    rebuilt here from the scanner job's settings and the RESULTS_DB credential, never taken from the URL. No
+    cookie or session is used, since the app runs inside Civis's frame."""
+    key = request.args.get("storage", "")
+    if key not in STORAGE_MESSAGES:
         return None
-    key = storage_key(result)
     kind, text = STORAGE_MESSAGES[key]
-    return {"kind": kind, "text": text, "error_type": result.error_type, "statement": result.admin_statement,
-            "statement_intro": STATEMENT_INTROS.get(key), "user_known": result.user_known}
+    message = {"kind": kind, "text": text, "error_type": safe_error_token(request.args.get("error")),
+               "statement": None, "statement_intro": STATEMENT_INTROS.get(key), "user_known": True}
+    if key in STATEMENT_KINDS:
+        svc = services()
+        try:
+            message["statement"], message["user_known"] = svc.results.admin_statement(STATEMENT_KINDS[key])
+        except Exception:
+            message["statement_missing"] = True
+    return message
 
 
 @bp.post("/setup/storage")
 def setup_storage():
     """The "Set up results storage" button. Reads the job's settings fresh, creates the schema if it is
-    missing and then the five tables (IF NOT EXISTS), and clears the results cache. Nothing runs on a GET."""
+    missing and then the five tables (IF NOT EXISTS), and clears the results cache. Then it redirects to the
+    Overview, so a reload does not send the POST again. Nothing runs on a GET."""
     svc = services()
     settings = svc.job_settings(fresh=True) if svc.jobs_provider else None
     if svc.results is None or settings is None or not settings.usable:
@@ -285,12 +300,16 @@ def setup_storage():
             result = svc.results.setup_storage()
         except Exception:
             result = StorageSetup("not_ready")
-    return _overview(storage=storage_message(result))
+    query = {"storage": storage_key(result)}
+    token = safe_error_token(result.error_type)
+    if token:
+        query["error"] = token
+    return redirect(url_for("pages.overview", **query))
 
 
 @bp.get("/")
 def overview():
-    return _overview()
+    return _overview(storage=storage_message())
 
 
 def _overview(storage: dict | None = None):

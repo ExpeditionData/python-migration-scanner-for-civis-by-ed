@@ -54,6 +54,7 @@
 <div class="banner banner-{{ storage.kind }}" role="{{ 'alert' if storage.kind == 'error' else 'status' }}">
   <div>
     <p>{{ storage.text }}{% if storage.error_type %} Error type: <span class="mono">{{ storage.error_type }}</span>.{% endif %}</p>
+    {% if storage.statement_missing %}<p>The statement for a database admin could not be shown. Click Set up results storage again.</p>{% endif %}
     {% if storage.statement %}
     <p>{{ storage.statement_intro }}</p>
     <pre class="statement"><code>{{ storage.statement }}</code></pre>

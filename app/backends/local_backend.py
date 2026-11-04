@@ -152,6 +152,12 @@ class LocalResults:
             return "no_tables"
         return "ok"
 
+    def admin_statement(self, kind: str) -> tuple[str, bool]:
+        from common.schema import admin_owner_sql
+
+        build = admin_owner_sql if kind == "owner" else admin_schema_sql
+        return build(LOCAL_SCHEMA, PREVIEW_DATABASE_USER), True
+
     def setup_storage(self) -> StorageSetup:
         """Made-up: schema-refused shows the statement for a database admin; the others succeed."""
         with self._lock:

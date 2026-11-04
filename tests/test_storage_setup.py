@@ -42,9 +42,13 @@ def page_text(response) -> str:
 
 
 def post(app, url="/setup/storage"):
+    """POST the button, check that it redirects to the Overview, then load that page."""
     with app.test_request_context("/"):
         token = generate_csrf_token(app)
-    return app.test_client().post(url, data={"csrf_token": token})
+    web = app.test_client()
+    response = web.post(url, data={"csrf_token": token})
+    assert response.status_code == 302 and response.headers["Location"].startswith("/?storage=")
+    return web.get(response.headers["Location"])
 
 
 @pytest.fixture(autouse=True)
@@ -269,3 +273,66 @@ def test_the_schema_step_says_the_most_common_reason():
             "user behind the scanner job's RESULTS_DB credential cannot create schemas.") in page
     assert "Error type: FakeAPIError status=403" in page
     assert f"CREATE SCHEMA {SCHEMA} AUTHORIZATION example_robot_db;" in page
+
+
+# --- The redirect after the POST (17.2.24) ----------------------------------------------------
+
+
+def _csrf(app):
+    with app.test_request_context("/"):
+        return generate_csrf_token(app)
+
+
+def test_the_post_redirects_to_the_overview_with_a_result_key_and_error_token_only():
+    app, _, _ = build(io=RecordingIO(fail={"CREATE SCHEMA": FakeAPIError(403, SQL_ERROR_TEXT)}))
+    response = app.test_client().post("/setup/storage", data={"csrf_token": _csrf(app)})
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/?storage=schema_failed&error=FakeAPIError+status%3D403"
+    assert "Set-Cookie" not in response.headers
+    assert SCHEMA not in response.headers["Location"] and "example_robot_db" not in response.headers["Location"]
+    ok, _, _ = build()
+    assert ok.test_client().post("/setup/storage", data={"csrf_token": _csrf(ok)}).headers["Location"] == "/?storage=created"
+
+
+def test_reloading_the_target_does_not_send_the_post_again():
+    app, _, io = build()
+    web = app.test_client()
+    location = web.post("/setup/storage", data={"csrf_token": _csrf(app)}).headers["Location"]
+    sent = list(io.queries)
+    assert sent  # The POST created the schema and the tables.
+    for _ in range(2):
+        assert "Results storage is set up." in page_text(web.get(location))
+    assert io.queries == sent
+
+
+def test_a_get_to_the_setup_url_is_not_allowed():
+    app, _, io = build()
+    assert app.test_client().get("/setup/storage").status_code == 405
+    assert io.queries == []
+
+
+@pytest.mark.parametrize("query", [
+    "/?storage=<script>alert(1)</script>",
+    "/?storage=created%27%22%3E%3Cscript%3E",
+    "/?storage=schema_failed&error=<script>alert(1)</script>",
+    "/?storage=schema_failed&error=FakeAPIError%20status%3D403%3Cb%3E",
+    "/?storage=tables_owner&error=lowercase_error&statement=DROP%20SCHEMA%20x",
+])
+def test_a_hostile_query_string_is_never_reflected(query):
+    app, _, io = build()
+    body = app.test_client().get(query).get_data(as_text=True)
+    assert "<script>alert(1)</script>" not in body and "<b>" not in body
+    assert "DROP SCHEMA" not in body and "lowercase_error" not in body
+    assert io.queries == []
+    if "storage=schema_failed" in query or "storage=tables_owner" in query:
+        assert "Error type:" not in body  # The token did not match, so no error type is shown.
+        assert "AUTHORIZATION example_robot_db;" in body or "OWNER TO example_robot_db;" in body
+    else:
+        assert "Results storage is set up" not in body
+
+
+def test_the_statement_is_rebuilt_from_the_job_not_from_the_url():
+    app, client, _ = build()
+    body = page_text(app.test_client().get("/?storage=tables_owner&error=FakeAPIError"))
+    assert f"ALTER SCHEMA {SCHEMA} OWNER TO example_robot_db;" in body and "Error type: FakeAPIError" in body
+    assert ("credentials.get", (41,), {}) in client.calls

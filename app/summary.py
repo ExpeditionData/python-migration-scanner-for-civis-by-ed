@@ -26,13 +26,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from app.backends.base import LOG_PAGE, LogLine
+from app.backends.base import ERROR_TOKEN, LOG_PAGE, LogLine
 from common import release
 from common.models import ObjectType
 
 # The scanner's generated run IDs: run-<UTC time>-<6 hex characters> (scanner/runner.py, new_run_id).
 RUN_ID = re.compile(r"^run-\d{8}T\d{6}Z-[0-9a-f]{6}$")
-ERROR_TOKEN = re.compile(r"^[A-Z][A-Za-z0-9_]{0,99}( status=\d{3})?$")  # A class name, maybe a status.
 MAX_LOG_PAGES = 50
 OTHER = "other"
 # Line types the scanner writes (scanner/scan_log.py). Any other log line is counted as "other".
