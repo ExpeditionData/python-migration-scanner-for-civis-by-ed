@@ -134,7 +134,7 @@ def _marked_client():
     person = {"id": 15, "name": f"{MARK} Robot Person", "username": f"{MARK}_robot"}
     job = scanner_job(
         name=f"{MARK} scanner job", author=dict(person), running_as=dict(person), repo_ref=f"{MARK}-branch",
-        docker_image_name=f"{MARK}/image", repo_http_uri=f"https://{MARK}.example.com/repo.git",
+        docker_image_tag=f"{MARK}-tag",  # The identity fields (repository, command, image name) stay the scanner's.
         arguments={"RESULTS_DB": {"database": 31, "credential": 41}, "RESULTS_SCHEMA": f"{MARK}_schema",
                    "EXTRA": f"{MARK} value"},
     )

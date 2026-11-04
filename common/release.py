@@ -53,5 +53,31 @@ def is_this_repository(url: object) -> bool:
     return bool(url) and normalize_repo_url(url) == normalize_repo_url(REPOSITORY_URL)
 
 
+def scanner_job_mismatches(job: object) -> tuple[str, ...]:
+    """Which identity fields of a container script are not this tool's scanner job: "repository", "command",
+    or "image". Empty means it is the scanner job.
+
+    The one identity check, used by the start path (app/pages.py), the job settings (app/job_settings.py),
+    and Setup lines 1 and 2 (app/setup.py), so they cannot disagree. The repository is compared like the
+    Setup page always did (no scheme, ".git", trailing slash, or case); the command must be exactly the README
+    command apart from leading and trailing spaces; the image name must be the pinned scanner image's name.
+    The image tag, resources, and parameters are Setup page checks only."""
+    if not isinstance(job, dict):
+        return ("repository", "command", "image")
+    mismatches = []
+    if not is_this_repository(job.get("repo_http_uri")):
+        mismatches.append("repository")
+    if str(job.get("docker_command") or "").strip() != SCANNER_COMMAND:
+        mismatches.append("command")
+    pinned = pinned_image("scanner")
+    if pinned is None or str(job.get("docker_image_name") or "").strip() != pinned[0]:
+        mismatches.append("image")
+    return tuple(mismatches)
+
+
+def is_scanner_job(job: object) -> bool:
+    return not scanner_job_mismatches(job)
+
+
 def is_release_tag(ref: object) -> bool:
     return isinstance(ref, str) and bool(RELEASE_TAG.match(ref.strip()))

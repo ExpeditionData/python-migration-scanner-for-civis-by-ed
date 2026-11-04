@@ -194,6 +194,13 @@ def _job_found(facts: SetupFacts) -> Line:
         return Line(1, "job_found", title, "fail",
                     f"Civis did not return the scanner job (error type: {facts.settings.error_type}).",
                     "Check that SCANNER_JOB_ID is the scanner job's ID and that the Service owner can see the job.")
+    mismatches = release.scanner_job_mismatches(facts.job)
+    if mismatches:
+        return Line(1, "job_found", title, "fail",
+                    f"Job {facts.job_id} is not this tool's scanner job: its {', '.join(mismatches)} differ from the "
+                    "README. Run scan is off, and the app uses none of its settings.",
+                    "Set SCANNER_JOB_ID to the scanner job's ID (README \"Create the Service\", step 5), or fix the "
+                    "job as line 2 says.")
     return Line(1, "job_found", title, "pass", f"The scanner job ({facts.job_id}) was read.")
 
 
@@ -216,15 +223,16 @@ def _threads(job: dict) -> int:
 def _job_settings(job: dict) -> Line:
     title = "Scanner job settings match the README"
     issues: list[tuple[str, str]] = []  # (result, text)
+    mismatches = release.scanner_job_mismatches(job)  # The same identity check as line 1 and the start path.
     pinned = release.pinned_image("scanner")
     if pinned is None:
-        issues.append(("review", "the pinned image could not be read from requirements-scanner.txt"))
+        issues.append(("fail", "the pinned image could not be read from requirements-scanner.txt"))
     else:
-        if (job.get("docker_image_name") or "").strip() != pinned[0]:
+        if "image" in mismatches:
             issues.append(("fail", f"Docker Image Name is not {pinned[0]}"))
         if (job.get("docker_image_tag") or "").strip() != pinned[1]:
             issues.append(("fail", f"Docker Image Tag is not {pinned[1]}"))
-    if not release.is_this_repository(job.get("repo_http_uri")):
+    if "repository" in mismatches:
         issues.append(("fail", "GitHub Repository URL is not this repository"))
     ref = (job.get("repo_ref") or "").strip()
     if not release.is_release_tag(ref):
@@ -233,7 +241,7 @@ def _job_settings(job: dict) -> Line:
                                       "name such as v0.1.0"))
         else:
             issues.append(("fail", "GitHub Repository Reference is main, a branch, or blank, not a release tag"))
-    if " ".join((job.get("docker_command") or "").split()) != release.SCANNER_COMMAND:
+    if "command" in mismatches:
         issues.append(("fail", f"Command is not {release.SCANNER_COMMAND}"))
     resources = job.get("required_resources") or {}
     threads = _threads(job)

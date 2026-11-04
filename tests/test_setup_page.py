@@ -102,7 +102,8 @@ def test_the_pinned_images_come_from_the_requirements_files():
     ({"repo_ref": "v-test"}, "warning", "starts with v but is not a release tag"),
     ({"repo_ref": "v1.2.0"}, "pass", ""),
     ({"docker_command": "python -m scanner"}, "fail", "Command is not"),
-    ({"docker_command": "cd /app  &&  python -m scanner"}, "pass", ""),
+    ({"docker_command": "cd /app  &&  python -m scanner"}, "fail", "Command is not"),
+    ({"docker_command": "  cd /app && python -m scanner  "}, "pass", ""),
     ({"required_resources": {"cpu": 500, "memory": 4096, "disk_space": 4}}, "fail", "CPU is below 1000"),
     ({"required_resources": {"cpu": 2000, "memory": 8192, "disk_space": 10}}, "warning", "Memory is larger than"),
     ({"required_resources": {"cpu": 1000, "memory": 4096, "disk_space": 2}}, "fail", "Disk Space is below 4"),
@@ -484,6 +485,6 @@ def test_in_every_preview_state_a_job_that_cannot_be_read_shows_no_runs(preview_
     for state in STATES:
         web = _preview_app(preview_folder, state).test_client()
         setup_page = _text(web.get("/setup").get_data(as_text=True))
-        if "job_found Fail" in setup_page:
+        if "job_found Fail" in setup_page:  # No job, an unreadable job, or another job: no runs are shown.
             assert "A scan is running" not in _text(web.get("/").get_data(as_text=True)), state
             assert "latest_scan Review The newest scan is not known" in setup_page, state

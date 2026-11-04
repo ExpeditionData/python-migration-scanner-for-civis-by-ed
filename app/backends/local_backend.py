@@ -33,6 +33,7 @@ TABLE_NAMES = {t.name for t in TABLES}
 STATES = (
     "normal", "no-scan", "first-scan-running", "failed", "tables-failed", "schema-missing", "no-job-id",
     "job-unreadable", "database-unrecognized", "schema-refused", "tables-missing", "setup-failures",
+    "not-scanner-job",
 )
 # States that look like a new install: no scans yet, and the results storage is not set up.
 FRESH_STATES = ("schema-missing", "schema-refused", "tables-missing")
@@ -67,6 +68,9 @@ def preview_job(job_id: int, state: str = "normal") -> dict:
         ],
         "arguments": {"RESULTS_DB": database, "RESULTS_SCHEMA": LOCAL_SCHEMA},
     }
+    if state == "not-scanner-job":
+        job.update(name="Example nightly export", repo_http_uri="https://github.com/example-org/etl-jobs.git",
+                   docker_command="python export.py")
     if state == "setup-failures":
         job.update(author=dict(PREVIEW_OTHER_USER), running_as=dict(PREVIEW_OTHER_USER), git_credential_id=77,
                    repo_ref="main", required_resources={"cpu": 1000, "memory": 8192, "disk_space": 4.0})

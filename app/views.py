@@ -233,7 +233,7 @@ class Situation:
     def can_start(self) -> bool:
         """Run scan stays off while the results schema is missing (the button creates it)."""
         return (self.job_readable and not self.jobs_error and self.active_run is None
-                and self.results_state != "schema_missing")
+                and self.results_state != "schema_missing" and self.job_problem != "not_scanner_job")
 
 
 # ---------------------------------------------------------------------------

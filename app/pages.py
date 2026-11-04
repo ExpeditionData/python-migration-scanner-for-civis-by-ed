@@ -16,6 +16,7 @@ from app import views
 from app.backends.base import ChecklistSaveError, Progress, ResultsUnavailable, StorageSetup, safe_error_token
 from app.security import safe_href
 from app.services import Services
+from common import release
 from common.disclaimer import DISCLAIMER, NON_AFFILIATION
 from common.models import ObjectType
 from common.rule_loader import load_rules
@@ -30,6 +31,8 @@ NOTICES = {
     "busy": ("warning", "A scan is already queued or running, so a new one was not started."),
     "no-job": ("error", "Run scan is turned off because SCANNER_JOB_ID is not set on this Service."),
     "start-failed": ("error", "Civis did not start the scan. Try again in a few minutes."),
+    "not-scanner": ("error", "The scan was not started, because SCANNER_JOB_ID does not point to this tool's scanner "
+                             "job. See lines 1 and 2 on the Setup page."),
 }
 FILTER_KEYS = {
     "inventory": ("q", "type", "image", "status"),
@@ -50,6 +53,11 @@ def viewer_name() -> str | None:
 
 
 JOB_PROBLEMS = {
+    "not_scanner_job": {
+        "title": "SCANNER_JOB_ID does not point to this tool's scanner job",
+        "body": "The job's repository, command, or image are not the ones in the README, so the app does not start "
+                "it, read results with its settings, or set up storage with them. See lines 1 and 2 on the Setup "
+                "page."},
     "database_missing": {
         "title": "The results database is not set",
         "body": "Choose the results database and its credential in the scanner job's RESULTS_DB parameter, and save "
@@ -87,7 +95,9 @@ def load_situation() -> views.Situation:
             results_state = "error"
     runs, jobs_error = [], False
     jobs = svc.jobs()
-    if jobs is not None:
+    # The runs of a job that is not this tool's scanner job are never read: they are not scans.
+    foreign = job_settings is not None and job_settings.problem == "not_scanner_job"
+    if jobs is not None and not foreign:
         try:
             runs = jobs.runs()
         except Exception:
@@ -110,6 +120,10 @@ def banners(situation: views.Situation) -> list[dict]:
         items.append({"kind": "error", "text": "Run scan is turned off because the scanner job could not be read "
                       "from Civis. Check that SCANNER_JOB_ID is the scanner job's ID and that the Service owner can "
                       "see that job."})
+    elif situation.job_problem == "not_scanner_job":
+        items.append({"kind": "error", "text": "Run scan is turned off because SCANNER_JOB_ID does not point to this "
+                      "tool's scanner job. See lines 1 and 2 on the Setup page.",
+                      "link": url_for("pages.setup_page"), "link_text": "Open Setup"})
     elif situation.results_state == "schema_missing":
         items.append({"kind": "warning", "text": "Run scan is turned off because the results schema does not exist "
                       "yet. Click Set up results storage below to create it."})
@@ -430,6 +444,13 @@ def start_scan():
         return redirect(url_for("pages.scan", notice="no-job"))
     try:
         with svc.start_lock:  # One check-then-start at a time in this worker.
+            # Read the job fresh and start it only if it is this tool's scanner job (common/release.py). This
+            # holds even if the button is shown by mistake.
+            settings = svc.job_settings(fresh=True)
+            if settings is None or settings.problem == "job_unreadable":
+                return redirect(url_for("pages.scan", notice="start-failed"))
+            if not release.is_scanner_job(settings.job):
+                return redirect(url_for("pages.scan", notice="not-scanner"))
             if any(run.active for run in jobs.runs(limit=10)):
                 return redirect(url_for("pages.scan", notice="busy"))
             jobs.start()
@@ -464,9 +485,11 @@ def download_latest():
 
 @bp.get("/download/<int:civis_run_id>")
 def download(civis_run_id: int):
-    jobs = services().jobs()
-    if jobs is None:
-        abort(404)
+    svc = services()
+    jobs = svc.jobs()
+    settings = svc.job_settings() if jobs is not None else None
+    if jobs is None or (settings is not None and settings.problem == "not_scanner_job"):
+        abort(404)  # Never another job's run outputs.
     try:
         report = jobs.report(civis_run_id)
     except Exception:
@@ -486,8 +509,8 @@ def download(civis_run_id: int):
 def latest_state(situation: views.Situation) -> str:
     """The newest scan's state, for Setup line 10: unknown, none, queued, running, succeeded, failed, cancelled,
     or tables_failed."""
-    if not situation.job_readable or situation.jobs_error:
-        return "unknown"  # No job, or its runs could not be read: the newest scan is not known.
+    if not situation.job_readable or situation.jobs_error or situation.job_problem == "not_scanner_job":
+        return "unknown"  # No scanner job, or its runs could not be read: the newest scan is not known.
     if situation.active_run is not None:
         return situation.active_run.state
     return situation.last_outcome or "none"

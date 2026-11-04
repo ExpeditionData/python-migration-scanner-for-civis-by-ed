@@ -32,7 +32,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-from common import sql
+from common import release, sql
 
 DATABASE_PARAMETER = "RESULTS_DB"
 SCHEMA_PARAMETER = "RESULTS_SCHEMA"
@@ -41,7 +41,8 @@ DATABASE_SHAPES = (
     "not_recognized",
 )
 # Why the app cannot use the job's settings. None means it can.
-PROBLEMS = ("job_unreadable", "database_missing", "database_unrecognized", "schema_missing", "schema_invalid")
+PROBLEMS = ("job_unreadable", "not_scanner_job", "database_missing", "database_unrecognized", "schema_missing",
+            "schema_invalid")
 
 
 @dataclass(frozen=True)
@@ -158,4 +159,7 @@ def parse_job(job: dict) -> JobSettings:
         except sql.UnsafeValueError:
             problem = problem or "schema_invalid"
             schema = None
+    if not release.is_scanner_job(job):
+        # SCANNER_JOB_ID names some other job. Its parameters are never used to read or create anything.
+        problem = "not_scanner_job"
     return JobSettings(database, credential, schema, shape, problem, None, job)
