@@ -137,7 +137,7 @@ class LocalResults:
         self._lock = threading.Lock()
         # missing_schema, missing_tables, or ready. The "Set up results storage" button changes it.
         self.storage = ("missing_schema" if state in ("schema-missing", "schema-refused")
-                        else "missing_tables" if state in ("tables-missing", "no-scan", "first-scan-running")
+                        else "missing_tables" if state in ("tables-missing", "no-scan")
                         else "ready")
 
     def _connect(self) -> sqlite3.Connection:
@@ -187,7 +187,7 @@ class LocalResults:
     def _select(self, table: str, run_id: str | None) -> list[dict]:
         if table not in TABLE_NAMES:
             raise ValueError("unknown table")
-        if self.check() != "ok" or self.state in FRESH_STATES + ("no-scan", "first-scan-running"):
+        if self.check() != "ok" or self.state in FRESH_STATES + ("no-scan",):
             return []
         statement = f"SELECT * FROM {sql.identifier(table)}"
         params: tuple = ()
@@ -195,7 +195,19 @@ class LocalResults:
             statement += " WHERE run_id = ?"
             params = (run_id,)
         with self._lock, self._connect() as conn:
-            return [normalize_row(table, dict(r)) for r in conn.execute(statement, params).fetchall()]
+            rows = [normalize_row(table, dict(r)) for r in conn.execute(statement, params).fetchall()]
+            if self.state == "first-scan-running":
+                # Only the scan that is running exists yet: the newest run with no final status row.
+                first = self._running_run_id(conn)
+                rows = [r for r in rows if r.get("run_id") == first]
+            return rows
+
+    @staticmethod
+    def _running_run_id(conn: sqlite3.Connection) -> str | None:
+        rows = conn.execute(f"SELECT run_id, status, started_at FROM {SCAN_RUNS.name}").fetchall()
+        final = {r["run_id"] for r in rows if r["status"] != "running"}
+        running = [r for r in rows if r["run_id"] not in final]
+        return max(running, key=lambda r: r["started_at"] or "")["run_id"] if running else None
 
     def save_checklist(self, run_id: str, entries: list[tuple[int, str, str]], changed_by: str, when: datetime) -> None:
         # Same validation as in Civis, then real bound parameters.
@@ -223,6 +235,12 @@ def _later(stamp: str | None) -> str:
     return (moment.replace(second=min(moment.second + 1, 59))).strftime("%Y-%m-%d %H:%M:%S")
 
 
+class PreviewUnreadable(Exception):
+    """Made-up: what civis raises when the scanner job cannot be read (job-unreadable state)."""
+
+    status_code = 404
+
+
 class LocalJobs:
     def __init__(self, folder: Path, state: str = "normal"):
         self.folder = Path(folder)
@@ -238,7 +256,7 @@ class LocalJobs:
 
     def settings(self) -> JobSettings:
         if self.state == "job-unreadable":
-            return unreadable("CivisAPIError status=404")
+            return unreadable("PreviewUnreadable status=404")
         return parse_job(preview_job(self.job_id, self.state))
 
     def _apply_state(self) -> None:
@@ -254,16 +272,23 @@ class LocalJobs:
                 newest = self._runs[0]
                 self._runs[0] = JobRun(newest.id, "failed", newest.created_at, newest.started_at, newest.finished_at)
 
+    def _check_readable(self) -> None:
+        if self.state == "job-unreadable":
+            raise PreviewUnreadable("made-up error")
+
     def runs(self, limit: int = 20) -> list[JobRun]:
+        self._check_readable()
         with self._lock:
             return sorted(self._runs, key=lambda r: r.id, reverse=True)[:limit]
 
     def logs(self, run_id: int, last_id: int | None = None) -> list[LogLine]:
+        self._check_readable()
         entries = self._logs.get(str(run_id), [])
         lines = [LogLine(e["id"], e.get("message", ""), e.get("created_at")) for e in entries]
         return [line for line in lines if last_id is None or line.id > last_id]
 
     def start(self) -> JobRun:
+        self._check_readable()
         with self._lock:
             new_id = max([r.id for r in self._runs], default=0) + 1
             stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -272,6 +297,7 @@ class LocalJobs:
             return run
 
     def report(self, run_id: int) -> tuple[str, Any] | None:
+        self._check_readable()
         name = self._outputs.get(str(run_id))
         if not name:
             return None

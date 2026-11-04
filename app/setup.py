@@ -35,7 +35,7 @@ LINE_KEYS = (
     "job_found", "job_settings", "job_git_credential", "job_parameters", "one_owner", "sharing", "service",
     "frame_rule", "results_storage", "latest_scan",
 )
-LATEST_STATES = ("none", "queued", "running", "succeeded", "failed", "cancelled", "tables_failed")
+LATEST_STATES = ("unknown", "none", "queued", "running", "succeeded", "failed", "cancelled", "tables_failed")
 OPTIONAL_PARAMETERS = ("GITHUB", "LOOKBACK_DAYS", "MAX_CONCURRENCY", "REQUEST_BUDGET", "RETENTION_DAYS", "RUN_ID")
 README_PARAMETERS = (DATABASE_PARAMETER, SCHEMA_PARAMETER) + OPTIONAL_PARAMETERS
 TOKEN_PARAMETER = OPTIONAL_PARAMETERS[0]  # The optional GitHub token parameter. The app never reads its value.
@@ -115,7 +115,7 @@ def gather(source: Any, job_id: int | None, settings: JobSettings | None, *, rep
     """Read everything the checks need. ``source`` makes read calls only."""
     facts = SetupFacts(job_id=job_id, settings=settings, report_only=report_only,
                        password_env_count=password_env_count(env), repo_token_present=repo_token_present(env),
-                       latest=latest if latest in LATEST_STATES else "none")
+                       latest=latest if latest in LATEST_STATES else "unknown")
     if source is None:
         return facts
     readable = settings is not None and settings.problem != "job_unreadable"
@@ -522,6 +522,8 @@ def _storage(facts: SetupFacts) -> Line:
 def _latest(facts: SetupFacts) -> Line:
     title = "Latest scan"
     results = {
+        "unknown": ("review", "The newest scan is not known, because the scanner job or its runs could not be read.",
+                    "Fix line 1 first."),
         "none": ("review", "No scan has run yet.", "Click Run scan on the Overview page."),
         "queued": ("review", "A scan is queued.", None),
         "running": ("review", "A scan is running.", None),
@@ -531,5 +533,5 @@ def _latest(facts: SetupFacts) -> Line:
         "tables_failed": ("fail", "The newest scan could not save its tables (CSV report only).",
                           "Check line 9, then run the scan again."),
     }
-    result, reason, fix = results.get(facts.latest, results["none"])
+    result, reason, fix = results.get(facts.latest, results["unknown"])
     return Line(10, "latest_scan", title, result, reason, fix)

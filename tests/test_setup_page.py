@@ -419,3 +419,71 @@ def test_repo_http_token_value_never_reaches_the_page_the_summary_or_a_log(civis
     assert "repo_http_token_present: yes" in summary_body
     monkeypatch.delenv("REPO_HTTP_TOKEN")
     assert "repo_http_token_present: no" in app.test_client().get("/setup/summary").get_data(as_text=True)
+
+
+# --- Preview states match what the Civis backend would show (17.2.27) ----------------------------
+
+
+@pytest.fixture(scope="module")
+def preview_folder(tmp_path_factory):
+    pytest.importorskip("flask")
+    from scanner.synthetic.preview import build_preview
+
+    folder = tmp_path_factory.mktemp("consistency")
+    build_preview(folder)
+    return folder
+
+
+def _preview_app(folder, state):
+    from app import create_app
+    from app.services import local_services
+
+    return create_app({"SECRET_KEY": "setup-page-test-secret-key-long-enough-1",  # pragma: allowlist secret  gitleaks:allow
+                       "SERVICES": local_services(folder, state)})
+
+
+def test_preview_job_unreadable_shows_no_runs_or_results(preview_folder, monkeypatch):
+    """In Civis, the job's runs, logs, and the results all depend on the job, so none of them can be read."""
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    app = _preview_app(preview_folder, "job-unreadable")
+    web = app.test_client()
+    for url in ("/", "/scan", "/inventory", "/findings"):
+        page = _text(web.get(url).get_data(as_text=True))
+        assert "A scan is running" not in page and "A scan is queued" not in page, url
+        assert "Run scan is turned off because the scanner job could not be read" in page, url
+    setup_page = _text(web.get("/setup").get_data(as_text=True))
+    assert "10 Latest scan latest_scan Review The newest scan is not known" in setup_page
+    summary = web.get("/setup/summary").get_data(as_text=True)
+    assert "scan: none" in summary and "results_state: job_unreadable" in summary
+    assert web.get("/api/scan-status").get_json()["state"] == "idle"
+
+
+def test_preview_first_scan_running_has_its_tables_and_its_running_scan(preview_folder, monkeypatch):
+    """The scanner creates its tables when it starts, so during the first scan they exist."""
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    app = _preview_app(preview_folder, "first-scan-running")
+    web = app.test_client()
+    page = _text(web.get("/").get_data(as_text=True))
+    assert "The first scan is running" in page and "Set up results storage" not in page
+    summary = web.get("/setup/summary").get_data(as_text=True)
+    assert "status: running" in summary and "runs_in_scan_runs: 1" in summary
+    assert "9 Results storage: schema, five tables, and read access results_storage Pass" in _text(
+        web.get("/setup").get_data(as_text=True))
+
+
+def test_no_job_id_makes_the_latest_scan_unknown(preview_folder, monkeypatch):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    page = _text(_preview_app(preview_folder, "no-job-id").test_client().get("/setup").get_data(as_text=True))
+    assert "10 Latest scan latest_scan Review The newest scan is not known" in page
+
+
+def test_in_every_preview_state_a_job_that_cannot_be_read_shows_no_runs(preview_folder, monkeypatch):
+    from app.backends.local_backend import STATES
+
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    for state in STATES:
+        web = _preview_app(preview_folder, state).test_client()
+        setup_page = _text(web.get("/setup").get_data(as_text=True))
+        if "job_found Fail" in setup_page:
+            assert "A scan is running" not in _text(web.get("/").get_data(as_text=True)), state
+            assert "latest_scan Review The newest scan is not known" in setup_page, state

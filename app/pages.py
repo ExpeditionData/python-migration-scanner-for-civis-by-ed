@@ -484,8 +484,10 @@ def download(civis_run_id: int):
 
 
 def latest_state(situation: views.Situation) -> str:
-    """The newest scan's state, for Setup line 10: none, queued, running, succeeded, failed, cancelled, or
-    tables_failed."""
+    """The newest scan's state, for Setup line 10: unknown, none, queued, running, succeeded, failed, cancelled,
+    or tables_failed."""
+    if not situation.job_readable or situation.jobs_error:
+        return "unknown"  # No job, or its runs could not be read: the newest scan is not known.
     if situation.active_run is not None:
         return situation.active_run.state
     return situation.last_outcome or "none"
