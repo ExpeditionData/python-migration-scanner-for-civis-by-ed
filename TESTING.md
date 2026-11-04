@@ -16,15 +16,17 @@ README setup and every fact that could not be confirmed from documentation
   `error=CivisAPIError status=403`) are fine to record; they hold no content.
 - If something you would need to record looks like client content, write
   "content withheld" and describe it in general terms instead.
-- **Release tag:** every step, setup and scans, uses `v0.1.0-rc3`. Use it in
-  place wherever the README says `<release tag>`. Item 5.6 (update to a new
-  release) waits for the first release tag after `v0.1.0-rc3`.
+- **Release tag:** every step, setup and scans, uses `v0.1.0-rc4`. It follows
+  `v0.1.0-rc3` because of two safety guards: Run scan starts only this tool's
+  scanner job, and the tool refuses a results schema that holds anything else.
+  Use it in place wherever the README says `<release tag>`. Item 5.6 (update
+  to a new release) waits for the first release tag after `v0.1.0-rc4`.
 - **Browser:** Chrome, Edge, or Firefox. Safari ignores the report-only frame
   rule (item 2.1).
 
 ## Order
 
-1. Section 1 (setup) on `v0.1.0-rc3`, with no GitHub token attached to the
+1. Section 1 (setup) on `v0.1.0-rc4`, with no GitHub token attached to the
    scanner job.
 2. Section 2 (frame rule), then the Setup page again (end of item 1.10).
 3. Section 3 (the first scan, with no GitHub token) and the first-scan part
@@ -37,7 +39,7 @@ README setup and every fact that could not be confirmed from documentation
    results.
 
 Item 5.6 is not part of this run. It waits for the first release tag after
-`v0.1.0-rc3`.
+`v0.1.0-rc4`.
 
 ## Prepare the test organization
 
@@ -167,7 +169,9 @@ finish the step the way the interface allows and record the difference.
 - **Expected:** After any outcome, the Overview page shows "No scan yet"
   and **Run scan** is on. This confirms the check finds the schema on
   Redshift. Nothing else changes in Civis.
-- **Record:** outcome a, b, or c; for b and c, the error type shown, whether
+- **Record:** whether the first click reported that the schema already existed
+  (expected: no, because the schema is new); outcome a, b, or c; for b and c,
+  the error type shown, whether
   the statement showed a database user name or the `<database user>`
   placeholder (yes or no, never the name), and pass or fail for the admin's
   statement and for the second click; if a table step failed, the step and error type. Do
@@ -177,7 +181,9 @@ finish the step the way the interface allows and record the difference.
 
 - **Steps:** Open the **Setup** page. Do not copy or record the user and group
   names that line 6 lists. After item 2.2, open the Setup page again.
-- **Expected:** Lines 1 to 5, 7, and 9 pass (line 7 is "review" instead if
+- **Expected:** Lines 1 to 5, 7, and 9 pass; line 9 says the schema holds only
+  this tool's five tables (it is dedicated), and the test summary shows
+  `results_schema_dedicated: yes` (line 7 is "review" instead if
   Civis added the deploying user's GitHub token to the Service as
   `REPO_HTTP_TOKEN`); line 6 (sharing) is "review";
   line 8 (frame rule) is a warning while report-only is on and a pass after
@@ -186,7 +192,8 @@ finish the step the way the interface allows and record the difference.
   2.2; the `RESULTS_DB` value shape shown under line 4; the Service lookup
   method shown under line 7; the user and group counts in line 6; whether line
   7 reports the deploying user's GitHub token (yes or no; the summary's
-  `repo_http_token_present`). For any
+  `repo_http_token_present`); whether line 9 shows the schema is dedicated
+  (yes or no). For any
   line that is not as expected, its reason in general terms.
 
 ## 2. Frame rule (PLAN.md 11.3)
@@ -504,12 +511,12 @@ finish the step the way the interface allows and record the difference.
 
 ### 5.6 Update to a new release, and removal
 
-This item waits for the first release tag after `v0.1.0-rc3`. It is not part
+This item waits for the first release tag after `v0.1.0-rc4`. It is not part
 of this run.
 
 - **Steps:**
   1. Follow README "Update to a new release" to move both objects from
-     `v0.1.0-rc3` to the new tag. Its last step ("Run a new scan") is a new
+     `v0.1.0-rc4` to the new tag. Its last step ("Run a new scan") is a new
      scan from the app.
   2. Optional, at the end of that test: follow README "Remove the tool".
 - **Expected:** Each step works as written. After the update, the Service
@@ -540,7 +547,7 @@ item 5.7 pasted below it. Counts and redacted error types only.
 
 ```
 Python Migration Scanner: first live test results
-Release tag: v0.1.0-rc3 (setup and scans)
+Release tag: v0.1.0-rc4 (setup and scans)
 Date (MM/DD/YYYY):
 Browser:
 
@@ -557,12 +564,12 @@ Item  Result (pass/fail/skipped)  Counts or note
 1.6
 1.7   Service:  job:
 1.8   heading (if different):
-1.9   outcome (a/b/c):   b or c: error type=  user name shown: yes/no  admin statement:  second click:
+1.9   first click said the schema already existed: yes/no   outcome (a/b/c):   b or c: error type=  user name shown: yes/no  admin statement:  second click:
       table step failed (step, error type):
 1.10  first visit: 1=  2=  3=  4=  5=  6=  7=  8=  9=  10=
       after 2.2:   1=  2=  3=  4=  5=  6=  7=  8=  9=  10=
       RESULTS_DB shape:   Service lookup:   line 6 job users=  groups=  Service users=  groups=
-      repo_http_token_present: yes/no
+      repo_http_token_present: yes/no   line 9 dedicated: yes/no
 2.1   report-only warnings:   parent address (if any):
 2.2
 2.3   seen/not seen
@@ -596,7 +603,7 @@ Item  Result (pass/fail/skipped)  Counts or note
       step 3 edit by Robot user: yes/no   resumed run shows Robot user: yes/no
       step 4 edit by Robot user: yes/no   next run shows Robot user: yes/no
 5.5   minutes to wake=
-5.6   waits for the first tag after v0.1.0-rc3
+5.6   waits for the first tag after v0.1.0-rc4
 5.7   built:  copied (button/by hand):  sent:  looked like a name: yes/no
 
 Error types seen (from the scanner's log only), with counts:

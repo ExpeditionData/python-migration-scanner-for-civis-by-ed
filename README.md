@@ -106,9 +106,11 @@ You need:
    working, and the results schema belongs to that person's database user, so
    a database admin then has to reassign it. The app's Setup page checks that
    one account owns the scanner job, the Service, and the database credential.
-3. **A name for the results schema**: a schema used only for this tool, with
-   letters, numbers, and underscores only (for example
-   `python_migration_results`). You do not need to create it. The web app
+3. **A name for the results schema**: a new schema, used only for this tool,
+   with letters, numbers, and underscores only (for example
+   `python_migration_results`). The tool refuses a schema that holds anything
+   else (any other table or view), so do not reuse an existing schema. You do
+   not need to create it. The web app
    creates the schema and its five tables when you click **Set up results
    storage** (see "Set up results storage and check the setup" below). A
    database admin is needed only if the app says the database user cannot

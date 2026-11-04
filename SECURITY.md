@@ -84,13 +84,17 @@ clicks **Run scan** in the web app.
 - runs of the scanner job, started from the web app
 - the CSV run output attached to each scanner run
 
+The web app is designed to start a run only when the job's repository,
+command, and image are this tool's. The web app and the scanner are designed
+to refuse a results schema that holds any other table or view.
+
 It is designed not to create, edit, share, archive, or delete any other Civis
 object, including the scanner job's settings and the Service. Every SQL
 statement it sends is designed to be one of `CREATE SCHEMA IF NOT EXISTS`,
 `CREATE TABLE IF NOT EXISTS`, `SELECT`, `INSERT`, or `DELETE` (the last only
 for `RETENTION_DAYS`), naming only the results schema, or reading
-`pg_catalog.pg_namespace` and `pg_catalog.pg_tables` to check that the
-schema and its tables exist (`test_app_statements_stay_in_the_results_schema` and
+`pg_catalog.pg_namespace`, `pg_catalog.pg_tables`, and `pg_catalog.pg_views`
+to check that the schema and its tables exist and that it holds nothing else (`test_app_statements_stay_in_the_results_schema` and
 `test_scanner_sink_statements_stay_in_the_results_schema` in
 [tests/test_sql_scope.py](tests/test_sql_scope.py)).
 

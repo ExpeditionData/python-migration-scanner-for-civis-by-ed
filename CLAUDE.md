@@ -60,7 +60,7 @@ be made public at any time.
   credential. Rob changes its visibility himself; never change it from a
   session.
 - Releases are git tags, protected by the "release tags" ruleset. The first
-  live test sets up and runs its scans on `v0.1.0-rc3`. Create a tag or a
+  live test sets up and runs its scans on `v0.1.0-rc4`. Create a tag or a
   GitHub Release only when Rob's prompt says to.
 - Commit after each completed step, with a clear message that says what changed
   and why.
@@ -120,6 +120,17 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   checks, and its "Build test summary" page gives counts, fixed labels, and
   error types only, from an allow list (`app/summary.py`). Shared with Civis
   admins only.
+- **Two safety guards** (docs/PLAN.md 17.3). (1) Run scan starts only this
+  tool's scanner job: inside the POST, under the start lock, the app reads
+  the job fresh and starts it only if `common/release.scanner_job_mismatches`
+  finds its repository, command, and image are this tool's. The same
+  function drives Setup lines 1 and 2, and a job that fails it gives no usable
+  settings (no results reads, no storage setup, no runs or outputs read).
+  (2) The results schema must hold only this tool's tables:
+  `common/schema.schema_objects_sql` and `other_object_count` (pg_catalog
+  tables and views) are checked by the setup button, Setup line 9, and the
+  scanner before it writes anything. The scanner logs one `FATAL
+  error=SchemaNotDedicated` line and exits 2.
 - **Connection.** No direct link between app and scanner. The app reads the
   job's settings, starts runs, and reads status and `PROGRESS` log lines
   through the Civis API, and reads results from the tables. Checklist status
@@ -261,8 +272,10 @@ app on 127.0.0.1 only:
 
 Open http://127.0.0.1:8050. Add `--state no-scan` (or `first-scan-running`,
 `failed`, `tables-failed`, `schema-missing`, `no-job-id`, `job-unreadable`,
-`database-unrecognized`, `schema-refused`, `tables-missing`, or
-`setup-failures`) to see the empty and error states. `schema-missing`,
+`database-unrecognized`, `schema-refused`, `tables-missing`,
+`setup-failures`, `not-scanner-job`, or `schema-shared`) to see the empty and
+error states. `not-scanner-job` points SCANNER_JOB_ID at another job, and
+`schema-shared` has a results schema that holds other tables. `schema-missing`,
 `schema-refused`, and `tables-missing` look like a new install with the "Set
 up results storage" button (`schema-refused` shows the statement for a
 database admin); `setup-failures` makes several Setup page lines fail. Local
@@ -297,7 +310,8 @@ Run the full suite on both Python versions before every commit:
   `tests/test_setup_page.py`, and `tests/test_summary.py` cover the job
   settings, the setup button, the Setup page, and the test summary (including
   the marker test and the TESTING 4.8 match). `tests/test_sql_scope.py` checks
-  every SQL statement the tool sends. `tests/civis_fakes.py` holds the made-up
+  every SQL statement the tool sends. `tests/test_start_guard.py` and
+  `tests/test_schema_guard.py` cover the two safety guards. `tests/civis_fakes.py` holds the made-up
   civis client and recording `civis.io`.
 - `tests/test_app.py` covers every page and API, CSRF on every POST, escaping
   of hostile object names, security headers, the concurrent-run guard, the
