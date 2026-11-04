@@ -304,3 +304,24 @@ def test_the_summary_renders_in_every_preview_state(tmp_path, monkeypatch):
         assert response.status_code == 200, state
         text = _summary_text(response)
         assert "Example" not in text and HOSTILE_NAME not in text and "example" not in text, state
+
+
+def test_the_default_scan_is_the_newest_finished_one(monkeypatch):
+    """A running scan has no RUN line counts yet, so the summary starts with the newest finished scan."""
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    from app import create_app
+    from app.services import civis_services
+    from app.settings import Settings
+
+    run_c = "run-20261103T120000Z-0a1b2c"
+    io = _marked_io()
+    io.tables[f"{MARK}_schema.scan_runs"].append(
+        [run_c, "2026-11-03 12:00:00", "", "running", "x", "703", "2026-11-03 12:00:00", "{}"])
+    client = _marked_client()
+    services = civis_services(Settings(scanner_job_id=1234), client_factory=lambda: client, io_factory=lambda: io)
+    app = create_app({"SECRET_KEY": "summary-test-secret-key-that-is-long-enough", "SERVICES": services})  # pragma: allowlist secret  gitleaks:allow
+    body = app.test_client().get("/setup/summary").get_data(as_text=True)
+    assert f'<option value="{RUN_B}" selected' in body and f'<option value="{run_c}"' in body
+    assert f"scan: {RUN_B}" in _summary_text(app.test_client().get("/setup/summary"))
+    running = _summary_text(app.test_client().get(f"/setup/summary?run={run_c}"))
+    assert f"scan: {run_c}" in running and "status: running" in running

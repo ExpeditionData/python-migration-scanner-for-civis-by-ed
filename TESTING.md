@@ -516,7 +516,8 @@ of this run.
 ### 5.7 Test summary
 
 - **Steps:** On the Setup page, click **Build test summary**. Choose the scan
-  in the select list (the newest is chosen by default) and click **Build
+  in the select list (the newest finished scan is chosen by default; a running
+  scan can be chosen too, but has no `run_line` yet) and click **Build
   summary**. Read the text before you copy it. Click **Copy** (or select the
   text and copy it by hand if the button reports that copying did not work),
   and paste it below the results template when you send the results.

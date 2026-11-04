@@ -46,6 +46,7 @@ RUN_COUNTS = (
     "github_cache_evictions", "civis_git_reads", "civis_git_failures",
 )
 SCAN_STATUSES = ("running", "succeeded", "tables_failed", "failed")
+FINAL_STATUSES = ("succeeded", "tables_failed", "failed")  # The default scan is the newest with one of these.
 RESULTS_STATES = ("ok", "no_tables", "schema_missing", "not_configured", "job_unreadable", "error")
 OBJECT_TYPES = tuple(t.value for t in ObjectType)
 GIT_TYPES = ("python_script", "workflow")

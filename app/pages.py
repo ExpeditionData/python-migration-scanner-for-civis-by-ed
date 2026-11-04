@@ -529,7 +529,10 @@ def setup_summary():
     facts = setup_facts(situation, settings)
     scans = [s for s in situation.scans if summary.is_run_id(s.run_id)]
     wanted = request.args.get("run", "")
-    chosen = next((s for s in scans if s.run_id == wanted), scans[0] if scans else None)
+    # By default, the newest scan that has finished (a running scan has no RUN line counts yet). Any other run,
+    # including a running one, can be chosen in the select list. With no finished scan, the newest one.
+    newest_final = next((s for s in scans if s.status in summary.FINAL_STATUSES), scans[0] if scans else None)
+    chosen = next((s for s in scans if s.run_id == wanted), newest_final)
     scan_data = checklist = run_rows = None
     if chosen is not None:
         scan_data = summary.ScanData(chosen.run_id, chosen.status, chosen.started_at, chosen.finished_at)
