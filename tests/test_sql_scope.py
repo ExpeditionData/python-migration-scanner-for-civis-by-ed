@@ -7,8 +7,9 @@ Drives every code path that sends SQL, with a recording fake civis.io:
   the Setup page, and the test summary
 
 Each statement must start with CREATE SCHEMA IF NOT EXISTS, CREATE TABLE IF NOT EXISTS, SELECT, INSERT, or
-DELETE; name only the results schema's five tables, or read pg_catalog.pg_namespace or pg_catalog.pg_tables (the
-existence checks; no other pg_catalog object, and no information_schema); contain no GRANT, REVOKE,
+DELETE; name only the results schema's five tables, or read pg_catalog.pg_namespace, pg_catalog.pg_tables, or
+pg_catalog.pg_views (the existence and dedicated-schema checks; no other pg_catalog object, and no
+information_schema); contain no GRANT, REVOKE,
 DROP, ALTER, TRUNCATE, UPDATE, COPY, or UNLOAD; and hold one statement only. Made-up data only.
 """
 
@@ -26,7 +27,7 @@ STARTS = re.compile(r"^(CREATE SCHEMA IF NOT EXISTS|CREATE TABLE IF NOT EXISTS|S
 FORBIDDEN = re.compile(r"\b(GRANT|REVOKE|DROP|ALTER|TRUNCATE|UPDATE|COPY|UNLOAD)\b", re.IGNORECASE)
 TARGET = re.compile(r"\b(?:FROM|INTO|USING|JOIN|TABLE IF NOT EXISTS|SCHEMA IF NOT EXISTS)\s+([A-Za-z_][\w.]*)", re.IGNORECASE)
 QUALIFIED = re.compile(r"\b([A-Za-z_]\w*)\.([A-Za-z_]\w*)")
-CATALOG = {"pg_namespace", "pg_tables"}  # Existence checks only.
+CATALOG = {"pg_namespace", "pg_tables", "pg_views"}  # Existence and dedicated-schema checks only.
 
 
 def _without_literals(statement: str) -> str:
@@ -84,6 +85,12 @@ def test_the_checker_allows_the_two_catalog_reads():
                           "AND tablename IN ('scan_runs')", "results") == []
 
 
+def test_the_checker_allows_the_dedicated_schema_check():
+    from common.schema import schema_objects_sql
+
+    assert scope_problems(schema_objects_sql("results"), "results") == []
+
+
 def test_the_checker_allows_literals_that_look_like_sql():
     assert scope_problems("INSERT INTO results.checklist_status (changed_by) VALUES ('drop; grant')", "results") == []
 
@@ -103,6 +110,7 @@ def test_scanner_sink_statements_stay_in_the_results_schema():
     io = RecordingIO({"results_scan.scan_runs": [["run_id", "started_at", "status", "recorded_at"],
                                                  ["run-1", "2026-10-01 12:00:00", "running", "2026-10-01 12:00:00"]]})
     sink = CivisSink(object(), io, 31, "results_scan", 41)
+    sink.other_objects()
     sink.ensure_tables()
     sink.finished_object_ids("run-1")
     sink.run_rows("run-1")

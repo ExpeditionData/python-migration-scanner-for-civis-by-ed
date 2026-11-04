@@ -33,10 +33,11 @@ TABLE_NAMES = {t.name for t in TABLES}
 STATES = (
     "normal", "no-scan", "first-scan-running", "failed", "tables-failed", "schema-missing", "no-job-id",
     "job-unreadable", "database-unrecognized", "schema-refused", "tables-missing", "setup-failures",
-    "not-scanner-job",
+    "not-scanner-job", "schema-shared",
 )
 # States that look like a new install: no scans yet, and the results storage is not set up.
-FRESH_STATES = ("schema-missing", "schema-refused", "tables-missing")
+FRESH_STATES = ("schema-missing", "schema-refused", "tables-missing", "schema-shared")
+PREVIEW_OTHER_OBJECTS = 3  # schema-shared: the made-up schema holds three tables or views of its own.
 PREVIEW_DATABASE_USER = "example_robot_db"
 # Made-up IDs for the preview's scanner job settings.
 PREVIEW_DATABASE_ID = 3
@@ -129,9 +130,11 @@ class LocalSetup:
     def storage(self, settings) -> StorageFacts:
         if self.results.storage == "missing_schema":
             return StorageFacts(schema_exists=False)
+        if self.state == "schema-shared":
+            return StorageFacts(schema_exists=True, other_objects=PREVIEW_OTHER_OBJECTS)
         if self.results.storage == "missing_tables":
-            return StorageFacts(schema_exists=True)
-        return StorageFacts(schema_exists=True, tables=frozenset(TABLE_NAMES), readable=True)
+            return StorageFacts(schema_exists=True, other_objects=0)
+        return StorageFacts(schema_exists=True, other_objects=0, tables=frozenset(TABLE_NAMES), readable=True)
 
 
 class LocalResults:
@@ -141,7 +144,7 @@ class LocalResults:
         self._lock = threading.Lock()
         # missing_schema, missing_tables, or ready. The "Set up results storage" button changes it.
         self.storage = ("missing_schema" if state in ("schema-missing", "schema-refused")
-                        else "missing_tables" if state in ("tables-missing", "no-scan")
+                        else "missing_tables" if state in ("tables-missing", "no-scan", "schema-shared")
                         else "ready")
 
     def _connect(self) -> sqlite3.Connection:
@@ -166,6 +169,8 @@ class LocalResults:
         """Made-up: schema-refused shows the statement for a database admin; the others succeed."""
         with self._lock:
             existed = self.storage != "missing_schema"
+            if self.state == "schema-shared":
+                return StorageSetup("not_dedicated", "schema", schema_existed=True, other_objects=PREVIEW_OTHER_OBJECTS)
             if self.state == "schema-refused" and not existed:
                 return StorageSetup("schema_failed", "schema", "CivisJobFailure",
                                     admin_statement=admin_schema_sql(LOCAL_SCHEMA, PREVIEW_DATABASE_USER))

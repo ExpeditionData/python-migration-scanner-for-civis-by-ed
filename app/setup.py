@@ -500,8 +500,25 @@ def _frame_rule(facts: SetupFacts) -> Line:
     return Line(8, "frame_rule", title, "pass", "The frame rule is enforced.")
 
 
+def other_objects_text(count: int | None) -> str:
+    if count is None:
+        return "other tables or views"
+    return f"{count} other table or view" if count == 1 else f"{count} other tables or views"
+
+
+NOT_DEDICATED_FIX = "Choose a new schema name in the scanner job's RESULTS_SCHEMA parameter."
+
+
+def schema_dedicated(facts: SetupFacts) -> str:
+    """For the test summary: yes, no, or unknown (not checked, or the schema does not exist yet)."""
+    storage = facts.storage
+    if storage is None or storage.error or not storage.schema_exists or storage.other_objects is None:
+        return "unknown"
+    return "no" if storage.other_objects else "yes"
+
+
 def _storage(facts: SetupFacts) -> Line:
-    title = "Results storage: schema, five tables, and read access"
+    title = "Results storage: a dedicated schema, five tables, and read access"
     storage = facts.storage
     if storage is None:
         return Line(9, "results_storage", title, "review",
@@ -514,6 +531,10 @@ def _storage(facts: SetupFacts) -> Line:
     if not storage.schema_exists:
         return Line(9, "results_storage", title, "fail", "The results schema does not exist.",
                     "Click Set up results storage on the Overview page.")
+    if storage.other_objects:
+        return Line(9, "results_storage", title, "fail",
+                    f"The results schema holds {other_objects_text(storage.other_objects)}, so the tool will not "
+                    "use it.", NOT_DEDICATED_FIX)
     missing = [name for name in TABLE_NAMES if name not in (storage.tables or set())]
     if missing:
         return Line(9, "results_storage", title, "warning",
@@ -523,8 +544,8 @@ def _storage(facts: SetupFacts) -> Line:
     if not storage.readable:
         return Line(9, "results_storage", title, "fail", "The credential could not read the tables.",
                     "Check that the RESULTS_DB credential's database user can read the schema.")
-    return Line(9, "results_storage", title, "pass", "The schema and its five tables exist, and the credential "
-                                                     "can read them.")
+    return Line(9, "results_storage", title, "pass", "The schema holds only this tool's five tables, and the "
+                                                     "credential can read them.")
 
 
 def _latest(facts: SetupFacts) -> Line:

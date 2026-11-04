@@ -22,6 +22,7 @@ from typing import Any
 from common import sql
 from common.schema import (
     CHECKLIST_STATUS, SCAN_RUNS, TABLES, admin_owner_sql, admin_schema_sql, checklist_insert_sql, create_schema_sql,
+    other_object_count, schema_objects_sql,
 )
 from app.backends.base import (
     LOG_PAGE, ChecklistSaveError, JobRun, LogLine, ResultsUnavailable, StorageFacts, StorageSetup, error_token,
@@ -100,6 +101,9 @@ class CivisResults:
         )
         return frozenset(str(r.get("tablename")) for r in rows) & TABLE_NAMES
 
+    def _schema_objects(self) -> list[dict]:
+        return self._read(schema_objects_sql(self.schema))
+
     def database_user(self) -> str | None:
         """The user name on the RESULTS_DB credential (credentials.get). None if there is no credential or it
         cannot be read. Shown only to admins, in the statement for a database admin."""
@@ -121,6 +125,14 @@ class CivisResults:
             existed = self._schema_exists()
         except Exception as exc:
             return StorageSetup("schema_failed", "schema", error_token(exc))  # Could not even check: no statement.
+        if existed:
+            # The tool uses only a schema that holds nothing but its own tables.
+            try:
+                other = other_object_count(self._schema_objects())
+            except Exception as exc:
+                return StorageSetup("schema_failed", "schema", error_token(exc))
+            if other:
+                return StorageSetup("not_dedicated", "schema", schema_existed=True, other_objects=other)
         if not existed:
             try:
                 self._query(create_schema_sql(self.schema))
@@ -158,11 +170,13 @@ class CivisResults:
         except Exception as exc:
             return StorageFacts(error=error_token(exc), step="schema")
         try:
-            tables = self._existing_tables()
+            rows = self._schema_objects()
         except Exception as exc:
             return StorageFacts(schema_exists=True, error=error_token(exc), step="tables")
-        if tables != TABLE_NAMES:
-            return StorageFacts(schema_exists=True, tables=tables)
+        other = other_object_count(rows)
+        tables = frozenset(str(r.get("name")) for r in rows if r.get("kind") == "table") & TABLE_NAMES
+        if other or tables != TABLE_NAMES:
+            return StorageFacts(schema_exists=True, other_objects=other, tables=tables)
         statement = " UNION ALL ".join(
             f"SELECT {sql.string(t.name)} AS table_name, COUNT(*) AS row_count FROM {sql.qualified_table(self.schema, t.name)}"
             for t in TABLES
@@ -170,8 +184,9 @@ class CivisResults:
         try:
             self._read(statement)
         except Exception as exc:
-            return StorageFacts(schema_exists=True, tables=tables, readable=False, error=error_token(exc), step="read")
-        return StorageFacts(schema_exists=True, tables=tables, readable=True)
+            return StorageFacts(schema_exists=True, other_objects=0, tables=tables, readable=False,
+                                error=error_token(exc), step="read")
+        return StorageFacts(schema_exists=True, other_objects=0, tables=tables, readable=True)
 
     def scan_runs(self) -> list[dict]:
         return self._table_rows(SCAN_RUNS.name, None)

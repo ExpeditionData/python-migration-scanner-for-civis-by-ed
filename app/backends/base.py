@@ -81,7 +81,8 @@ class ChecklistSaveError(Exception):
 class StorageSetup:
     """What the "Set up results storage" button did.
 
-    ``outcome``: created, schema_failed, tables_failed, or not_ready (the job's settings cannot be used).
+    ``outcome``: created, schema_failed, tables_failed, not_dedicated (the schema holds other tables or views),
+    or not_ready (the job's settings cannot be used).
     ``step`` names the step that failed (schema or tables). ``error_type`` is an exception class name with an
     optional HTTP status, never the SQL error text. ``admin_statement`` is shown when the schema step failed.
     """
@@ -92,6 +93,7 @@ class StorageSetup:
     schema_existed: bool = False
     admin_statement: str | None = None
     user_known: bool = True
+    other_objects: int = 0  # not_dedicated: how many other tables and views the schema holds (no names).
 
 
 @dataclass(frozen=True)
@@ -102,6 +104,7 @@ class StorageFacts:
     five. ``error`` is an error type and ``step`` the step that failed (schema, tables, or read)."""
 
     schema_exists: bool | None = None
+    other_objects: int | None = None  # Tables and views that are not this tool's; None if not checked.
     tables: frozenset = frozenset()
     readable: bool | None = None
     error: str | None = None

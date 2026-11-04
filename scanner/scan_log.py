@@ -18,6 +18,7 @@ Line formats (parsed by the web app to show progress):
     CHECKPOINT objects_written=500
     OUTPUT_FAILED error=CivisAPIError
     FATAL error=KeyError
+    FATAL error=SchemaNotDedicated reason=results_schema_holds_other_tables_or_views other_objects=3
     TABLE_WRITE_FAILED table=findings error=CivisAPIError status=403
     RUN run_id=run-20261013T120000Z-a1b2c3 status=running
     RUN run_id=run-20261013T120000Z-a1b2c3 status=succeeded objects_total=2000 objects_scanned=2000 api_calls=6120 github_tarball_requests=14 github_cache_peak_bytes=52428800 github_cache_evictions=0 civis_git_reads=37 civis_git_failures=2
@@ -166,6 +167,15 @@ def output_failed(exc: BaseException) -> None:
 def fatal(exc: BaseException) -> None:
     """The scan stopped. Logs the error type only; messages can hold Civis content."""
     _logger.error("FATAL error=%s", _error_name(exc))
+
+
+def schema_not_dedicated(other_objects: int) -> None:
+    """The results schema holds tables or views that are not this tool's, so the scan wrote nothing.
+    A fixed reason and the count only, never the names."""
+    _logger.error(
+        "FATAL error=SchemaNotDedicated reason=results_schema_holds_other_tables_or_views other_objects=%d",
+        _count(other_objects, "other_objects"),
+    )
 
 
 def checkpoint(objects_written: int) -> None:

@@ -41,7 +41,7 @@ from scanner.config import ScanConfig
 from scanner.engine import Engine
 from scanner.inventory import build_inventory
 from scanner.inventory.users import scanning_user
-from scanner.output import ResultSink, TableWriteError, report_csv
+from scanner.output import ResultSink, SchemaNotDedicated, TableWriteError, report_csv
 from scanner.process import ObjectResult, ScanDeps, process_item
 from scanner.ratelimit import BudgetedClient, RequestBudget
 from scanner.retrieval.civis_git import CivisGitFiles
@@ -113,8 +113,24 @@ def run_scan(
 ) -> RunResult:
     started = now()
     run_id = config.run_id or new_run_id(started)
+    # Before anything is created or written (tables, rows, retention deletes, the CSV): the results schema
+    # must hold nothing but this tool's five tables. If it holds other tables or views, stop. If the check
+    # itself fails, write no tables (as when a table write fails) and still save the CSV to this run.
+    check_error = None
+    if sink is not None:
+        try:
+            other = sink.other_objects()
+        except Exception as exc:
+            other, check_error = 0, exc
+        if other:
+            raise SchemaNotDedicated(other)
     scan_log.run_status(run_id, "running")
     tables = _Tables(sink)
+    if check_error is not None:
+        def failed_check():
+            raise check_error
+
+        tables.run("scan_runs", failed_check)  # Logs TABLE_WRITE_FAILED and turns every table write off.
     tables.run("scan_runs", sink.ensure_tables if sink else lambda: None)
 
     finished: set[int] = set()

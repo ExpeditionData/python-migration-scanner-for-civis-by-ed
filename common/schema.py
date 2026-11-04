@@ -140,6 +140,25 @@ CHECKLIST_STATUS = Table(
 TABLES: tuple[Table, ...] = (SCAN_RUNS, OBJECTS, FINDINGS, COVERAGE, CHECKLIST_STATUS)
 
 CHECKLIST_STATUSES = frozenset(s.value for s in ChecklistStatus)
+TABLE_NAMES = frozenset(t.name for t in TABLES)
+
+
+def schema_objects_sql(schema: str) -> str:
+    """Every table and view in the results schema, from pg_catalog (which lists them whatever the user's
+    privileges). Every name in the tool's SQL is an unquoted identifier, stored in lower case, so the catalog
+    is searched for the lower-case name."""
+    name = sql.string(sql.identifier(schema).lower())
+    return (
+        f"SELECT 'table' AS kind, tablename AS name FROM pg_catalog.pg_tables WHERE schemaname = {name} "
+        f"UNION ALL SELECT 'view' AS kind, viewname AS name FROM pg_catalog.pg_views WHERE schemaname = {name}"
+    )
+
+
+def other_object_count(rows) -> int:
+    """How many tables and views in the schema are not this tool's five tables. Zero means the schema is
+    dedicated to the tool (or does not exist). A view with one of our table names counts as another object.
+    Only the count leaves this function; the names are never kept, shown, or logged."""
+    return sum(1 for row in rows if not (row.get("kind") == "table" and str(row.get("name")) in TABLE_NAMES))
 DATABASE_USER_PLACEHOLDER = "<database user>"
 
 

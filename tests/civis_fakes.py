@@ -184,6 +184,10 @@ class RecordingIO:
         for key, error in self.fail.items():
             if key in sql:
                 raise error
+        if "pg_catalog.pg_views" in sql:  # The dedicated-schema check: tables and views with a kind column.
+            tables = self.tables.get("pg_catalog.pg_tables", [["tablename"]])[1:]
+            views = self.tables.get("pg_catalog.pg_views", [["viewname"]])[1:]
+            return [["kind", "name"]] + [["table", r[0]] for r in tables] + [["view", r[0]] for r in views]
         for key, rows in self.tables.items():
             if key in sql:
                 return copy.deepcopy(rows)

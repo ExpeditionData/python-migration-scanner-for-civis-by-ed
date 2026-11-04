@@ -209,6 +209,7 @@ class SummaryInputs:
     sharing: dict[str, tuple[int, int] | None]
     results_state: str
     repo_token_present: bool = False
+    schema_dedicated: str = "unknown"
     scan: ScanData | None = None
     checklist: list[dict] | None = None
     scan_run_rows: list[dict] | None = None
@@ -236,6 +237,7 @@ def build(inputs: SummaryInputs) -> str:
         else:
             out.append(f"sharing_{part}: users={_n(counts[0])} groups={_n(counts[1])}")
     out.append(f"results_state: {_label(inputs.results_state, RESULTS_STATES)}")
+    out.append(f"results_schema_dedicated: {_label(inputs.schema_dedicated, ('yes', 'no', 'unknown'))}")
     out += _scan_lines(inputs.scan)
     if inputs.checklist is None:
         out.append("checklist_rows_by_people: not_read")

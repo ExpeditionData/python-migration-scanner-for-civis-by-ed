@@ -7,6 +7,8 @@ Two sinks share one interface:
 
 Rules (SECURITY.md and docs/PLAN.md):
 
+- Before anything is written, the schema must hold nothing but this tool's five
+  tables (``other_objects``), or the run stops (scanner/runner.py).
 - Tables are created if missing (CREATE TABLE IF NOT EXISTS). The schema itself
   is never created, nothing here grants permissions or drops tables, and DELETE
   runs only in ``delete_runs``, the documented retention cleanup.
@@ -30,9 +32,19 @@ from typing import Any, Protocol
 from common import retention, sql
 from common.disclaimer import DISCLAIMER, NON_AFFILIATION
 from common.rule_loader import RuleSet
-from common.schema import CHECKLIST_STATUS, COVERAGE, FINDINGS, OBJECTS, SCAN_RUNS, TABLES, Table
+from common.schema import (
+    CHECKLIST_STATUS, COVERAGE, FINDINGS, OBJECTS, SCAN_RUNS, TABLES, Table, other_object_count, schema_objects_sql,
+)
 
 _VARCHAR = re.compile(r"VARCHAR\((\d+)\)")
+
+
+class SchemaNotDedicated(Exception):
+    """The results schema holds tables or views that are not this tool's. ``count`` is how many; no names."""
+
+    def __init__(self, count: int):
+        super().__init__("The results schema holds other tables or views.")
+        self.count = count
 
 
 class TableWriteError(Exception):
@@ -64,6 +76,7 @@ def table_rows(table: Table, run_id: str, rows: list[dict]) -> list[tuple]:
 
 
 class ResultSink(Protocol):
+    def other_objects(self) -> int: ...  # Tables and views in the schema that are not this tool's.
     def ensure_tables(self) -> None: ...
     def append(self, table: Table, run_id: str, rows: list[dict]) -> None: ...
     def finished_object_ids(self, run_id: str) -> set[int]: ...
@@ -91,6 +104,10 @@ class SqliteSink:
     def _execute(self, statement: str, params: tuple = ()) -> sqlite3.Cursor:
         self.statements.append(statement)
         return self.conn.execute(statement, params)
+
+    def other_objects(self) -> int:
+        rows = self._select(f"SELECT type AS kind, name FROM {self.schema}.sqlite_master WHERE type IN ('table', 'view')")
+        return other_object_count(rows)
 
     def ensure_tables(self) -> None:
         for table in TABLES:
@@ -201,6 +218,9 @@ class CivisSink:
             return []
         header, body = rows[0], rows[1:]
         return [dict(zip(header, r)) for r in body]
+
+    def other_objects(self) -> int:
+        return other_object_count(self._read(schema_objects_sql(self.schema)))
 
     def ensure_tables(self) -> None:
         for table in TABLES:

@@ -308,7 +308,7 @@ def test_the_setup_page_reads_only_and_logs_nothing(civis_app, caplog):
     assert caplog.records == []
     page = _text(response.get_data(as_text=True))
     assert "1 Scanner job found and readable job_found Pass" in page
-    assert "9 Results storage: schema, five tables, and read access results_storage Pass" in page
+    assert "9 Results storage: a dedicated schema, five tables, and read access results_storage Pass" in page
 
 
 def test_the_setup_page_reads_the_job_fresh(civis_app):
@@ -468,7 +468,7 @@ def test_preview_first_scan_running_has_its_tables_and_its_running_scan(preview_
     assert "The first scan is running" in page and "Set up results storage" not in page
     summary = web.get("/setup/summary").get_data(as_text=True)
     assert "status: running" in summary and "runs_in_scan_runs: 1" in summary
-    assert "9 Results storage: schema, five tables, and read access results_storage Pass" in _text(
+    assert "9 Results storage: a dedicated schema, five tables, and read access results_storage Pass" in _text(
         web.get("/setup").get_data(as_text=True))
 
 

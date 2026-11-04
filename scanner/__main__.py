@@ -14,7 +14,8 @@ CIVIS_JOB_ID and CIVIS_RUN_ID, so it can never be pointed at a real Civis
 instance from a developer's machine (SECURITY.md, "How we build and test it").
 
 Exit codes: 0 succeeded, 3 the tables could not be written (the CSV report was
-still saved), 2 configuration problem, 1 any other failure.
+still saved), 2 configuration problem (including a results schema that holds
+other tables or views, when nothing is written at all), 1 any other failure.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ from pathlib import Path
 from common.redact import install_redaction
 from scanner import scan_log
 from scanner.config import ConfigError, ScanConfig
+from scanner.output import SchemaNotDedicated
 from scanner.runner import AlreadyFinished, RunResult, run_scan
 
 EXIT_CODES = {"succeeded": 0, "tables_failed": 3, "failed": 1}
@@ -144,6 +146,9 @@ def main(argv: list[str] | None = None) -> int:
             result = live_run()
     except ConfigError as exc:
         print(f"Configuration problem: {exc}", file=sys.stderr)
+        return 2
+    except SchemaNotDedicated as exc:
+        scan_log.schema_not_dedicated(exc.count)  # One FATAL line; nothing was written.
         return 2
     except AlreadyFinished:
         print("That run ID already finished. Start a new scan without RUN_ID.", file=sys.stderr)

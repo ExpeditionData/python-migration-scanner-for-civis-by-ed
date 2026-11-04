@@ -249,6 +249,8 @@ STORAGE_MESSAGES = {
     "tables_failed": ("error", "The results schema exists, but its tables could not be created (step: tables). "
                                "Check that the database user behind the scanner job's RESULTS_DB credential can "
                                "create tables in the schema, then try again."),
+    "not_dedicated": ("error", "The results schema already holds {objects}, so the tool will not use it. Nothing "
+                               "was created. Choose a new schema name in the scanner job's RESULTS_SCHEMA parameter."),
     "tables_owner": ("error", "The results schema already existed, but its tables could not be created (step: "
                               "tables). The most likely reason is that the database user behind the scanner job's "
                               "RESULTS_DB credential cannot create tables in that schema."),
@@ -289,6 +291,11 @@ def storage_message() -> dict | None:
     if key not in STORAGE_MESSAGES:
         return None
     kind, text = STORAGE_MESSAGES[key]
+    if key == "not_dedicated":
+        from app.setup import other_objects_text
+
+        count = request.args.get("count", "")
+        text = text.format(objects=other_objects_text(int(count) if count.isdigit() and len(count) <= 6 else None))
     message = {"kind": kind, "text": text, "error_type": safe_error_token(request.args.get("error")),
                "statement": None, "statement_intro": STATEMENT_INTROS.get(key), "user_known": True}
     if key in STATEMENT_KINDS:
@@ -318,6 +325,8 @@ def setup_storage():
     token = safe_error_token(result.error_type)
     if token:
         query["error"] = token
+    if result.outcome == "not_dedicated":
+        query["count"] = str(result.other_objects)
     return redirect(url_for("pages.overview", **query))
 
 
@@ -580,7 +589,7 @@ def setup_summary():
         tool_ref=(facts.job or {}).get("repo_ref"), lines=setup.evaluate(facts),
         database_shape=settings.database_shape if settings is not None and settings.job is not None else None,
         service_method=facts.service_method, sharing=setup.sharing_counts(facts),
-        repo_token_present=facts.repo_token_present,
+        repo_token_present=facts.repo_token_present, schema_dedicated=setup.schema_dedicated(facts),
         results_state=situation.results_state, scan=scan_data, checklist=checklist, scan_run_rows=run_rows,
     ))
     return render_template("summary.html", **base_context("setup", situation), text=text, scans=scans,
