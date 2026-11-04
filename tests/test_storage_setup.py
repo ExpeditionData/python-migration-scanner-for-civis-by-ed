@@ -224,3 +224,48 @@ def test_preview_storage_states(preview, state, after):
     assert after in page
     if state != "schema-refused":
         assert "No scan yet" in page and "Set up results storage" not in page.replace(after, "")
+
+
+# --- The schema existed, but the tables could not be created (17.2.22) ------------------------
+
+
+def test_a_table_failure_in_an_existing_schema_shows_the_owner_statement():
+    io = RecordingIO(SCHEMA_ROWS, fail={"CREATE TABLE IF NOT EXISTS migration_results.scan_runs":
+                                        FakeAPIError(403, SQL_ERROR_TEXT)})
+    app, client, _ = build(io=io)
+    response = post(app)
+    page = page_text(response)
+    assert "already existed, but its tables could not be created (step: tables)" in page
+    assert "cannot create tables in that schema" in page
+    assert f"ALTER SCHEMA {SCHEMA} OWNER TO example_robot_db;" in page
+    assert "makes the RESULTS_DB database user the owner of the schema" in page
+    assert "Then click Set up results storage again to create the tables" in page
+    assert "Error type: FakeAPIError status=403" in page and SQL_ERROR_TEXT not in response.get_data(as_text=True)
+    assert "AUTHORIZATION" not in page and ("credentials.get", (41,), {}) in client.calls
+
+
+def test_the_owner_statement_uses_the_placeholder_when_the_user_is_not_safe():
+    client = FakeCivisClient()
+    client.handlers["credentials.get"] = lambda id: {"id": id, "username": "bad\name"}
+    io = RecordingIO(SCHEMA_ROWS, fail={"CREATE TABLE": FakeAPIError(403)})
+    app, _, _ = build(client, io)
+    page = page_text(post(app))
+    assert f"ALTER SCHEMA {SCHEMA} OWNER TO <database user>;" in page
+    assert "Replace <database user> with the user name saved on the database credential" in page
+
+
+def test_a_table_failure_after_the_click_created_the_schema_shows_the_error_type_only():
+    app, client, _ = build(io=RecordingIO(fail={"CREATE TABLE": FakeAPIError(500, SQL_ERROR_TEXT)}))
+    page = page_text(post(app))
+    assert "The results schema exists, but its tables could not be created (step: tables)" in page
+    assert "ALTER SCHEMA" not in page and "AUTHORIZATION" not in page and SQL_ERROR_TEXT not in page
+    assert "credentials.get" not in client.methods_called()
+
+
+def test_the_schema_step_says_the_most_common_reason():
+    app, _, _ = build(io=RecordingIO(fail={"CREATE SCHEMA": FakeAPIError(403)}))
+    page = page_text(post(app))
+    assert ("The results schema could not be created (step: schema). The most common reason is that the database "
+            "user behind the scanner job's RESULTS_DB credential cannot create schemas.") in page
+    assert "Error type: FakeAPIError status=403" in page
+    assert f"CREATE SCHEMA {SCHEMA} AUTHORIZATION example_robot_db;" in page

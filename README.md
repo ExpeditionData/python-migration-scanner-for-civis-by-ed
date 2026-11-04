@@ -289,10 +289,15 @@ cancelled or hit the 5-day limit for container scripts):
    scanner job's `RESULTS_SCHEMA` parameter and its five tables, with the
    `RESULTS_DB` database and credential. It runs no `GRANT`, `DROP`, or
    `ALTER` statements.
-3. If the app says the database user cannot create schemas, send the one
-   statement it shows to a database admin. It has the form
+3. If the app could not create the schema (most often because the database
+   user cannot create schemas), send the one statement it shows to a database
+   admin. It has the form
    `CREATE SCHEMA <schema> AUTHORIZATION <database user>;`. After they run it,
-   click **Set up results storage** again to create the tables.
+   click **Set up results storage** again to create the tables. If the schema
+   already existed and the app could not create the tables in it, the
+   statement is `ALTER SCHEMA <schema> OWNER TO <database user>;`, which makes
+   the `RESULTS_DB` database user the schema's owner, as described in
+   [Security and privacy](#security-and-privacy).
 4. Open the **Setup** page. It reads the scanner job, the Service, and the
    results storage, changes nothing, and shows each check as pass, warning,
    fail, or review, with the fix. Fix any line that is not a pass. The sharing

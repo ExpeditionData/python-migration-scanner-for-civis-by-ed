@@ -227,30 +227,49 @@ STORAGE_MESSAGES = {
     "created": ("success", "Results storage is set up. The results schema and its five tables are ready."),
     "created_existing": ("success", "Results storage is set up. The results schema already existed, and its five "
                                     "tables are ready."),
-    "schema_failed": ("error", "The results schema could not be created (step: schema). The database user behind "
-                               "the scanner job's RESULTS_DB credential cannot create schemas."),
+    "schema_failed": ("error", "The results schema could not be created (step: schema). The most common reason is "
+                               "that the database user behind the scanner job's RESULTS_DB credential cannot create "
+                               "schemas."),
     "schema_check_failed": ("error", "The app could not check whether the results schema exists (step: schema). "
                                      "Nothing was created."),
     "tables_failed": ("error", "The results schema exists, but its tables could not be created (step: tables). "
                                "Check that the database user behind the scanner job's RESULTS_DB credential can "
                                "create tables in the schema, then try again."),
+    "tables_owner": ("error", "The results schema already existed, but its tables could not be created (step: "
+                              "tables). The most likely reason is that the database user behind the scanner job's "
+                              "RESULTS_DB credential cannot create tables in that schema."),
     "not_ready": ("error", "Nothing was created, because the scanner job's settings could not be read or are not "
                            "complete. See the message below."),
 }
+STATEMENT_INTROS = {
+    "schema_failed": "Ask a database admin to run this statement, then click Set up results storage again to create "
+                     "the tables:",
+    "tables_owner": "Ask a database admin to run this statement. It makes the RESULTS_DB database user the owner of "
+                    "the schema, which matches the README's ownership model. Then click Set up results storage "
+                    "again to create the tables:",
+}
+
+
+def storage_key(result) -> str:
+    """The allow-listed result key for a StorageSetup."""
+    key = result.outcome
+    if key == "created" and result.schema_existed:
+        return "created_existing"
+    if key == "schema_failed" and not result.admin_statement:
+        return "schema_check_failed"
+    if key == "tables_failed" and result.schema_existed:
+        return "tables_owner"
+    return key if key in STORAGE_MESSAGES else "not_ready"
 
 
 def storage_message(result) -> dict | None:
     """What to show after the "Set up results storage" button. Error types only, never SQL error text."""
     if result is None:
         return None
-    key = result.outcome
-    if key == "created" and result.schema_existed:
-        key = "created_existing"
-    elif key == "schema_failed" and not result.admin_statement:
-        key = "schema_check_failed"
-    kind, text = STORAGE_MESSAGES.get(key, STORAGE_MESSAGES["not_ready"])
-    return {"kind": kind, "text": text, "error_type": result.error_type,
-            "statement": result.admin_statement, "user_known": result.user_known}
+    key = storage_key(result)
+    kind, text = STORAGE_MESSAGES[key]
+    return {"kind": kind, "text": text, "error_type": result.error_type, "statement": result.admin_statement,
+            "statement_intro": STATEMENT_INTROS.get(key), "user_known": result.user_known}
 
 
 @bp.post("/setup/storage")

@@ -159,13 +159,18 @@ finish the step the way the interface allows and record the difference.
     runs that statement as shown. Then click **Set up results storage**
     again: the page says the schema already existed and its five tables are
     ready.
-- **Expected:** After either outcome, the Overview page shows "No scan yet"
+  If a database admin created the schema earlier without `AUTHORIZATION`, the
+  app may instead say the schema already existed but its tables could not be
+  created (step: tables) and show
+  `ALTER SCHEMA <schema> OWNER TO <database user>;`. Record that as outcome c:
+  the admin runs it, then click the button again.
+- **Expected:** After any outcome, the Overview page shows "No scan yet"
   and **Run scan** is on. This confirms the check finds the schema on
   Redshift. Nothing else changes in Civis.
-- **Record:** outcome a or b; for b, the error type shown, whether the
-  statement showed a database user name or the `<database user>` placeholder
-  (yes or no, never the name), and pass or fail for the admin's statement and
-  for the second click; if a table step failed, the step and error type. Do
+- **Record:** outcome a, b, or c; for b and c, the error type shown, whether
+  the statement showed a database user name or the `<database user>`
+  placeholder (yes or no, never the name), and pass or fail for the admin's
+  statement and for the second click; if a table step failed, the step and error type. Do
   not record the schema name or the user name.
 
 ### 1.10 Setup page
@@ -547,7 +552,7 @@ Item  Result (pass/fail/skipped)  Counts or note
 1.6
 1.7   Service:  job:
 1.8   heading (if different):
-1.9   outcome (a/b):   b: error type=  user name shown: yes/no  admin statement:  second click:
+1.9   outcome (a/b/c):   b or c: error type=  user name shown: yes/no  admin statement:  second click:
       table step failed (step, error type):
 1.10  first visit: 1=  2=  3=  4=  5=  6=  7=  8=  9=  10=
       after 2.2:   1=  2=  3=  4=  5=  6=  7=  8=  9=  10=

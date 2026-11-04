@@ -55,7 +55,7 @@
   <div>
     <p>{{ storage.text }}{% if storage.error_type %} Error type: <span class="mono">{{ storage.error_type }}</span>.{% endif %}</p>
     {% if storage.statement %}
-    <p>Ask a database admin to run this statement, then click Set up results storage again to create the tables:</p>
+    <p>{{ storage.statement_intro }}</p>
     <pre class="statement"><code>{{ storage.statement }}</code></pre>
     {% if not storage.user_known %}<p>Replace &lt;database user&gt; with the user name saved on the database credential chosen in the scanner job's RESULTS_DB parameter, which a Civis admin can see on that credential in Civis.</p>{% endif %}
     {% endif %}

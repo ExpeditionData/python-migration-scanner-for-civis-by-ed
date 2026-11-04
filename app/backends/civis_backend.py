@@ -20,7 +20,9 @@ from datetime import datetime
 from typing import Any
 
 from common import sql
-from common.schema import CHECKLIST_STATUS, SCAN_RUNS, TABLES, admin_schema_sql, checklist_insert_sql, create_schema_sql
+from common.schema import (
+    CHECKLIST_STATUS, SCAN_RUNS, TABLES, admin_owner_sql, admin_schema_sql, checklist_insert_sql, create_schema_sql,
+)
 from app.backends.base import (
     LOG_PAGE, ChecklistSaveError, JobRun, LogLine, ResultsUnavailable, StorageFacts, StorageSetup, error_token,
     normalize_row,
@@ -131,7 +133,13 @@ class CivisResults:
             try:
                 self._query(table.create_sql(self.schema))
             except Exception as exc:
-                return StorageSetup("tables_failed", "tables", error_token(exc), schema_existed=existed)
+                if not existed:  # The click created the schema, so its owner is the RESULTS_DB user already.
+                    return StorageSetup("tables_failed", "tables", error_token(exc))
+                # The schema existed before the click: most likely the RESULTS_DB user cannot create tables in it.
+                user = self.database_user()
+                return StorageSetup("tables_failed", "tables", error_token(exc), schema_existed=True,
+                                    admin_statement=admin_owner_sql(self.schema, user),
+                                    user_known=sql.quoted_identifier(user) is not None)
         return StorageSetup("created", schema_existed=existed)
 
     def storage_facts(self) -> StorageFacts:

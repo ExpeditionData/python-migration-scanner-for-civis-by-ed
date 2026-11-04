@@ -155,6 +155,14 @@ def admin_schema_sql(schema: str, database_user: str | None) -> str:
     return f"CREATE SCHEMA {sql.identifier(schema)} AUTHORIZATION {user};"
 
 
+def admin_owner_sql(schema: str, database_user: str | None) -> str:
+    """The statement shown to a database admin when the schema already existed but the app's database user
+    could not create tables in it. It makes that user the schema's owner (the README's ownership model).
+    Shown only, never run. The user name is written the same way as in admin_schema_sql."""
+    user = sql.quoted_identifier(database_user) or DATABASE_USER_PLACEHOLDER
+    return f"ALTER SCHEMA {sql.identifier(schema)} OWNER TO {user};"
+
+
 def checklist_insert_sql(
     schema: str,
     run_id: str,
