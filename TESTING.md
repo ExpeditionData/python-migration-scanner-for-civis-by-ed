@@ -16,22 +16,31 @@ README setup and every fact that could not be confirmed from documentation
   `error=CivisAPIError status=403`) are fine to record; they hold no content.
 - If something you would need to record looks like client content, write
   "content withheld" and describe it in general terms instead.
-- **Release tag:** every step, setup and scans, uses `v0.1.0-rc5`. It follows
-  `v0.1.0-rc4` because of two fixes from the first setup on `v0.1.0-rc4`
-  (docs/PLAN.md 17.4): reads that return no rows, and the shape of the Civis
-  sharing lists. `v0.1.0-rc4` followed `v0.1.0-rc3` because of two safety
-  guards: Run scan starts only this tool's scanner job, and the tool refuses a
-  results schema that holds anything else. Use it in place wherever the README
-  says `<release tag>`. Item 5.6 (update to a new release) waits for the first
-  release tag after `v0.1.0-rc5`.
+- **Release tag:** scans use `v0.1.0-rc6`. Setup (section 1) was done on
+  `v0.1.0-rc5` and passed, and it stays: before the first scan, move the
+  scanner job and the Service to `v0.1.0-rc6` by changing their tag only
+  (README "Update to a new release", steps 2 to 4). `v0.1.0-rc6` follows
+  `v0.1.0-rc5` because of fixes from the first scan on `v0.1.0-rc5`
+  (docs/PLAN.md 17.5): a scanning user who cannot list deactivated users,
+  hidden objects no longer counted, shorter Civis API retries, and the step
+  in the FATAL line. `v0.1.0-rc5` followed `v0.1.0-rc4` because of two fixes
+  from the first setup on `v0.1.0-rc4` (docs/PLAN.md 17.4): reads that return
+  no rows, and the shape of the Civis sharing lists. `v0.1.0-rc4` followed
+  `v0.1.0-rc3` because of two safety guards: Run scan starts only this tool's
+  scanner job, and the tool refuses a results schema that holds anything
+  else. Use `v0.1.0-rc6` wherever the README says `<release tag>` from now on.
+  Item 5.6 (update to a new release) waits for the first release tag after
+  `v0.1.0-rc6`.
 - **Browser:** Chrome, Edge, or Firefox. Safari ignores the report-only frame
   rule (item 2.1).
 
 ## Order
 
 1. Section 1 (setup) on `v0.1.0-rc5`, with no GitHub token attached to the
-   scanner job.
+   scanner job. Done.
 2. Section 2 (frame rule), then the Setup page again (end of item 1.10).
+   Then move the scanner job and the Service to `v0.1.0-rc6` (tag only), and
+   check that the Setup page's lines 2 and 7 still pass.
 3. Section 3 (the first scan, with no GitHub token) and the first-scan part
    of item 4.8.
 4. Items 4.1 to 4.3, 4.6, 4.7, and 5.1.
@@ -42,7 +51,7 @@ README setup and every fact that could not be confirmed from documentation
    results.
 
 Item 5.6 is not part of this run. It waits for the first release tag after
-`v0.1.0-rc5`.
+`v0.1.0-rc6`.
 
 ## Prepare the test organization
 
@@ -289,9 +298,11 @@ finish the step the way the interface allows and record the difference.
 - **Steps:** The test summary's `log_errors` and `log_other_lines` lines count
   these for you. Scanner lines start with `RUN`, `PHASE`, `PROGRESS`,
   `CHECKPOINT`, `FINDINGS`, `OBJECT_ERROR`, `CIVIS_GIT_FAILED`,
-  `PARSE_ERROR`, `TABLE_WRITE_FAILED`, `OUTPUT_FAILED`, or `FATAL`. If
-  `log_other_lines` is not 0, scan the run log without copying it to see what
-  kind of lines they are.
+  `PARSE_ERROR`, `TABLE_WRITE_FAILED`, `OUTPUT_FAILED`, `FATAL`, or `USERS`.
+  If `log_other_lines` is not 0, scan the run log without copying it to see
+  what kind of lines they are. The summary's `users_list` line says which user
+  list the scan used (`all`, or `active` or `none` with an HTTP status), and
+  `fatal_step` says where a scan stopped, if it did.
 - **Expected:** No other lines, apart from Civis's own container messages. No
   "pip" lines.
 - **Record:** `log_other_lines` and what kind of lines they are in general
@@ -514,12 +525,12 @@ finish the step the way the interface allows and record the difference.
 
 ### 5.6 Update to a new release, and removal
 
-This item waits for the first release tag after `v0.1.0-rc5`. It is not part
+This item waits for the first release tag after `v0.1.0-rc6`. It is not part
 of this run.
 
 - **Steps:**
   1. Follow README "Update to a new release" to move both objects from
-     `v0.1.0-rc5` to the new tag. Its last step ("Run a new scan") is a new
+     `v0.1.0-rc6` to the new tag. Its last step ("Run a new scan") is a new
      scan from the app.
   2. Optional, at the end of that test: follow README "Remove the tool".
 - **Expected:** Each step works as written. After the update, the Service
@@ -550,7 +561,7 @@ item 5.7 pasted below it. Counts and redacted error types only.
 
 ```
 Python Migration Scanner: first live test results
-Release tag: v0.1.0-rc5 (setup and scans)
+Release tag: v0.1.0-rc5 (setup), v0.1.0-rc6 (scans)
 Date (MM/DD/YYYY):
 Browser:
 
@@ -606,7 +617,7 @@ Item  Result (pass/fail/skipped)  Counts or note
       step 3 edit by Robot user: yes/no   resumed run shows Robot user: yes/no
       step 4 edit by Robot user: yes/no   next run shows Robot user: yes/no
 5.5   minutes to wake=
-5.6   waits for the first tag after v0.1.0-rc5
+5.6   waits for the first tag after v0.1.0-rc6
 5.7   built:  copied (button/by hand):  sent:  looked like a name: yes/no
 
 Error types seen (from the scanner's log only), with counts:

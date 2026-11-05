@@ -60,7 +60,7 @@ be made public at any time.
   credential. Rob changes its visibility himself; never change it from a
   session.
 - Releases are git tags, protected by the "release tags" ruleset. The first
-  live test sets up and runs its scans on `v0.1.0-rc5`. Create a tag or a
+  live test set up on `v0.1.0-rc5` and runs its scans on `v0.1.0-rc6`. Create a tag or a
   GitHub Release only when Rob's prompt says to.
 - Commit after each completed step, with a clear message that says what changed
   and why.
@@ -161,8 +161,10 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   the SQL scope test (docs/PLAN.md 17.2).
   On November 5, 2026, setup of `v0.1.0-rc4` in the live test found two
   bugs, fixed for `v0.1.0-rc5`: reads that return no rows, and the shape of
-  the Civis sharing lists (docs/PLAN.md 17.4). The build under test is
-  `v0.1.0-rc5`.
+  the Civis sharing lists (docs/PLAN.md 17.4). Setup of `v0.1.0-rc5` passed;
+  its first scan failed in inventory, fixed for `v0.1.0-rc6` (docs/PLAN.md
+  17.5): the users list fallback, no hidden counts, shorter retries, and the
+  FATAL step. The build under test is `v0.1.0-rc6`.
   Implementation choices not in the approved plan are in docs/PLAN.md
   sections 10 to 17.
 - **App flow.** `app/__init__.create_app` -> `app/services.py` (Civis or local
@@ -204,6 +206,24 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   can be measured in a live test. Failed Civis git reads also get a
   `CIVIS_GIT_FAILED` line. The GitHub file cache is capped at 1 GB of text
   (`CACHE_MAX_BYTES`) with least-recently-used eviction.
+- **Scanner users, hidden objects, retries, FATAL (docs/PLAN.md 17.5).**
+  `inventory/users.load_users` lists `account_status="all"`; on HTTP 403 or
+  404 it lists active users (an owner not in that list is unknown, never
+  False); if that fails too, there is no user lookup. A `USERS
+  source=all|active|none [status=N]` log line and, when not "all", a coverage
+  row with `row_kind` `users` and a fixed note record it; the Overview shows
+  the note. Hidden objects are skipped and not counted: no list call sends
+  `hidden`, and `hidden_skipped_count` is written NULL (the column stays).
+  `live_run` gives `civis.APIClient` the `ratelimit.civis_retrying` policy (4
+  tries or 120 seconds, waits up to 30 seconds; tenacity is pinned in
+  `requirements-scanner.txt`). civis 2.10 holds one class-level lock for each
+  whole request, retries included, so a slow call blocks every other API call
+  in the scan, and a request with no response holds it with no time limit
+  (civis sets no timeout; not handled yet). `run_scan` tracks the step and
+  logs `FATAL error=<type> [status=N] step=<step>` (steps in
+  `scan_log.FATAL_STEPS`), then appends a final "failed" `scan_runs` row if
+  the "running" row was written and the tables are usable, and raises
+  `ScanFailed`. `SchemaNotDedicated` still writes nothing.
 - **Live test.** TESTING.md is the checklist for the first live test. Records
   are pass or fail and aggregate counts only.
 
@@ -302,7 +322,13 @@ Run the full suite on both Python versions before every commit:
 - Unit tests make no Civis or network calls. Inventory tests use the
   synthetic client in `scanner/synthetic/` (re-exported by
   `tests/fake_civis.py`) with the made-up instance in
-  `scanner/synthetic/synthetic_instance.json`.
+  `scanner/synthetic/synthetic_instance.json`. Like Civis in the live test,
+  its `users.list` refuses `account_status` "all" and "inactive" with HTTP
+  404 (`users_list_errors`), so the dry run and the preview use the active
+  list; tests set `users_list_errors` to `{}` for the "all" shape.
+- `tests/test_fatal.py` covers the FATAL line and the final "failed" row, and
+  `tests/test_retries.py` drives the retries policy through civis-python's
+  own `retry_request` (it skips on civis 2.7.1).
 - Every rule needs a positive and a negative fixture in `tests/test_rules.py`.
   A test fails if a rule has none.
 - `tests/test_self_scan.py` runs the tool's own rules over this repo.

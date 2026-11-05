@@ -33,7 +33,7 @@ Facts marked "unverified" could not be confirmed from documentation and need a l
 | 1.9 | The `/` route must return quickly. | Confirmed. Platform checks for HTTP 200 on `/`, and the path can be changed with the `CIVIS_SERVICE_HEALTH_PATH` environment variable. | Add a `/healthz` route and set `CIVIS_SERVICE_HEALTH_PATH=/healthz`. `/` returns the page shell right away, and the scan summary loads in the browser afterward. |
 | 1.10 | The Service sleeps after about one hour without traffic. | Confirmed for the "On Demand" plan. The idle time is not configurable. "Always On" Services are redeployed weekly with a new API key. A Service that does not start within one hour is terminated. | No change to the design. Never cache an API client for longer than one request cycle. The key changes on wake and on redeploy. |
 | 1.11 | Workflows are scanned only to map which jobs they run. | Workflow YAML can define jobs inline (for example a `civis.scripts.python3` task with a `source` field). That code exists nowhere else. | Also scan inline code in workflow definitions. See decision 10. |
-| 1.12 | No mention of hidden objects. | Workflow-created job copies and `read_civis` query jobs are "hidden" and only appear when listed with `hidden=True`. | Skip hidden objects, but count them in coverage. See decision 11. |
+| 1.12 | No mention of hidden objects. | Workflow-created job copies and `read_civis` query jobs are "hidden" and only appear when listed with `hidden=True`. | Skip hidden objects, but count them in coverage. See decision 11. **Changed in 17.5:** hidden objects are skipped and not counted. |
 
 Facts from the brief that the docs confirm:
 
@@ -91,7 +91,7 @@ All list calls use `iterator=True`, `limit=50` (the maximum for most list endpoi
 | Service (including Streamlit) | `services.list()` | `services.get(id)` | Services have no inline code. Fetch from GitHub with `git_repo_url`, `git_repo_ref`, and `git_path_dir`. | `docker_image_name`, `docker_image_tag`; `current_deployment` | `services.list_deployments_logs(id, current_deployment.deployment_id)` |
 | Workflow | `workflows.list()` | `workflows.get(id)` | Parse the `definition` YAML. `civis.run_job` tasks reference `input.job_id`. `civis.workflows.execute` references `input.workflow_id`. Inline script tasks (`civis.scripts.python3`, `civis.scripts.container`, `civis.scripts.custom`) carry code in `input`. | None on the workflow itself | None. Referenced jobs are scanned as jobs. |
 | Archived job in an active workflow | Found through workflow references | `jobs.get(id)`, then the type-specific `get_*` | Same as its type | Same as its type | Same as its type |
-| Users | `users.list(account_status="all", limit=10000)` once per scan | `users.get_me()` for the scanning user | n/a | n/a | n/a |
+| Users | `users.list(account_status="all", limit=10000)` once per scan (the code pages with limit 1000; since 17.5, `account_status="active"` on HTTP 403 or 404) | `users.get_me()` for the scanning user | n/a | n/a | n/a |
 | Cross-check | `jobs.list()` | n/a | n/a | n/a | n/a |
 
 Notes:
@@ -415,7 +415,7 @@ How each object runs:
 | 8 | Unpinned installs | Ship `CV3-UNPINNED-INSTALL`. Read `requirements.txt`, `pyproject.toml`, and `Dockerfile` from git repos. |
 | 9 | Pending renames | Leave the 37 pending renames out. Revisit when a civis 3.0 release candidate is published. |
 | 10 | Workflow inline code | Scan it. |
-| 11 | Hidden objects | Skip them, but count them in coverage. |
+| 11 | Hidden objects | Skip them, but count them in coverage. **Changed on November 5, 2026 (17.5):** skip them, and do not count them. |
 | 12 | Service impact | Only Streamlit Services on a blank or `latest` tag are "affected." All other Services are "advisory." |
 | 13 | Notebook logs | No deployment log scan. Check saved cell outputs in the `.ipynb` file instead. |
 | 14 | Non-GitHub repos | Mark them "not scanned, review manually." |
@@ -898,3 +898,54 @@ Setup line 6 said "Scanner job: not checked, because the scanner job could not b
 | 17.4.4 | `share_members`, `sharing_counts`, and the test summary accept one object with `readers`, `writers`, and `owners` (the shape Civis returns) and a list of such objects. | Fix approved by Rob on November 5, 2026 |
 | 17.4.5 | If a shares response was read but its shape is not recognized, line 6 says "the sharing list was read but its shape was not recognized", and the summary says `sharing_job: shape_not_recognized` (or `sharing_service`). "Not checked, because the scanner job could not be read" appears only when the job could not be read, and "because the app could not tell which Service it is (line 7)" only when line 7 found no single Service. **Implementation choice:** with no `SCANNER_JOB_ID`, line 6 says "not checked, because SCANNER_JOB_ID is not set". | Fix approved by Rob on November 5, 2026 |
 | 17.4.6 | The fake shares in `tests/civis_fakes.py` and the local preview return the single-object shape. Tests keep one case with the list shape and several with unrecognized shapes. | Fix approved by Rob on November 5, 2026 |
+
+### 17.5 Live test fixes, inventory (November 5, 2026)
+
+**Why.** Setup of `v0.1.0-rc5` in the test organization's Civis passed. The first scan failed at the start of its inventory. Found in the first live test on November 5, 2026; fix approved by Rob on November 5, 2026. Scans in the live test move to `v0.1.0-rc6`.
+
+#### What the live test showed
+
+Counts, HTTP statuses, and error types only.
+
+- Run scan started the scanner job. The run failed after about 1 minute with exit code 1. The scanner's own log lines were `RUN status=running`, `PHASE name=inventory state=start`, and `FATAL error=CivisAPIError`, with no `OBJECT_ERROR`, `CIVIS_GIT_FAILED`, or `TABLE_WRITE_FAILED` lines. The dedicated-schema check, table setup, `users.get_me`, and the "running" `scan_runs` row all worked. Scan history showed the run as Failed.
+- A read-only check script, run in Civis as the same user (civis 2.10.0), repeated the inventory's list calls, first page only:
+  - `users.list(account_status="all")` gives HTTP 404 at limit 1000 and at limit 50, in about 0.1 seconds, and `account_status="inactive"` also gives 404. `users.list` with no `account_status` (50 rows on page 1) and with `account_status="active"` (limit 1000: 65 rows, 4 seconds) work. So a user who is not a Civis admin cannot list inactive users, and `load_users`, the first call in `build_inventory`, was the FATAL.
+  - `hidden=True` sent as a Python `True` works. Hidden lists, first page: Python scripts 0 rows, container scripts 50 rows (a full page), dbt 0, notebooks 0, Services 0, workflows 0.
+  - `scripts.list_custom(hidden=True, archived="false")` gives HTTP 503 at limit 50 and at limit 10. Each request takes more than a minute before the 503, and with civis-python's default retries (429, 502, 503, 504 on GET, up to 10 tries or 600 seconds) one call took about 10 minutes. In the scanner, this call (`count_hidden` for custom scripts) would have stopped the scan the same way.
+  - Visible lists (`archived="false"`, limit 50) all work: Python scripts, container scripts, custom scripts, dbt, notebooks, Services, and workflows.
+  - civis 2.10's `Endpoint._make_request` holds one class-level lock (`civis.base`, shared by every endpoint) for the whole request, retries included. So one slow or retried call blocks every other API call in the process, including the scanner's worker threads. In the check, every call queued behind the hidden custom list waited for it.
+
+#### Part A: the users list
+
+| # | Fix | Status |
+|---|---|---|
+| 17.5.1 | `load_users` asks for `account_status="all"` first. If that fails with HTTP 403 or 404, it lists `account_status="active"` instead (limit 1000; the API's maximum is 10000). If that also fails, the scan continues with no user lookup. **Implementation choice:** a failure of the "all" list with any other status (or none) is raised as before, so the scan stops with a FATAL line (17.5.9), now after the shorter retries of 17.5.7. The whole list is read before it is used, so a page that fails partway leaves nothing half read. | Fix approved by Rob on November 5, 2026 |
+| 17.5.2 | Owner active status: from the "all" list as before. From the active list, an owner found in it is active, and an owner not found is unknown (empty), never False, because the list does not show deactivated users. With no user list, every owner's active status is unknown. Owner names still come from each object's own owner field. | Fix approved by Rob on November 5, 2026 |
+| 17.5.3 | **Implementation choice:** when the scan used the active list or had no user list, it writes one coverage row with `row_kind` `users` (empty `object_type` and `object_id`) and a fixed note with the HTTP status only: "Owner active status is only partly known. The scanning user could not list deactivated users (HTTP 404), so owners in the list of active users are marked active and all other owners are unknown." or "Owner active status is not known. The scanning user could not list users (HTTP 503), so every owner's active status is unknown." The status is left out when the error had none. The Overview shows the note under the "By object type" table, where the "Left out" coverage note already shows. A log line through `scan_log` records the case: `USERS source=all`, `USERS source=active status=404`, or `USERS source=none status=503`. **Implementation choice:** the test summary reports that line as `users_list: active status=404` (or `not_found`), from an allow list, so it no longer counts as an "other" log line. | Fix approved by Rob on November 5, 2026 |
+| 17.5.4 | The synthetic client's `users.list` can refuse an `account_status` with a 404-shaped error (`users_list_errors` in the instance file), raised when the first page is read, as civis-python's paginated iterator does. The default synthetic instance refuses "all" and "inactive", so the dry run and the local preview follow the live behavior. Tests cover the "all" list, the active list (403 and 404), no list, a failure with no status, and another status that is raised. | Fix approved by Rob on November 5, 2026 |
+
+#### Part B: hidden counts (changes decision 11)
+
+Decision 11 said to skip hidden objects and count them in coverage. The count is unsafe: the hidden custom script list cannot be read (HTTP 503 after more than a minute per request), the hidden container list is at least a full page (counting it means many more calls from the 500-call budget), and the other hidden lists are empty. A capped count does not help, because one request to the hidden custom list is the problem, and the civis lock means that request blocks the whole scan. **Decision 11 is now: skip hidden objects, and do not count them.**
+
+| # | Fix | Status |
+|---|---|---|
+| 17.5.5 | `count_hidden`, `listed_rows`, and `CoverageCounts.hidden_skipped` are removed. Each inventory module lists visible rows with `InventoryContext.list_all` as before, so hidden objects are still skipped (they are not in the visible lists) and nothing else changes in what is scanned. No list call sends `hidden` (a test checks). The final `RUN` line's `api_calls` drops by the hidden list pages, at least 7 per scan. | Fix approved by Rob on November 5, 2026 |
+| 17.5.6 | The `hidden_skipped_count` column stays, because the tables already exist in the test organization's schema and every SQL statement must stay `CREATE ... IF NOT EXISTS`, `SELECT`, `INSERT`, or `DELETE`. The scanner writes NULL to it. The Overview line "Hidden objects skipped" shows only when the value is above 0, so it does not show for new scans. The Overview adds one fixed sentence under the "By object type" table: "Hidden objects (workflow-created copies and Civis's own query and import jobs) are not scanned or counted." The test summary never reported hidden counts, so it is unchanged. | Fix approved by Rob on November 5, 2026 |
+
+#### Part C: retries
+
+| # | Fix | Status |
+|---|---|---|
+| 17.5.7 | `live_run` creates `civis.APIClient(retries=civis_retrying())` (`scanner/ratelimit.py`): a `tenacity.Retrying` that stops after 4 tries or once 120 seconds have passed, with `wait_random_exponential(multiplier=2, max=30)`, a `retry_error_callback` that returns the last result, and `reraise=True`. tenacity checks the time after each try, so a request that takes more than a minute gets 2 tries. civis-python keeps its own rules for which status codes and verbs are retried (429, 502, 503, 504 on GET; 429 and 503 on POST) and still waits at least the `Retry-After` header. Tests drive the policy through civis-python's own `retry_request` with a made-up session. | Fix approved by Rob on November 5, 2026 |
+| 17.5.8 | **Known limit, no change in this build:** a request that gets no response holds civis's lock with no time limit, because civis sets no request timeout. The code (`scanner/ratelimit.py` and `live_run`) notes this. The app (civis 2.7.1) is unchanged. | Fix approved by Rob on November 5, 2026 |
+
+**tenacity.** tenacity 9.1.4 is in the scanner image as a civis dependency (checked in the pinned image by digest, with no network). Importing it and building the policy changes no installed package (`pip freeze --all` before and after is the same). `requirements-scanner.txt` now pins `tenacity==9.1.4`, like the image's other packages the scanner imports, so the test image build checks it (`docker/check_image.py versions`). The local `.venv` had tenacity 9.2.1 and now matches the image.
+
+#### Part D: the FATAL line and the scan_runs row
+
+| # | Fix | Status |
+|---|---|---|
+| 17.5.9 | The FATAL line adds the HTTP status when the exception has an integer `status_code`, and the step from a fixed allow list (`scan_log.FATAL_STEPS`): `setup`, `schema_check`, `tables`, `scanning_user`, `inventory_users`, `inventory_list_<object type>` (Python, container, custom, and dbt scripts, notebooks, Services), `inventory_workflows`, `inventory_archived_jobs`, `code_and_logs`, `save_results`, `output`, and `retention`. For example, `FATAL error=CivisAPIError status=404 step=inventory_users`. `scan_log.fatal` rejects an unknown step. **Implementation choice:** `run_scan` tracks the step in a small object that `build_inventory` also updates through a callback, logs the FATAL line itself, and raises `ScanFailed`. `main` logs `step=setup` only for a failure before `run_scan` starts (creating the client or the sink). The test summary reports the step as `fatal_step`, from the same allow list. | Fix approved by Rob on November 5, 2026 |
+| 17.5.10 | When a scan stops with FATAL after its "running" `scan_runs` row was written, and the tables are usable, it appends a final row with status "failed" and `finished_at`, the same way a normal finish appends its row. Best effort: if that write fails, it logs `TABLE_WRITE_FAILED` and still exits 1. `SchemaNotDedicated` still writes nothing and keeps its own FATAL line, and a finished run ID (`AlreadyFinished`) is unchanged. | Fix approved by Rob on November 5, 2026 |
+| 17.5.11 | Tests (`tests/test_fatal.py`): the FATAL line with and without a status, unknown steps rejected, the failed row after a FATAL in the users list, a list call, and the code scan, a failed row that cannot be written, no failed row when the running row was not written, and no row when the schema check fails. | Fix approved by Rob on November 5, 2026 |
