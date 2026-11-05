@@ -18,13 +18,12 @@ from scanner.inventory.base import (
     base_object,
     classify_image,
     field_of,
-    listed_rows,
     mark_not_scanned,
 )
 
 
 def inventory_container_scripts(ctx: InventoryContext) -> list[InventoryItem]:
-    rows = listed_rows(ctx, ctx.client.scripts.list, ObjectType.CONTAINER_SCRIPT, type="containers")
+    rows = ctx.list_all(ctx.client.scripts.list, type="containers")
     return [container_item(ctx, row) for row in rows]
 
 

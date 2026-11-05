@@ -19,7 +19,6 @@ from scanner.inventory.base import (
     base_object,
     classify_image,
     field_of,
-    listed_rows,
     mark_not_scanned,
 )
 
@@ -29,7 +28,7 @@ def _is_python(language: str | None) -> bool:
 
 
 def inventory_notebooks(ctx: InventoryContext) -> list[InventoryItem]:
-    rows = listed_rows(ctx, ctx.client.notebooks.list, ObjectType.NOTEBOOK)
+    rows = ctx.list_all(ctx.client.notebooks.list)
     items = []
     for row in rows:
         item = notebook_item(ctx, row)

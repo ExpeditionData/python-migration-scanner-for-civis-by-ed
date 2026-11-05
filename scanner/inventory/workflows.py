@@ -44,7 +44,6 @@ from scanner.inventory.base import (
     base_object,
     classify_image,
     field_of,
-    listed_rows,
     mark_not_scanned,
 )
 
@@ -151,7 +150,7 @@ def parse_definition(text: str | None) -> WorkflowDefinition:
 
 def inventory_workflows(ctx: InventoryContext) -> tuple[list[InventoryItem], dict[int, set[WorkflowRef]]]:
     """Returns workflow items with inline code, and job ID -> active workflows that run it."""
-    rows = listed_rows(ctx, ctx.client.workflows.list, ObjectType.WORKFLOW)
+    rows = ctx.list_all(ctx.client.workflows.list)
     ctx.inventory.count(ObjectType.WORKFLOW).found += len(rows)
     references: dict[int, set[WorkflowRef]] = defaultdict(set)
     items = []

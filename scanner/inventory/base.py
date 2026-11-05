@@ -139,15 +139,15 @@ class InventoryContext:
         self.civis_git = civis_git  # scanner.retrieval.civis_git.CivisGitFiles, or None to read no git files.
 
     def list_all(self, method: Callable, **kwargs) -> list:
-        """List every non-archived, non-hidden row, following pages."""
+        """List every non-archived, non-hidden row, following pages.
+
+        Hidden objects (workflow-created copies and Civis's own query and import
+        jobs) are not in these lists, so they are skipped. They are not counted
+        either: in the first live test the hidden custom script list failed with
+        HTTP 503 after more than a minute per request, and civis-python's lock
+        holds every other API call while one request waits (docs/PLAN.md 17.5)."""
         kwargs.setdefault("archived", "false")
         return list(method(iterator=True, limit=LIST_PAGE_SIZE, **kwargs))
-
-    def count_hidden(self, method: Callable, visible_ids: set[int], **kwargs) -> int:
-        """Count hidden rows without assuming whether hidden=True returns only hidden rows."""
-        kwargs.setdefault("archived", "false")
-        rows = method(iterator=True, limit=LIST_PAGE_SIZE, hidden=True, **kwargs)
-        return len({field_of(r, "id") for r in rows} - visible_ids)
 
     def fetch(self, method: Callable, *args) -> tuple[Any, str | None]:
         """Call a detail endpoint. Returns (response, None) or (None, reason)."""
@@ -240,11 +240,3 @@ def apply_image(obj: CivisObject, image: ImageClass) -> None:
     obj.docker_image_tag = image.tag
     obj.uses_default_image = image.uses_default_image
     obj.impact = image.impact
-
-
-def listed_rows(ctx: InventoryContext, method: Callable, object_type: ObjectType, **kwargs) -> list:
-    """Every non-archived, non-hidden row, plus a count of hidden rows skipped (decision 11)."""
-    rows = ctx.list_all(method, **kwargs)
-    visible = {field_of(r, "id") for r in rows}
-    ctx.inventory.count(object_type).hidden_skipped += ctx.count_hidden(method, visible, **kwargs)
-    return rows

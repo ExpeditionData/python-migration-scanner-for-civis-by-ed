@@ -135,6 +135,24 @@ def test_overview_shows_the_users_note(app):
     assert USERS_ACTIVE_NOTE.format(status=" (HTTP 404)") in page
 
 
+HIDDEN_SENTENCE = ("Hidden objects (workflow-created copies and Civis's own query and import jobs) "
+                   "are not scanned or counted.")
+
+
+def test_overview_says_hidden_objects_are_not_counted(app):
+    page = text_of(app.test_client().get("/"))
+    assert HIDDEN_SENTENCE in page
+    assert "Hidden objects skipped" not in page  # New scans write NULL.
+
+
+def test_hidden_count_shows_only_above_zero():
+    rules = load_rules()
+    summary = {"row_kind": "summary", "object_type": "python_script", "found_count": 1}
+    assert views.overview([], [], [{**summary, "hidden_skipped_count": None}], [], rules)["hidden_skipped"] == 0
+    assert views.overview([], [], [{**summary, "hidden_skipped_count": 0}], [], rules)["hidden_skipped"] == 0
+    assert views.overview([], [], [{**summary, "hidden_skipped_count": 4}], [], rules)["hidden_skipped"] == 4
+
+
 def test_users_note_comes_only_from_users_rows():
     rules = load_rules()
     coverage = [{"row_kind": "object", "reason": "Not a users note."},

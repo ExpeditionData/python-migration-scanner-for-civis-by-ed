@@ -171,7 +171,6 @@ class CoverageCounts:
     object_type: ObjectType
     found: int = 0
     scanned: int = 0
-    hidden_skipped: int = 0
     archived_included: int = 0
     # Objects left out because they cannot run Python, by language
     # (for example {"r": 2, "sql": 5}).

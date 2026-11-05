@@ -308,7 +308,9 @@ def _summary_rows(inventory, all_objects: list[dict]) -> list[dict]:
         rows.append(
             {
                 "row_kind": "summary", "object_type": str(object_type), "found_count": counts.found,
-                "scanned_count": scanned.get(str(object_type), 0), "hidden_skipped_count": counts.hidden_skipped,
+                # Hidden objects are no longer counted (docs/PLAN.md 17.5). The column stays, since the
+                # tables may already exist, and is written NULL.
+                "scanned_count": scanned.get(str(object_type), 0), "hidden_skipped_count": None,
                 "archived_included_count": counts.archived_included,
             }
         )

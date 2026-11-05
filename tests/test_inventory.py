@@ -48,10 +48,11 @@ def test_inventoried_ids_by_type(built):
     }
 
 
-def test_counts_cover_hidden_archived_and_non_python(built):
+def test_counts_cover_archived_and_non_python(built):
     _, inventory = built
     c = inventory.counts
-    assert (c[ObjectType.PYTHON_SCRIPT].found, c[ObjectType.PYTHON_SCRIPT].hidden_skipped) == (9, 1)
+    assert c[ObjectType.PYTHON_SCRIPT].found == 9
+    assert not hasattr(c[ObjectType.PYTHON_SCRIPT], "hidden_skipped")  # Hidden objects are not counted (PLAN 17.5).
     assert c[ObjectType.PYTHON_SCRIPT].archived_included == 1
     assert c[ObjectType.CUSTOM_SCRIPT].not_python == {"sql": 1, "dbt": 1}
     assert c[ObjectType.NOTEBOOK].not_python == {"r": 1}
@@ -252,9 +253,13 @@ def test_api_usage(built):
     for name, _, kwargs in client.calls:
         if name != "users.list" and (name.endswith(".list") or name.endswith(".list_custom")):
             assert kwargs["archived"] == "false" and kwargs["iterator"] is True and kwargs["limit"] == 50
-    # One hidden-object pass per listed type.
-    hidden_passes = [k for n, _, k in client.calls if k.get("hidden") is True]
-    assert len(hidden_passes) == 7
+    # Hidden objects are skipped and not counted: no call asks for hidden rows (docs/PLAN.md 17.5).
+    assert not [n for n, _, k in client.calls if "hidden" in k]
+
+
+def test_hidden_objects_are_skipped(built):
+    _, inventory = built
+    assert 103 not in inventory.by_id()  # Hidden in the synthetic instance.
 
 
 def test_templates_are_read_once_per_template():

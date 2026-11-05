@@ -308,6 +308,14 @@ def test_dry_run_end_to_end(tmp_path, log_stream):
         assert secret not in logged
 
 
+def test_hidden_objects_are_not_counted(tmp_path):
+    """The column stays for tables that already exist, and is written NULL (docs/PLAN.md 17.5)."""
+    dry_run(tmp_path, now=NOW)
+    conn = db(tmp_path)
+    values = [r[0] for r in conn.execute("SELECT hidden_skipped_count FROM coverage WHERE row_kind = 'summary'")]
+    assert len(values) == len(ObjectType) and set(values) == {None}
+
+
 def test_dry_run_records_the_users_fallback(tmp_path, log_stream):
     """The default synthetic users list refuses "all" (HTTP 404), as Civis did in the live test."""
     from scanner.inventory.users import USERS_ACTIVE_NOTE

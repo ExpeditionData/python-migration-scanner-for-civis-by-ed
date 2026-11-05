@@ -24,13 +24,12 @@ from scanner.inventory.base import (
     base_object,
     classify_image,
     field_of,
-    listed_rows,
     mark_not_scanned,
 )
 
 
 def inventory_services(ctx: InventoryContext) -> list[InventoryItem]:
-    rows = listed_rows(ctx, ctx.client.services.list, ObjectType.SERVICE)
+    rows = ctx.list_all(ctx.client.services.list)
     items = []
     for row in rows:
         item = service_item(ctx, row)
