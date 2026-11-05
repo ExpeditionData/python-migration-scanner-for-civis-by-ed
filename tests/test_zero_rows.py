@@ -53,17 +53,22 @@ def test_the_fake_raises_like_civis_for_zero_rows():
     assert io.empty_reads == ["SELECT 1 AS x WHERE 1 = 0", "SELECT x FROM header_only"]
 
 
-def test_other_read_errors_are_not_zero_rows():
+class _Broken(RecordingIO):
+    def read_civis_sql(self, *args, **kwargs):
+        raise RuntimeError("made-up error")
+
+
+def test_other_read_errors_are_not_zero_rows_in_the_scanner():
+    with pytest.raises(RuntimeError):
+        CivisSink(object(), _Broken(), 31, SCHEMA, 41)._read("SELECT 1")
+
+
+def test_other_read_errors_are_not_zero_rows_in_the_app():
+    pytest.importorskip("flask")  # The app package needs Flask, which the scanner image does not have.
     from app.backends.civis_backend import CivisResults
 
-    class Broken(RecordingIO):
-        def read_civis_sql(self, *args, **kwargs):
-            raise RuntimeError("made-up error")
-
     with pytest.raises(RuntimeError):
-        CivisResults(object(), Broken(), 31, SCHEMA, 41)._read("SELECT 1")
-    with pytest.raises(RuntimeError):
-        CivisSink(object(), Broken(), 31, SCHEMA, 41)._read("SELECT 1")
+        CivisResults(object(), _Broken(), 31, SCHEMA, 41)._read("SELECT 1")
 
 
 # --- The scanner -------------------------------------------------------------------------------
