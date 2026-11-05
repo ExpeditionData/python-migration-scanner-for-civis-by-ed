@@ -72,6 +72,9 @@
       {% if stats.hidden_skipped %}Hidden objects skipped: {{ stats.hidden_skipped | number }}.{% endif %}
     </p>
     {% endif %}
+    {% if stats.users_note %}
+    <p class="note">{{ stats.users_note }}</p>
+    {% endif %}
   </section>
 
   <section class="card narrow" aria-labelledby="checklist-progress">

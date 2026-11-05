@@ -10,10 +10,10 @@ import pytest
 from common.models import Impact, ObjectType, ScanStatus, WorkflowRef
 from scanner.inventory import build_inventory
 from scanner.inventory.base import classify_image, normalize_image, schedule_summary
-from scanner.inventory.users import load_users, scanning_user
+from scanner.inventory.users import USERS_ACTIVE_NOTE, USERS_NONE_NOTE, load_users, scanning_user
 from scanner.inventory.workflows import SAVED_COPY_NOTE, parse_definition
 from scanner.retrieval.civis_git import TAG_READ_AT_BRANCH, CivisGitFiles
-from tests.fake_civis import FakeClient
+from tests.fake_civis import FakeAPIError, FakeClient
 
 
 @pytest.fixture(scope="module")
@@ -145,12 +145,41 @@ def test_image_names_are_normalized(built):
     assert obj(built, 401).docker_image_name == "civisanalytics/civis-jupyter-python3"
 
 
-def test_owners_include_deactivated_users(built):
+def _users_allowed(errors: dict | None = None) -> FakeClient:
+    """The synthetic instance with users.list allowed for every account_status, or with ``errors``."""
+    data = copy.deepcopy(FakeClient.from_fixture("synthetic_instance.json").data)
+    data["users_list_errors"] = errors or {}
+    return FakeClient(data)
+
+
+def test_owners_from_the_active_list_by_default(built):
+    """The default synthetic instance refuses account_status "all", as Civis did in the live test."""
+    _, inventory = built
     active = obj(built, 101)
     former = obj(built, 102)
     assert (active.owner_id, active.owner_name, active.owner_active) == (2, "Example Analyst", True)
-    assert (former.owner_id, former.owner_name, former.owner_active) == (3, "Example Former Analyst", False)
-    assert obj(built, 403).owner_active is False
+    # Not in the active list: unknown, never False. The name still comes from the object's own owner field.
+    assert (former.owner_id, former.owner_name, former.owner_active) == (3, "Example Former Analyst", None)
+    assert obj(built, 403).owner_active is None
+    assert inventory.users_source == "active"
+    assert inventory.users_note == USERS_ACTIVE_NOTE.format(status=" (HTTP 404)")
+
+
+def test_owners_include_deactivated_users_when_all_can_be_listed():
+    inventory = build_inventory(_users_allowed())
+    by_id = inventory.by_id()
+    assert (by_id[101].obj.owner_active, by_id[102].obj.owner_active, by_id[403].obj.owner_active) == (True, False, False)
+    assert by_id[102].obj.owner_name == "Example Former Analyst"
+    assert (inventory.users_source, inventory.users_note) == ("all", None)
+
+
+def test_owners_unknown_when_no_user_list_can_be_read():
+    inventory = build_inventory(_users_allowed({"all": 403, "active": 503}))
+    by_id = inventory.by_id()
+    assert {by_id[i].obj.owner_active for i in (101, 102, 403)} == {None}
+    assert (by_id[101].obj.owner_name, by_id[102].obj.owner_name) == ("Example Analyst", "Example Former Analyst")
+    assert inventory.users_source == "none"
+    assert inventory.users_note == USERS_NONE_NOTE.format(status=" (HTTP 503)")
 
 
 def test_schedule_and_last_run(built):
@@ -240,11 +269,60 @@ def test_templates_are_read_once_per_template():
 
 
 def test_users_and_scanning_user():
-    client = FakeClient.from_fixture("synthetic_instance.json")
-    users = load_users(client)
-    assert users[3].active is False and users[3].name == "Example Former Analyst"
+    client = _users_allowed()
+    lookup = load_users(client)
+    assert (lookup.source, lookup.status, lookup.note()) == ("all", None, None)
+    assert lookup.users[3].active is False and lookup.users[3].name == "Example Former Analyst"
+    assert [k["account_status"] for _, k in client.called("users.list")] == ["all"]
     assert scanning_user(client) == (1, "example_robot")
     assert client.called("users.get_me")
+
+
+@pytest.mark.parametrize("status", [403, 404])
+def test_users_fall_back_to_the_active_list(status):
+    client = _users_allowed({"all": status, "inactive": status})
+    lookup = load_users(client)
+    assert (lookup.source, lookup.status) == ("active", status)
+    assert sorted(lookup.users) == [1, 2] and all(u.active is True for u in lookup.users.values())
+    assert [(k["account_status"], k["limit"], k["iterator"]) for _, k in client.called("users.list")] == [
+        ("all", 1000, True), ("active", 1000, True)]
+    assert lookup.note() == USERS_ACTIVE_NOTE.format(status=f" (HTTP {status})")
+
+
+def test_the_default_synthetic_users_list_refuses_all_and_inactive():
+    client = FakeClient.from_fixture("synthetic_instance.json")
+    for account_status in ("all", "inactive"):
+        with pytest.raises(FakeAPIError) as raised:
+            list(client.users.list(account_status=account_status, iterator=True, limit=1000))
+        assert raised.value.status_code == 404
+    assert [u["id"] for u in client.users.list(account_status="active", iterator=True, limit=1000)] == [1, 2]
+    assert [u["id"] for u in client.users.list(iterator=True, limit=50)] == [1, 2]
+
+
+def test_no_user_lookup_when_the_active_list_also_fails():
+    lookup = load_users(_users_allowed({"all": 404, "active": 503}))
+    assert (lookup.source, lookup.status, lookup.users) == ("none", 503, {})
+    assert lookup.note() == USERS_NONE_NOTE.format(status=" (HTTP 503)")
+
+
+def test_no_user_lookup_note_without_a_status():
+    class Broken:
+        def list(self, **kwargs):
+            if kwargs["account_status"] == "all":
+                raise FakeAPIError(404)
+            raise ConnectionError("made-up connection failure")
+
+    client = type("C", (), {"users": Broken()})()
+    lookup = load_users(client)
+    assert (lookup.source, lookup.status) == ("none", None)
+    assert lookup.note() == USERS_NONE_NOTE.format(status="")
+    assert "made-up" not in lookup.note()
+
+
+def test_other_failures_of_the_all_list_are_raised():
+    with pytest.raises(FakeAPIError) as raised:
+        load_users(_users_allowed({"all": 500}))
+    assert raised.value.status_code == 500
 
 
 @pytest.mark.parametrize(

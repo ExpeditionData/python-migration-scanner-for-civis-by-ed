@@ -13,7 +13,8 @@ from __future__ import annotations
 from typing import Any
 
 from common.models import CoverageItem, ObjectType, WorkflowRef
-from scanner.inventory.base import Inventory, InventoryContext, InventoryItem, UserInfo, field_of
+from scanner import scan_log
+from scanner.inventory.base import Inventory, InventoryContext, InventoryItem, field_of
 from scanner.inventory.containers import container_item, inventory_container_scripts
 from scanner.inventory.custom import custom_item, inventory_custom_scripts
 from scanner.inventory.dbt import dbt_item, inventory_dbt_scripts
@@ -35,11 +36,14 @@ _BY_TYPE = (
 )
 
 
-def build_inventory(client: Any, users: dict[int, UserInfo] | None = None, civis_git: Any = None) -> Inventory:
+def build_inventory(client: Any, civis_git: Any = None) -> Inventory:
     """``civis_git`` (a CivisGitFiles) reads git-backed workflows' definitions through Civis.
     Without it, every workflow is read from the definition saved in Civis."""
     inventory = Inventory()
-    ctx = InventoryContext(client, users if users is not None else load_users(client), inventory, civis_git)
+    lookup = load_users(client)
+    scan_log.users(lookup.source, lookup.status)
+    inventory.users_source, inventory.users_note = lookup.source, lookup.note()
+    ctx = InventoryContext(client, lookup.users, inventory, civis_git)
 
     for object_type, inventory_type in _BY_TYPE:
         items = inventory_type(ctx)

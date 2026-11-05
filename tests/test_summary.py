@@ -66,6 +66,25 @@ def test_log_counts():
     assert counts.errors[("CIVIS_GIT_FAILED", "GitCommitNotFound")] == 1
     assert counts.errors[("PARSE_ERROR", "other")] == 1
     assert counts.other_lines == 1
+    assert counts.users is None
+
+
+@pytest.mark.parametrize("line, expected", [
+    ("USERS source=all", "all"),
+    ("USERS source=active status=404", "active status=404"),
+    ("USERS source=none status=503", "none status=503"),
+    (f"USERS source={MARK}", "other"),
+    (f"USERS source=active status=404 {MARK}", "other"),
+])
+def test_users_line(line, expected):
+    counts = summary.count_log([line])
+    assert (counts.users, counts.other_lines) == (expected, 0)
+
+
+def test_users_sources_match_the_scanner():
+    from scanner import scan_log
+
+    assert summary.USER_SOURCES == scan_log.USER_SOURCES
 
 
 class PagedJobs:
@@ -236,6 +255,7 @@ def test_no_marker_reaches_the_summary(marked_app):
     assert "OBJECT_ERROR CivisAPIError status=404: 1" in text and "OBJECT_ERROR other: 1" in text
     assert "CIVIS_GIT_FAILED other: 1" in text and "FATAL KeyError: 1" in text
     assert "log_other_lines: 1" in text and "log_read: complete lines_read=7" in text
+    assert "users_list: not_found" in text
     assert "python_script: scanned=0 partly_scanned=1 not_scanned=0" in text and "other: scanned=0" in text
     assert "findings: affected_objects=1 advisory_objects=1 total_findings=2" in text
     assert "python_script: git_backed=1 read_through_civis=1 civis_read_failed=0" in text

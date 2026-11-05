@@ -112,15 +112,15 @@ COVERAGE = Table(
     "Counts by object type, plus every object not fully scanned and why.",
     (
         Column("run_id", "VARCHAR(64)", "Scan run ID."),
-        Column("row_kind", "VARCHAR(16)", "summary, object, or not_python."),
-        Column("object_type", "VARCHAR(32)", "Object type."),
+        Column("row_kind", "VARCHAR(16)", "summary, object, not_python, or users (owner active status not fully known)."),
+        Column("object_type", "VARCHAR(32)", "Object type. Empty on users rows."),
         Column("object_id", "BIGINT", "Object ID, on object rows only."),
         Column("language", "VARCHAR(32)", "Language of objects left out, on not_python rows only (for example r or sql)."),
         Column("found_count", "INTEGER", "Objects found on summary rows; objects left out on not_python rows."),
         Column("scanned_count", "INTEGER", "Objects fully scanned, on summary rows only."),
         Column("hidden_skipped_count", "INTEGER", "Hidden objects skipped, on summary rows only."),
         Column("archived_included_count", "INTEGER", "Archived jobs included because an active workflow runs them."),
-        Column("reason", "VARCHAR(1024)", "Why the object was not fully scanned, on object rows."),
+        Column("reason", "VARCHAR(1024)", "Why the object was not fully scanned, on object rows; a fixed note on users rows."),
     ),
 )
 

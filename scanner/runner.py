@@ -211,6 +211,8 @@ def run_scan(
 
     summary = _summary_rows(inventory, all_objects)
     extra = _inventory_coverage_rows(inventory, results, previous.get("coverage", []))
+    if inventory.users_note:  # Owner active status only partly known or not known (no names, HTTP status only).
+        extra.append({"row_kind": "users", "reason": inventory.users_note})
     tables.run("coverage", lambda: sink.append(COVERAGE, run_id, summary + extra))
     tables.run("checklist_status", lambda: _new_checklist_rows(sink, run_id, all_findings, now()))
     for rule_id, count in sorted(_count_by_rule(all_findings).items()):

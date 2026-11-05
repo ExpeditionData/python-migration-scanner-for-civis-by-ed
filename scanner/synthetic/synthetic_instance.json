@@ -25,6 +25,10 @@
       "active": false
     }
   ],
+  "users_list_errors": {
+    "all": 404,
+    "inactive": 404
+  },
   "python3": [
     {
       "id": 101,

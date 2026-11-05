@@ -115,6 +115,10 @@ class Inventory:
     counts: dict[ObjectType, CoverageCounts] = field(default_factory=dict)
     coverage: list[CoverageItem] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    # Which user list owner active status came from (scanner/inventory/users.py): all, active, or none,
+    # and the fixed coverage note when it is not "all".
+    users_source: str = "all"
+    users_note: str | None = None
 
     def count(self, object_type: ObjectType) -> CoverageCounts:
         if object_type not in self.counts:

@@ -37,7 +37,7 @@ OTHER = "other"
 # Line types the scanner writes (scanner/scan_log.py). Any other log line is counted as "other".
 SCANNER_PREFIXES = (
     "RUN", "PHASE", "PROGRESS", "CHECKPOINT", "FINDINGS", "OBJECT_ERROR", "CIVIS_GIT_FAILED", "PARSE_ERROR",
-    "TABLE_WRITE_FAILED", "OUTPUT_FAILED", "FATAL",
+    "TABLE_WRITE_FAILED", "OUTPUT_FAILED", "FATAL", "USERS",
 )
 ERROR_LINES = ("OBJECT_ERROR", "CIVIS_GIT_FAILED", "PARSE_ERROR", "TABLE_WRITE_FAILED", "OUTPUT_FAILED", "FATAL")
 # The counts on the scanner's final RUN line, in order (scanner/scan_log.py, RUN_COUNTS).
@@ -57,6 +57,9 @@ CIVIS_READ_FAILED = "could not be read through Civis"
 _PREFIX = re.compile(r"^(" + "|".join(SCANNER_PREFIXES) + r")\b")
 _ERROR_LINE = re.compile(r"^(" + "|".join(ERROR_LINES) + r")\b.*?\berror=(\S+)(?: status=(\S+))?")
 _RUN_LINE = re.compile(r"^RUN\b")
+# Which user list owner active status came from (scanner/scan_log.py, USER_SOURCES).
+USER_SOURCES = ("all", "active", "none")
+_USERS_LINE = re.compile(r"^USERS source=(\w+)(?: status=(\d{3}))?$")
 _PAIR = re.compile(r"\b(\w+)=(\S+)")
 
 
@@ -124,12 +127,14 @@ class LogCounts:
     run_counts: dict[str, int] | None
     errors: Counter
     other_lines: int
+    users: str | None = None  # "<source>" or "<source> status=NNN", from the USERS line.
 
 
 def count_log(lines: list[str]) -> LogCounts:
     run_counts = None
     errors: Counter = Counter()
     other = 0
+    users = None
     for raw in lines:
         line = (raw or "").strip()
         if not _PREFIX.match(line):
@@ -144,7 +149,11 @@ def count_log(lines: list[str]) -> LogCounts:
             pairs = dict(_PAIR.findall(line))
             if "objects_total" in pairs:
                 run_counts = {k: int(pairs[k]) for k in RUN_COUNTS if pairs.get(k, "").isdigit()}
-    return LogCounts(run_counts, errors, other)
+        elif line.startswith("USERS"):
+            match = _USERS_LINE.match(line)
+            source = _label(match.group(1), USER_SOURCES) if match else OTHER
+            users = source if source == OTHER or not match.group(2) else f"{source} status={match.group(2)}"
+    return LogCounts(run_counts, errors, other, users)
 
 
 # --- Counts from the result tables ------------------------------------------------------------
@@ -274,6 +283,7 @@ def _scan_lines(scan: ScanData | None) -> list[str]:
         for (kind, token), count in sorted(counts.errors.items()):
             out.append(f"    {_label(kind, ERROR_LINES)} {_token(token)}: {_n(count)}")
         out.append(f"  log_other_lines: {_n(counts.other_lines)}")
+        out.append(f"  users_list: {counts.users or 'not_found'}")
         if scan.log.error:
             out.append(f"  log_read: failed error={_token(scan.log.error)} lines_read={_n(len(scan.log.lines))}")
         elif scan.log.complete:

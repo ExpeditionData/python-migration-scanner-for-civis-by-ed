@@ -127,6 +127,22 @@ def test_overview_numbers(app):
     assert "A scan is running." in page
 
 
+def test_overview_shows_the_users_note(app):
+    """The preview follows the live test: the users list refuses "all", so the scan used the active list."""
+    from scanner.inventory.users import USERS_ACTIVE_NOTE
+
+    page = text_of(app.test_client().get("/"))
+    assert USERS_ACTIVE_NOTE.format(status=" (HTTP 404)") in page
+
+
+def test_users_note_comes_only_from_users_rows():
+    rules = load_rules()
+    coverage = [{"row_kind": "object", "reason": "Not a users note."},
+                {"row_kind": "users", "reason": "Owner active status is not known."}]
+    assert views.overview([], [], coverage, [], rules)["users_note"] == "Owner active status is not known."
+    assert views.overview([], [], coverage[:1], [], rules)["users_note"] is None
+
+
 def test_overview_counts_partly_scanned_objects(app):
     html = app.test_client().get("/").get_data(as_text=True)
     page = text_of(app.test_client().get("/"))

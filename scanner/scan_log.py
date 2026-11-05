@@ -15,6 +15,7 @@ Line formats (parsed by the web app to show progress):
     PARSE_ERROR object_type=notebook object_id=401 error=JSONDecodeError
     FINDINGS rule_id=CV3-USE-PANDAS count=12
     PHASE name=inventory state=done
+    USERS source=active status=404
     CHECKPOINT objects_written=500
     OUTPUT_FAILED error=CivisAPIError
     FATAL error=KeyError
@@ -157,6 +158,20 @@ def run_status(run_id: str, status: str, **counts: int) -> None:
         raise ValueError("unknown run count")
     suffix = "".join(f" {name}={_count(counts[name], name)}" for name in RUN_COUNTS if counts.get(name) is not None)
     _logger.info("RUN run_id=%s status=%s%s", run_id, status, suffix)
+
+
+USER_SOURCES = ("all", "active", "none")
+
+
+def users(source: str, status: int | None = None) -> None:
+    """Which user list owner active status came from (scanner/inventory/users.py), and the HTTP status
+    of the list call that failed. No user names."""
+    if source not in USER_SOURCES:
+        raise ValueError("unknown users source")
+    if status is None:
+        _logger.info("USERS source=%s", source)
+    else:
+        _logger.info("USERS source=%s status=%d", source, _count(status, "status"))
 
 
 def output_failed(exc: BaseException) -> None:

@@ -289,6 +289,8 @@ def overview(objects: list[dict], findings: list[dict], coverage: list[dict], ch
         for r in coverage if r.get("row_kind") == "not_python"
     ]
     hidden = sum(r.get("hidden_skipped_count") or 0 for r in coverage if r.get("row_kind") == "summary")
+    # The scanner's fixed note when owner active status is only partly known or not known (row_kind "users").
+    users_note = next((r.get("reason") for r in coverage if r.get("row_kind") == "users" and r.get("reason")), None)
 
     pairs = {(f["object_id"], f["rule_id"]) for f in findings}
     status_of = current_checklist(checklist)
@@ -316,6 +318,7 @@ def overview(objects: list[dict], findings: list[dict], coverage: list[dict], ch
         "types": types,
         "left_out": left_out,
         "hidden_skipped": hidden,
+        "users_note": users_note,
         "checklist": {
             "total": total_pairs, "objects": len({p[0] for p in pairs}),
             "open": progress.get("open", 0), "fixed": progress.get("fixed", 0), "ignored": progress.get("ignored", 0),

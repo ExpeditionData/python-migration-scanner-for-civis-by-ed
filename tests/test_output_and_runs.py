@@ -308,6 +308,49 @@ def test_dry_run_end_to_end(tmp_path, log_stream):
         assert secret not in logged
 
 
+def test_dry_run_records_the_users_fallback(tmp_path, log_stream):
+    """The default synthetic users list refuses "all" (HTTP 404), as Civis did in the live test."""
+    from scanner.inventory.users import USERS_ACTIVE_NOTE
+
+    dry_run(tmp_path, now=NOW)
+    conn = db(tmp_path)
+    rows = conn.execute("SELECT object_type, object_id, reason FROM coverage WHERE row_kind = 'users'").fetchall()
+    assert rows == [(None, None, USERS_ACTIVE_NOTE.format(status=" (HTTP 404)"))]
+    assert conn.execute("SELECT COUNT(*) FROM objects WHERE owner_active = 0").fetchone()[0] == 0
+    assert "USERS source=active status=404" in log_stream.getvalue().splitlines()
+
+
+def test_dry_run_with_every_user_listed_writes_no_users_row(tmp_path, log_stream):
+    import json
+
+    from scanner.synthetic import FIXTURES
+
+    data = json.loads((FIXTURES / "synthetic_instance.json").read_text(encoding="utf-8"))
+    data["users_list_errors"] = {}
+    dry_run(tmp_path, now=NOW, data=data)
+    conn = db(tmp_path)
+    assert count(conn, "coverage", "row_kind = 'users'") == 0
+    assert count(conn, "objects", "owner_active = 0") > 0
+    assert "USERS source=all" in log_stream.getvalue().splitlines()
+
+
+@pytest.mark.parametrize("source, status, line", [
+    ("all", None, "USERS source=all"),
+    ("active", 404, "USERS source=active status=404"),
+    ("none", 503, "USERS source=none status=503"),
+])
+def test_users_log_line(log_stream, source, status, line):
+    scan_log.users(source, status)
+    assert log_stream.getvalue().splitlines() == [line]
+
+
+@pytest.mark.parametrize("source, status", [("everyone", None), ("all", -1), ("all", True), ("all", "404")])
+def test_users_log_line_rejects_other_values(log_stream, source, status):
+    with pytest.raises(ValueError):
+        scan_log.users(source, status)
+    assert log_stream.getvalue() == ""
+
+
 def test_final_log_line_counts_every_civis_api_call(tmp_path, log_stream, monkeypatch):
     """Calls per object are measured in Phase 7 from the final RUN line, so the count must be exact."""
     import scanner.synthetic as synthetic

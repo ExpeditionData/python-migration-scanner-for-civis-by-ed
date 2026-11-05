@@ -14,6 +14,10 @@ Git files served through Civis ("civis_git", keyed "python3/<id>" or
 "files" maps a full commit SHA to the file content (a shortened SHA finds it by
 prefix) or to {"content": ..., "size": ...} to set the reported size.
 "commits_error" or "file_error" makes that call raise FakeAPIError.
+
+"users_list_errors" makes users.list refuse an account_status (see _users__list).
+The default instance refuses "all" and "inactive" with HTTP 404, as Civis did
+for the scanning user in the first live test (docs/PLAN.md 17.5).
 """
 
 from __future__ import annotations
@@ -213,10 +217,24 @@ class FakeClient:
         return self._get(self.data.get("jobs", {}), job_id)
 
     def _users__list(self, account_status=None, iterator=False, limit=None):
+        """account_status "all", "inactive", or "active" (the default). "users_list_errors" maps an
+        account_status to an HTTP status that the list raises instead, as Civis does for a user who
+        may not list deactivated users (404 for "all" and "inactive" in the first live test). Like
+        civis-python's paginated iterator, the error is raised when the first page is read."""
+        status = account_status or "active"
+        error = self.data.get("users_list_errors", {}).get(status)
         rows = self.data.get("users", [])
-        if account_status != "all":
+        if status == "active":
             rows = [r for r in rows if r.get("active")]
-        return iter([_public(r) for r in rows])
+        elif status == "inactive":
+            rows = [r for r in rows if not r.get("active")]
+
+        def pages():
+            if error:
+                raise FakeAPIError(error)
+            yield from (_public(r) for r in rows)
+
+        return pages()
 
     def _users__get_me(self):
         return self.data["me"]
