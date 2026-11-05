@@ -16,17 +16,20 @@ README setup and every fact that could not be confirmed from documentation
   `error=CivisAPIError status=403`) are fine to record; they hold no content.
 - If something you would need to record looks like client content, write
   "content withheld" and describe it in general terms instead.
-- **Release tag:** every step, setup and scans, uses `v0.1.0-rc4`. It follows
-  `v0.1.0-rc3` because of two safety guards: Run scan starts only this tool's
-  scanner job, and the tool refuses a results schema that holds anything else.
-  Use it in place wherever the README says `<release tag>`. Item 5.6 (update
-  to a new release) waits for the first release tag after `v0.1.0-rc4`.
+- **Release tag:** every step, setup and scans, uses `v0.1.0-rc5`. It follows
+  `v0.1.0-rc4` because of two fixes from the first setup on `v0.1.0-rc4`
+  (docs/PLAN.md 17.4): reads that return no rows, and the shape of the Civis
+  sharing lists. `v0.1.0-rc4` followed `v0.1.0-rc3` because of two safety
+  guards: Run scan starts only this tool's scanner job, and the tool refuses a
+  results schema that holds anything else. Use it in place wherever the README
+  says `<release tag>`. Item 5.6 (update to a new release) waits for the first
+  release tag after `v0.1.0-rc5`.
 - **Browser:** Chrome, Edge, or Firefox. Safari ignores the report-only frame
   rule (item 2.1).
 
 ## Order
 
-1. Section 1 (setup) on `v0.1.0-rc4`, with no GitHub token attached to the
+1. Section 1 (setup) on `v0.1.0-rc5`, with no GitHub token attached to the
    scanner job.
 2. Section 2 (frame rule), then the Setup page again (end of item 1.10).
 3. Section 3 (the first scan, with no GitHub token) and the first-scan part
@@ -39,7 +42,7 @@ README setup and every fact that could not be confirmed from documentation
    results.
 
 Item 5.6 is not part of this run. It waits for the first release tag after
-`v0.1.0-rc4`.
+`v0.1.0-rc5`.
 
 ## Prepare the test organization
 
@@ -511,12 +514,12 @@ finish the step the way the interface allows and record the difference.
 
 ### 5.6 Update to a new release, and removal
 
-This item waits for the first release tag after `v0.1.0-rc4`. It is not part
+This item waits for the first release tag after `v0.1.0-rc5`. It is not part
 of this run.
 
 - **Steps:**
   1. Follow README "Update to a new release" to move both objects from
-     `v0.1.0-rc4` to the new tag. Its last step ("Run a new scan") is a new
+     `v0.1.0-rc5` to the new tag. Its last step ("Run a new scan") is a new
      scan from the app.
   2. Optional, at the end of that test: follow README "Remove the tool".
 - **Expected:** Each step works as written. After the update, the Service
@@ -547,7 +550,7 @@ item 5.7 pasted below it. Counts and redacted error types only.
 
 ```
 Python Migration Scanner: first live test results
-Release tag: v0.1.0-rc4 (setup and scans)
+Release tag: v0.1.0-rc5 (setup and scans)
 Date (MM/DD/YYYY):
 Browser:
 
@@ -603,7 +606,7 @@ Item  Result (pass/fail/skipped)  Counts or note
       step 3 edit by Robot user: yes/no   resumed run shows Robot user: yes/no
       step 4 edit by Robot user: yes/no   next run shows Robot user: yes/no
 5.5   minutes to wake=
-5.6   waits for the first tag after v0.1.0-rc4
+5.6   waits for the first tag after v0.1.0-rc5
 5.7   built:  copied (button/by hand):  sent:  looked like a name: yes/no
 
 Error types seen (from the scanner's log only), with counts:

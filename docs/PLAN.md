@@ -873,3 +873,28 @@ Rob reviewed this section on November 4, 2026, approved the implementation choic
 | 17.3.6 | Scanner: at the start of every run, before it creates or writes anything (tables, rows, retention deletes, the CSV), it runs the check. If the schema holds other tables or views, it logs one line, `FATAL error=SchemaNotDedicated reason=results_schema_holds_other_tables_or_views other_objects=N`, writes nothing, and exits with the configuration exit code 2. A missing schema works as before. **Chosen in Prompt 26:** if the check itself cannot run (a database error), the scan writes no tables, the same as when a table write fails (`TABLE_WRITE_FAILED`), still saves its CSV to its own run, and exits 3. | Requested by Rob on November 4, 2026 (the guard); the failed-check behavior was chosen in Prompt 26 |
 | 17.3.7 | The SQL scope test allows reads of `pg_catalog.pg_views` alongside `pg_namespace` and `pg_tables`, and nothing else from `pg_catalog`. | Requested by Rob on November 4, 2026 |
 
+### 17.4 Live test fixes (November 5, 2026)
+
+**Why.** Setup of `v0.1.0-rc4` in the test organization's Civis found two bugs that block the live test. Both come from response shapes the test fakes did not match. Found in the first live test on November 5, 2026; fix approved by Rob on November 5, 2026. The live test moves to `v0.1.0-rc5`.
+
+#### Finding 1: reads that return no rows
+
+The results schema did not exist yet. The Overview said "Results could not be read" with Run scan on, instead of "The results schema does not exist yet" with the **Set up results storage** button, and Setup line 9 failed: "The check failed at step schema (error type: EmptyResultError)." A read-only diagnostic script run in Civis (civis 2.10, the same database and credential as `RESULTS_DB`) showed that `civis.io.read_civis_sql` returns the rows of a query that has at least one, and raises `civis.base.EmptyResultError` ("no output") for every query with zero rows, including `SELECT 1 AS x WHERE 1 = 0`. It runs the query as an export to a file, and Civis writes no file for an empty result. civis 2.7.1's `read_civis_sql` has the same check. `query_civis` was not affected. The fakes returned an empty list, so no test saw it.
+
+So every existence check (the schema, the tables, the dedicated-schema check) and every read of an empty table failed. In the scanner, a first scan into a missing or new empty schema would have failed the dedicated-schema check, written no tables (`TABLE_WRITE_FAILED`), and exited 3.
+
+| # | Fix | Status |
+|---|---|---|
+| 17.4.1 | `CivisResults._read` (app) and `CivisSink._read` (scanner), the only callers of `read_civis_sql`, treat `EmptyResultError` as zero rows and return an empty list (`common/civis_errors.is_empty_result`, which checks for civis.base's class). Every other error is raised as before. | Fix approved by Rob on November 5, 2026 |
+| 17.4.2 | The fakes raise `EmptyResultError` by default whenever a read has no data rows: `RecordingIO` in `tests/civis_fakes.py` (which also records each such read in `empty_reads`) and the fakes in `tests/test_app.py` and `tests/test_output_and_runs.py`. With these fakes, 22 existing tests fail on the `v0.1.0-rc4` code. | Fix approved by Rob on November 5, 2026 |
+| 17.4.3 | `tests/test_zero_rows.py` checks each path that can read zero rows: the app's results state check (a missing schema shows "The results schema does not exist yet", Run scan off, and the setup button), the existing-tables check, the dedicated-schema check on a new empty schema (dedicated, so setup continues), the setup button on a missing schema, reads of empty result tables, Setup line 9, and the test summary; in the scanner, the dedicated-schema check on a missing or new empty schema, `finished_object_ids`, `run_rows`, `latest_status`, `checklist_pairs`, and `run_starts`, a resume with no saved rows, and a first scan into a new empty schema that writes all five tables with no `TABLE_WRITE_FAILED` line and no retention `DELETE`. | Fix approved by Rob on November 5, 2026 |
+
+#### Finding 2: the shape of the sharing lists
+
+Setup line 6 said "Scanner job: not checked, because the scanner job could not be read. Service: not checked, because the app could not tell which Service it is (line 7)", although line 1 read the job and line 7 found the Service (`single_match`). The diagnostic showed that `scripts.list_containers_shares` and `services.list_shares` each return one civis Response object with `readers`, `writers`, and `owners`, not a list. `share_members` accepted only a list, and line 6 gave the "not checked" reasons for any response it could not use.
+
+| # | Fix | Status |
+|---|---|---|
+| 17.4.4 | `share_members`, `sharing_counts`, and the test summary accept one object with `readers`, `writers`, and `owners` (the shape Civis returns) and a list of such objects. | Fix approved by Rob on November 5, 2026 |
+| 17.4.5 | If a shares response was read but its shape is not recognized, line 6 says "the sharing list was read but its shape was not recognized", and the summary says `sharing_job: shape_not_recognized` (or `sharing_service`). "Not checked, because the scanner job could not be read" appears only when the job could not be read, and "because the app could not tell which Service it is (line 7)" only when line 7 found no single Service. **Implementation choice:** with no `SCANNER_JOB_ID`, line 6 says "not checked, because SCANNER_JOB_ID is not set". | Fix approved by Rob on November 5, 2026 |
+| 17.4.6 | The fake shares in `tests/civis_fakes.py` and the local preview return the single-object shape. Tests keep one case with the list shape and several with unrecognized shapes. | Fix approved by Rob on November 5, 2026 |

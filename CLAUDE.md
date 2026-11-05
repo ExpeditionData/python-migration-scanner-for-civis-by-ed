@@ -60,7 +60,7 @@ be made public at any time.
   credential. Rob changes its visibility himself; never change it from a
   session.
 - Releases are git tags, protected by the "release tags" ruleset. The first
-  live test sets up and runs its scans on `v0.1.0-rc4`. Create a tag or a
+  live test sets up and runs its scans on `v0.1.0-rc5`. Create a tag or a
   GitHub Release only when Rob's prompt says to.
 - Commit after each completed step, with a clear message that says what changed
   and why.
@@ -159,6 +159,10 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   On November 4, 2026, Phase 7 added results storage setup from the app, job
   settings read from the scanner job, the Setup page, the test summary, and
   the SQL scope test (docs/PLAN.md 17.2).
+  On November 5, 2026, setup of `v0.1.0-rc4` in the live test found two
+  bugs, fixed for `v0.1.0-rc5`: reads that return no rows, and the shape of
+  the Civis sharing lists (docs/PLAN.md 17.4). The build under test is
+  `v0.1.0-rc5`.
   Implementation choices not in the approved plan are in docs/PLAN.md
   sections 10 to 17.
 - **App flow.** `app/__init__.create_app` -> `app/services.py` (Civis or local
@@ -313,6 +317,16 @@ Run the full suite on both Python versions before every commit:
   every SQL statement the tool sends. `tests/test_start_guard.py` and
   `tests/test_schema_guard.py` cover the two safety guards. `tests/civis_fakes.py` holds the made-up
   civis client and recording `civis.io`.
+- The fakes match two Civis behaviors confirmed in the live test (docs/PLAN.md
+  17.4). `civis.io.read_civis_sql` raises `civis.base.EmptyResultError` for
+  every query with zero rows (Civis writes no file for an empty result), and
+  the app and the scanner treat that error as zero rows
+  (`common/civis_errors.py`). Every fake `read_civis_sql` raises it the same
+  way by default, and `RecordingIO.empty_reads` lists those reads.
+  `tests/test_zero_rows.py` covers each path that can read zero rows. The
+  Civis shares calls (`scripts.list_containers_shares`,
+  `services.list_shares`) return one object with readers, writers, and
+  owners, not a list, and the fake shares do the same.
 - `tests/test_app.py` covers every page and API, CSRF on every POST, escaping
   of hostile object names, security headers, the concurrent-run guard, the
   batched checklist save, the empty and error states, text contrast, and local
