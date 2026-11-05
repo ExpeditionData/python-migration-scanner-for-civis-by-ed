@@ -12,8 +12,8 @@ that civis-python exposes (``calls_remaining`` and ``rate_limit``). If fewer
 than 20 percent of the user's calls remain, the scanner slows to half speed
 until the headroom comes back.
 
-civis-python's own retry (it honors Retry-After on HTTP 429) still applies on
-top of this.
+civis-python's own retry still applies on top of this, with the shorter policy
+in ``civis_retrying`` (docs/PLAN.md 17.5).
 """
 
 from __future__ import annotations
@@ -27,6 +27,42 @@ from typing import Any
 DEFAULT_REQUESTS = 500
 DEFAULT_WINDOW_SECONDS = 300.0
 LOW_HEADROOM_RATIO = 0.2
+
+# Retries of one Civis API request (civis_retrying).
+RETRY_MAX_TRIES = 4
+RETRY_MAX_SECONDS = 120
+RETRY_MAX_WAIT_SECONDS = 30
+
+
+def civis_retrying() -> Any:
+    """The scanner's retries policy for civis.APIClient(retries=...), a tenacity.Retrying.
+
+    civis-python's default retries a request up to 10 tries or 600 seconds. In the
+    first live test one request to a slow list took about 10 minutes that way, and
+    civis 2.10's Endpoint._make_request holds one class-level lock (civis.base,
+    shared by every endpoint) for the whole request, retries included, so every
+    other API call in the process, including the scanner's worker threads, waited
+    for it. This policy stops after RETRY_MAX_TRIES tries or once RETRY_MAX_SECONDS
+    have passed (checked after each try), with random exponential waits of at most
+    RETRY_MAX_WAIT_SECONDS. civis-python keeps its own rules for which status codes
+    and verbs are retried (429, 502, 503, 504 on GET; 429 and 503 on POST), still
+    waits at least the Retry-After header, and raises the last error when the
+    retries run out.
+
+    Not handled here: civis sets no request timeout, so a request that never gets a
+    response holds the lock with no time limit. No change for that in v0.1.0-rc6.
+
+    tenacity is a civis dependency in the scanner image (requirements-scanner.txt).
+    It is imported here so the module loads without it.
+    """
+    import tenacity
+
+    return tenacity.Retrying(
+        wait=tenacity.wait_random_exponential(multiplier=2, max=RETRY_MAX_WAIT_SECONDS),
+        stop=(tenacity.stop_after_delay(RETRY_MAX_SECONDS) | tenacity.stop_after_attempt(RETRY_MAX_TRIES)),
+        retry_error_callback=lambda retry_state: retry_state.outcome.result(),
+        reraise=True,
+    )
 
 
 class RequestBudget:

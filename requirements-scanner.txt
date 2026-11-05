@@ -6,3 +6,5 @@ civis==2.10.0
 pandas==3.0.5
 pyyaml==6.0.3
 requests==2.34.2
+# A civis dependency in the image; the scanner imports it for its retries policy.
+tenacity==9.1.4
