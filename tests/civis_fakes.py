@@ -96,13 +96,15 @@ def app_service(**changes: Any) -> dict:
     return service
 
 
-def shares(users: list[tuple[int, str]], groups: list[tuple[int, str]]) -> list[dict]:
-    return [{
+def shares(users: list[tuple[int, str]], groups: list[tuple[int, str]]) -> dict:
+    """One object with readers, writers, and owners: what scripts.list_containers_shares and
+    services.list_shares return (confirmed in the first live test)."""
+    return {
         "readers": {"users": [{"id": i, "name": n} for i, n in users], "groups": [{"id": i, "name": n} for i, n in groups]},
         "writers": {"users": [], "groups": []},
         "owners": {"users": [{"id": ROBOT["id"], "name": ROBOT["name"]}], "groups": []},
         "total_user_shares": len(users) + 1, "total_group_shares": len(groups),
-    }]
+    }
 
 
 class _Endpoint:

@@ -376,16 +376,33 @@ def _one_owner(facts: SetupFacts) -> Line:
                 + (", and the job runs as that user." if any(r == "job runs as" for r, _ in roles) else "."))
 
 
+SHARE_LEVELS = ("readers", "writers", "owners")
+SHAPE_NOT_RECOGNIZED = "shape_not_recognized"
+
+
+def _share_entries(value: Any) -> list[dict] | None:
+    """The objects in a shares response, each with readers, writers, and owners. Civis returns one such object
+    for scripts.list_containers_shares and services.list_shares (confirmed in the first live test); a list of
+    them is accepted too. None if the shape is not recognized."""
+    entries = [value] if isinstance(value, dict) else value if isinstance(value, list) else None
+    if entries is None:
+        return None
+    for entry in entries:
+        if not isinstance(entry, dict) or not any(isinstance(entry.get(level), dict) for level in SHARE_LEVELS):
+            return None
+    return entries
+
+
 def share_members(value: Any) -> tuple[list[str], list[str]] | None:
-    """User names and group names with access, from a shares response (readers, writers, and owners)."""
-    if not isinstance(value, list):
+    """User names and group names with access, from a shares response (readers, writers, and owners).
+    None if the response's shape is not recognized."""
+    entries = _share_entries(value)
+    if entries is None:
         return None
     users: dict[Any, str] = {}
     groups: dict[Any, str] = {}
-    for entry in value:
-        if not isinstance(entry, dict):
-            continue
-        for level in ("readers", "writers", "owners"):
+    for entry in entries:
+        for level in SHARE_LEVELS:
             members = entry.get(level) or {}
             if not isinstance(members, dict):
                 continue
@@ -398,27 +415,45 @@ def share_members(value: Any) -> tuple[list[str], list[str]] | None:
     return sorted(users.values()), sorted(groups.values())
 
 
-def sharing_counts(facts: SetupFacts) -> dict[str, tuple[int, int] | None]:
-    """(users, groups) with access to the job and to the Service. None if not read."""
-    counts: dict[str, tuple[int, int] | None] = {}
+def sharing_counts(facts: SetupFacts) -> dict[str, tuple[int, int] | str | None]:
+    """(users, groups) with access to the job and to the Service. None if not read or not checked, and
+    SHAPE_NOT_RECOGNIZED if the response was read but its shape was not recognized."""
+    counts: dict[str, tuple[int, int] | str | None] = {}
     for label, fetched in (("job", facts.job_shares), ("service", facts.service_shares)):
-        members = share_members(fetched.value) if fetched is not None and not fetched.error else None
-        counts[label] = (len(members[0]), len(members[1])) if members is not None else None
+        if fetched is None or fetched.error:
+            counts[label] = None
+            continue
+        members = share_members(fetched.value)
+        counts[label] = (len(members[0]), len(members[1])) if members is not None else SHAPE_NOT_RECOGNIZED
     return counts
+
+
+def _not_checked_sharing(facts: SetupFacts, label: str) -> str:
+    """Why a sharing list was not read, without blaming a read that did not fail."""
+    if label == "job":
+        if facts.settings is None:
+            return "not checked, because SCANNER_JOB_ID is not set"
+        if facts.settings.problem == "job_unreadable":
+            return "not checked, because the scanner job could not be read"
+        return "not checked"
+    if facts.service_method != "single_match":
+        return "not checked, because the app could not tell which Service it is (line 7)"
+    return "not checked"
 
 
 def _sharing(facts: SetupFacts) -> Line:
     title = "Sharing of the scanner job and the Service"
     parts, details = [], []
     for label, name, fetched in (("job", "Scanner job", facts.job_shares), ("service", "Service", facts.service_shares)):
-        members = share_members(fetched.value) if fetched is not None and not fetched.error else None
+        if fetched is None:
+            parts.append(f"{name}: {_not_checked_sharing(facts, label)}")
+            continue
+        if fetched.error:
+            parts.append(f"{name}: not read (error type: {fetched.error})")
+            continue
+        members = share_members(fetched.value)
         if members is None:
-            if fetched is not None and fetched.error:
-                parts.append(f"{name}: not read (error type: {fetched.error})")
-            elif label == "job":
-                parts.append(f"{name}: not checked, because the scanner job could not be read")
-            else:
-                parts.append(f"{name}: not checked, because the app could not tell which Service it is (line 7)")
+            parts.append(f"{name}: the sharing list was read but its shape was not recognized")
             continue
         users, groups = members
         parts.append(f"{name}: {_plural(len(users), 'user')} and {_plural(len(groups), 'group')}, including the owner")

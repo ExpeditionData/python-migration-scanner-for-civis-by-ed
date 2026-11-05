@@ -206,7 +206,7 @@ class SummaryInputs:
     lines: list  # app.setup.Line
     database_shape: str | None
     service_method: str
-    sharing: dict[str, tuple[int, int] | None]
+    sharing: dict[str, tuple[int, int] | str | None]  # app.setup.sharing_counts
     results_state: str
     repo_token_present: bool = False
     schema_dedicated: str = "unknown"
@@ -217,7 +217,7 @@ class SummaryInputs:
 
 def build(inputs: SummaryInputs) -> str:
     from app.job_settings import DATABASE_SHAPES
-    from app.setup import LINE_KEYS, RESULTS, SERVICE_METHODS
+    from app.setup import LINE_KEYS, RESULTS, SERVICE_METHODS, SHAPE_NOT_RECOGNIZED
 
     out = [
         "Python Migration Scanner test summary",
@@ -234,6 +234,8 @@ def build(inputs: SummaryInputs) -> str:
         counts = inputs.sharing.get(part)
         if counts is None:
             out.append(f"sharing_{part}: not_read")
+        elif not isinstance(counts, tuple):  # Read, but the shape was not recognized.
+            out.append(f"sharing_{part}: {_label(counts, (SHAPE_NOT_RECOGNIZED,))}")
         else:
             out.append(f"sharing_{part}: users={_n(counts[0])} groups={_n(counts[1])}")
     out.append(f"results_state: {_label(inputs.results_state, RESULTS_STATES)}")

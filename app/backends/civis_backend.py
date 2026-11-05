@@ -302,7 +302,10 @@ class CivisSetup:
     def credential(self, credential_id: int) -> dict:
         return plain(self.client.credentials.get(credential_id))
 
-    def job_shares(self) -> list:
+    # Both shares calls return one object with readers, writers, and owners (confirmed in the first live test).
+    # app/setup.share_members also accepts a list of such objects.
+
+    def job_shares(self) -> Any:
         return plain(self.client.scripts.list_containers_shares(self.job_id))
 
     def services(self) -> list[dict]:
@@ -316,7 +319,7 @@ class CivisSetup:
     def service(self, service_id: int) -> dict:
         return plain(self.client.services.get(service_id))
 
-    def service_shares(self, service_id: int) -> list:
+    def service_shares(self, service_id: int) -> Any:
         return plain(self.client.services.list_shares(service_id))
 
     def storage(self, settings: JobSettings) -> StorageFacts:

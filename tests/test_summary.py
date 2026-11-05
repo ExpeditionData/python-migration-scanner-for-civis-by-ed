@@ -246,6 +246,19 @@ def test_no_marker_reaches_the_summary(marked_app):
     assert re.search(r"^  5 one_owner: (review|fail)$", text, re.MULTILINE)
 
 
+def test_the_summary_counts_both_shares_shapes_and_names_an_unrecognized_one(marked_app):
+    from tests.civis_fakes import shares
+
+    app, client, _ = marked_app
+    client.handlers["scripts.list_containers_shares"] = lambda id: [shares([(21, f"{MARK} A")], []),
+                                                                     shares([(22, f"{MARK} B")], [(61, f"{MARK} G")])]
+    client.handlers["services.list_shares"] = lambda id: {"id": 7, "name": f"{MARK} not a shares object"}
+    text = _summary_text(app.test_client().get("/setup/summary"))
+    assert "sharing_job: users=3 groups=1" in text  # A list of share objects.
+    assert "sharing_service: shape_not_recognized" in text
+    assert MARK not in text.lower()
+
+
 def test_every_summary_line_is_built_from_the_allow_list(marked_app):
     """After the two heading lines, every word is an integer, a run ID, a release tag, a lowercase label, or a
     class-name-like token: nothing that could be free text."""

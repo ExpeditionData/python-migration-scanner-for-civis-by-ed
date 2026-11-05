@@ -90,9 +90,10 @@ def preview_service(service_id: int, state: str = "normal") -> dict:
     }
 
 
-def _preview_shares(users: list[dict], groups: list[dict]) -> list[dict]:
-    return [{"readers": {"users": users, "groups": groups}, "writers": {"users": [], "groups": []},
-             "owners": {"users": [{"id": PREVIEW_ROBOT["id"], "name": PREVIEW_ROBOT["name"]}], "groups": []}}]
+def _preview_shares(users: list[dict], groups: list[dict]) -> dict:
+    """One object with readers, writers, and owners: the shape Civis returns for both shares calls."""
+    return {"readers": {"users": users, "groups": groups}, "writers": {"users": [], "groups": []},
+            "owners": {"users": [{"id": PREVIEW_ROBOT["id"], "name": PREVIEW_ROBOT["name"]}], "groups": []}}
 
 
 class LocalSetup:
@@ -109,7 +110,7 @@ class LocalSetup:
         return {"id": credential_id, "name": "Example results credential", "username": PREVIEW_DATABASE_USER,
                 "user": dict(PREVIEW_ROBOT)}
 
-    def job_shares(self) -> list[dict]:
+    def job_shares(self) -> dict:
         users = [{"id": 21, "name": "Example Admin Avery"}]
         if self.state == "setup-failures":
             users.append({"id": 22, "name": "Example Analyst <b>Blake</b>"})
@@ -124,7 +125,7 @@ class LocalSetup:
     def service(self, service_id: int) -> dict:
         return preview_service(service_id, self.state)
 
-    def service_shares(self, service_id: int) -> list[dict]:
+    def service_shares(self, service_id: int) -> dict:
         return _preview_shares([{"id": 21, "name": "Example Admin Avery"}], [])
 
     def storage(self, settings) -> StorageFacts:

@@ -190,6 +190,71 @@ def test_sharing_line_counts_users_and_groups_and_lists_names_in_details():
                                              latest="none", env={})) == {"job": (3, 1), "service": (1, 0)}
 
 
+class SharesSource(Source):
+    """A Source whose shares calls return ``value`` as is."""
+
+    def __init__(self, value, **kwargs):
+        super().__init__(**kwargs)
+        self._shares = value
+
+    def job_shares(self):
+        return self._shares
+
+    def service_shares(self, service_id):
+        return self._shares
+
+
+def _sharing_facts(source, settings=None):
+    settings = settings if settings is not None else parse_job(scanner_job())
+    return setup.gather(source, 1234, settings, report_only=False, latest="none", env={})
+
+
+def test_civis_shares_shape_is_one_object():
+    one = shares([(21, "Example Admin One")], [(61, "Example Admins")])
+    assert isinstance(one, dict)  # The shape Civis returns, and the fakes' default.
+    assert setup.share_members(one) == (["Example Admin One", "Example Robot"], ["Example Admins"])
+    facts = _sharing_facts(SharesSource(one))
+    assert setup.sharing_counts(facts) == {"job": (2, 1), "service": (2, 1)}
+    assert "Scanner job: 2 users and 1 group" in setup.evaluate(facts)[5].reason
+
+
+def test_a_list_of_share_objects_is_accepted_too():
+    listed = [shares([(21, "Example Admin One")], []), shares([(22, "Example Admin Two")], [(61, "Example Admins")])]
+    assert setup.share_members(listed) == (["Example Admin One", "Example Admin Two", "Example Robot"],
+                                           ["Example Admins"])
+    assert setup.sharing_counts(_sharing_facts(SharesSource(listed))) == {"job": (3, 1), "service": (3, 1)}
+
+
+@pytest.mark.parametrize("value", [
+    {"id": 7, "name": "Example"},  # An object without readers, writers, or owners.
+    [{"total_user_shares": 2}],
+    "made-up text",
+    [shares([], []), 5],
+])
+def test_an_unrecognized_shares_shape_is_named_as_such(value):
+    assert setup.share_members(value) is None
+    facts = _sharing_facts(SharesSource(value))
+    assert setup.sharing_counts(facts) == {"job": "shape_not_recognized", "service": "shape_not_recognized"}
+    reason = {l.key: l for l in setup.evaluate(facts)}["sharing"].reason
+    assert reason == ("Scanner job: the sharing list was read but its shape was not recognized. "
+                      "Service: the sharing list was read but its shape was not recognized.")
+    assert "could not be read" not in reason and "could not tell" not in reason
+
+
+def test_sharing_says_not_checked_only_for_the_real_reason():
+    unreadable_job = {l.key: l for l in setup.evaluate(_sharing_facts(Source(), unreadable("FakeAPIError status=404")))}
+    assert "Scanner job: not checked, because the scanner job could not be read" in unreadable_job["sharing"].reason
+    assert "Service: 1 user" in unreadable_job["sharing"].reason  # Line 7 found one Service, so it was read.
+    two = Source(services=[app_service(), app_service(id=502)])
+    reason = {l.key: l for l in setup.evaluate(_sharing_facts(two))}["sharing"].reason
+    assert "Service: not checked, because the app could not tell which Service it is (line 7)" in reason
+    assert "Scanner job: 3 users" in reason
+    no_id = setup.gather(Source(), None, None, report_only=False, latest="none", env={})
+    reason = {l.key: l for l in setup.evaluate(no_id)}["sharing"].reason
+    assert "Scanner job: not checked, because SCANNER_JOB_ID is not set" in reason
+    assert "could not be read" not in reason
+
+
 @pytest.mark.parametrize("source, env, result, words, method", [
     (Source(), {}, "pass", "Same release tag", "single_match"),
     (Source(service=app_service(git_repo_ref="v0.1.0-rc2")), {}, "fail", "Branch is not the scanner job's release tag", "single_match"),
