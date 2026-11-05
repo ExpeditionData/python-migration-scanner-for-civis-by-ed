@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from common.models import CoverageItem, ObjectType, WorkflowRef
@@ -36,23 +37,31 @@ _BY_TYPE = (
 )
 
 
-def build_inventory(client: Any, civis_git: Any = None) -> Inventory:
+def build_inventory(client: Any, civis_git: Any = None, step: Callable[[str], None] | None = None) -> Inventory:
     """``civis_git`` (a CivisGitFiles) reads git-backed workflows' definitions through Civis.
-    Without it, every workflow is read from the definition saved in Civis."""
+    Without it, every workflow is read from the definition saved in Civis.
+
+    ``step`` is told each part as it starts (names from scan_log.FATAL_STEPS), so a FATAL line can
+    say where the scan stopped."""
+    step = step or (lambda name: None)
     inventory = Inventory()
+    step("inventory_users")
     lookup = load_users(client)
     scan_log.users(lookup.source, lookup.status)
     inventory.users_source, inventory.users_note = lookup.source, lookup.note()
     ctx = InventoryContext(client, lookup.users, inventory, civis_git)
 
     for object_type, inventory_type in _BY_TYPE:
+        step(f"inventory_list_{object_type.value}")
         items = inventory_type(ctx)
         inventory.count(object_type).found += len(items)
         inventory.items.extend(items)
 
+    step("inventory_workflows")
     workflow_items, references = inventory_workflows(ctx)
     inventory.items.extend(workflow_items)
 
+    step("inventory_archived_jobs")
     _add_archived_jobs_run_by_workflows(ctx, references)
     by_id = inventory.by_id()
     for job_id, refs in references.items():

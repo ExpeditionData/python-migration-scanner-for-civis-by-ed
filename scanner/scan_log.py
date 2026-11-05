@@ -18,7 +18,8 @@ Line formats (parsed by the web app to show progress):
     USERS source=active status=404
     CHECKPOINT objects_written=500
     OUTPUT_FAILED error=CivisAPIError
-    FATAL error=KeyError
+    FATAL error=KeyError step=code_and_logs
+    FATAL error=CivisAPIError status=404 step=inventory_users
     FATAL error=SchemaNotDedicated reason=results_schema_holds_other_tables_or_views other_objects=3
     TABLE_WRITE_FAILED table=findings error=CivisAPIError status=403
     RUN run_id=run-20261013T120000Z-a1b2c3 status=running
@@ -179,9 +180,24 @@ def output_failed(exc: BaseException) -> None:
     _logger.error("OUTPUT_FAILED error=%s", _error_name(exc))
 
 
-def fatal(exc: BaseException) -> None:
-    """The scan stopped. Logs the error type only; messages can hold Civis content."""
-    _logger.error("FATAL error=%s", _error_name(exc))
+# Where a scan can stop with FATAL (scanner/runner.py tracks the step). "setup" is before run_scan
+# starts (creating the client and the sink). Only these values are logged.
+INVENTORY_LIST_TYPES = tuple(t.value for t in ObjectType if t is not ObjectType.WORKFLOW)
+FATAL_STEPS = (
+    "setup", "schema_check", "tables", "scanning_user", "inventory_users",
+    *(f"inventory_list_{t}" for t in INVENTORY_LIST_TYPES),
+    "inventory_workflows", "inventory_archived_jobs", "code_and_logs", "save_results", "output", "retention",
+)
+
+
+def fatal(exc: BaseException, step: str) -> None:
+    """The scan stopped. Logs the error type, the HTTP status when the exception has an integer
+    status_code, and the step from FATAL_STEPS; never the message, which can hold Civis content."""
+    if step not in FATAL_STEPS:
+        raise ValueError("unknown step")
+    status = getattr(exc, "status_code", None)
+    suffix = f" status={status}" if isinstance(status, int) and not isinstance(status, bool) else ""
+    _logger.error("FATAL error=%s%s step=%s", _error_name(exc), suffix, step)
 
 
 def schema_not_dedicated(other_objects: int) -> None:

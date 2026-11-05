@@ -18,6 +18,12 @@ Steps:
 If the tables cannot be written, the scan keeps going, still saves the CSV
 report, and ends with status "tables_failed". Every API call to Civis goes
 through the shared request budget.
+
+If the scan stops on an unexpected error, run_scan logs one FATAL line with
+the error type, the HTTP status, and the step it stopped in
+(scan_log.FATAL_STEPS), appends a final "failed" scan_runs row when the
+"running" row was written and the tables are usable, and raises ScanFailed
+(docs/PLAN.md 17.5).
 """
 
 from __future__ import annotations
@@ -98,6 +104,42 @@ class _Tables:
         scan_log.table_write_failed(table if table in scan_log.TABLE_NAMES else "scan_runs", exc)
 
 
+class ScanFailed(Exception):
+    """The scan stopped. Its FATAL line is already logged, with the step it stopped in."""
+
+
+class _Step:
+    """The part of the scan that is running, for the FATAL line. Names from scan_log.FATAL_STEPS."""
+
+    def __init__(self) -> None:
+        self.name = "schema_check"
+
+    def __call__(self, name: str) -> None:
+        if name not in scan_log.FATAL_STEPS:
+            raise ValueError("unknown step")
+        self.name = name
+
+
+@dataclass
+class _FailState:
+    """What a FATAL needs to append the final "failed" scan_runs row, filled in as the scan starts."""
+
+    tables: _Tables | None = None
+    run_id: str | None = None
+    status_row: Callable[[str, datetime | None], dict] | None = None
+    running_written: bool = False
+
+
+def _record_failed(state: _FailState, now: Callable[[], datetime]) -> None:
+    """Best effort: append a "failed" row the way a normal finish appends its row, only if the
+    "running" row was written and the tables are still usable. A failed write logs
+    TABLE_WRITE_FAILED (through _Tables) and the scan still exits 1."""
+    tables = state.tables
+    if not (state.running_written and tables is not None and tables.ok and state.status_row is not None):
+        return
+    tables.run("scan_runs", lambda: tables.sink.append(SCAN_RUNS, state.run_id, [state.status_row("failed", now())]))
+
+
 def run_scan(
     config: ScanConfig,
     *,
@@ -111,6 +153,42 @@ def run_scan(
     checkpoint_seconds: float = EVERY_SECONDS,
     budget: RequestBudget | None = None,
 ) -> RunResult:
+    """Run one scan. If it stops on an unexpected error, log one FATAL line with the error type, the
+    HTTP status, and the step, append a final "failed" scan_runs row when the "running" row was
+    written and the tables are usable, and raise ScanFailed. A results schema that is not dedicated
+    (SchemaNotDedicated) and a finished run ID (AlreadyFinished) are raised as they are, with nothing
+    written."""
+    step, state = _Step(), _FailState()
+    try:
+        return _run_scan(
+            config, client=client, http_session=http_session, sink=sink, outputs=outputs, now=now,
+            monotonic=monotonic, checkpoint_objects=checkpoint_objects, checkpoint_seconds=checkpoint_seconds,
+            budget=budget, step=step, state=state,
+        )
+    except (SchemaNotDedicated, AlreadyFinished):
+        raise
+    except Exception as exc:
+        scan_log.fatal(exc, step.name)
+        _record_failed(state, now)
+        raise ScanFailed() from exc
+
+
+def _run_scan(
+    config: ScanConfig,
+    *,
+    client: Any,
+    http_session: Any,
+    sink: ResultSink | None,
+    outputs: Any,
+    now: Callable[[], datetime],
+    monotonic: Callable[[], float],
+    checkpoint_objects: int,
+    checkpoint_seconds: float,
+    budget: RequestBudget | None,
+    step: _Step,
+    state: _FailState,
+) -> RunResult:
+    step("schema_check")
     started = now()
     run_id = config.run_id or new_run_id(started)
     # Before anything is created or written (tables, rows, retention deletes, the CSV): the results schema
@@ -125,7 +203,9 @@ def run_scan(
         if other:
             raise SchemaNotDedicated(other)
     scan_log.run_status(run_id, "running")
+    step("tables")
     tables = _Tables(sink)
+    state.tables, state.run_id = tables, run_id
     if check_error is not None:
         def failed_check():
             raise check_error
@@ -144,6 +224,7 @@ def run_scan(
         if first_start:
             started = first_start[0].replace(tzinfo=timezone.utc) if first_start[0].tzinfo is None else first_start[0]
 
+    step("scanning_user")
     budget = budget or RequestBudget(config.request_budget, 300.0)
     civis = BudgetedClient(client, budget)
     user_id, user_name = scanning_user(civis)
@@ -157,14 +238,18 @@ def run_scan(
             "civis_run_id": config.civis_run_id, "disclaimer": DISCLAIMER, "recorded_at": _naive(now()),
         }
 
+    step("tables")
+    state.status_row = status_row
     tables.run("scan_runs", lambda: sink.append(SCAN_RUNS, run_id, [status_row("running", None)]))
+    state.running_written = tables.ok
 
     scan_log.phase("inventory", "start")
-    inventory = build_inventory(civis, civis_git=civis_git)
+    inventory = build_inventory(civis, civis_git=civis_git, step=step)
     total = len(inventory.items)
     scan_log.progress("inventory", total, total)
     scan_log.phase("inventory", "done")
 
+    step("code_and_logs")
     todo = [item for item in inventory.items if item.obj.object_id not in finished]
     result = RunResult(run_id=run_id, status="running", skipped_as_done=total - len(todo))
     engine = Engine()
@@ -204,6 +289,7 @@ def run_scan(
     scan_log.phase("code", "done")
 
     scan_log.phase("output", "start")
+    step("save_results")
     current_objects = [r.obj.to_row() for r in results]
     current_findings = [f.to_row() for r in results for f in r.findings]
     all_objects = previous.get("objects", []) + current_objects
@@ -218,6 +304,7 @@ def run_scan(
     for rule_id, count in sorted(_count_by_rule(all_findings).items()):
         scan_log.findings_count(rule_id, count)
 
+    step("output")
     try:
         outputs.save_csv(f"python-migration-scanner-{run_id}.csv", report_csv(all_objects, all_findings, engine.rules))
         result.report_saved = True
@@ -226,6 +313,7 @@ def run_scan(
     scan_log.phase("output", "done")
 
     if config.retention_days and tables.ok:
+        step("retention")
         scan_log.phase("retention", "start")
         starts = tables.run("scan_runs", sink.run_starts) or []
         expired = [r for r in expired_run_ids(starts, config.retention_days, _naive(now())) if r != run_id]
@@ -233,6 +321,7 @@ def run_scan(
             tables.run("scan_runs", lambda: sink.delete_runs(expired))
         scan_log.phase("retention", "done")
 
+    step("save_results")
     if not result.report_saved:
         final = "failed"
     elif tables.ok:

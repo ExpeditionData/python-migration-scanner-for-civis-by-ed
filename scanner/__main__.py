@@ -32,7 +32,7 @@ from common.redact import install_redaction
 from scanner import scan_log
 from scanner.config import ConfigError, ScanConfig
 from scanner.output import SchemaNotDedicated
-from scanner.runner import AlreadyFinished, RunResult, run_scan
+from scanner.runner import AlreadyFinished, RunResult, ScanFailed, run_scan
 
 EXIT_CODES = {"succeeded": 0, "tables_failed": 3, "failed": 1}
 DRY_RUN_SCHEMA = "dry_run_results"
@@ -160,8 +160,10 @@ def main(argv: list[str] | None = None) -> int:
     except SimulatedStop:
         print("Stopped on purpose after the requested number of objects. Rerun with --run-id to resume.", file=sys.stderr)
         return 1
+    except ScanFailed:
+        return 1  # run_scan logged the FATAL line with its step, and recorded the run as failed if it could.
     except Exception as exc:
-        scan_log.fatal(exc)
+        scan_log.fatal(exc, "setup")  # Before run_scan started: creating the client or the sink.
         return 1
     return EXIT_CODES.get(result.status, 1)
 

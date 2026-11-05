@@ -87,6 +87,26 @@ def test_users_sources_match_the_scanner():
     assert summary.USER_SOURCES == scan_log.USER_SOURCES
 
 
+def test_fatal_steps_match_the_scanner():
+    from scanner import scan_log
+
+    assert summary.FATAL_STEPS == scan_log.FATAL_STEPS
+
+
+@pytest.mark.parametrize("line, token, step", [
+    ("FATAL error=CivisAPIError status=404 step=inventory_users", "CivisAPIError status=404", "inventory_users"),
+    ("FATAL error=KeyError step=code_and_logs", "KeyError", "code_and_logs"),
+    (f"FATAL error=KeyError step={MARK}", "KeyError", "other"),
+    ("FATAL error=KeyError", "KeyError", None),  # The rc5 format.
+    ("FATAL error=SchemaNotDedicated reason=results_schema_holds_other_tables_or_views other_objects=2",
+     "SchemaNotDedicated", None),
+])
+def test_fatal_step(line, token, step):
+    counts = summary.count_log([line])
+    assert counts.errors == {("FATAL", token): 1}
+    assert counts.fatal_step == step
+
+
 class PagedJobs:
     """Every page is full, so reading stops at the page cap."""
 
