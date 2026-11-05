@@ -36,6 +36,7 @@ from scanner.output import (
 from scanner.process import ObjectResult
 from scanner.runner import AlreadyFinished
 from common.models import CivisObject
+from tests.civis_fakes import civis_read_result
 
 NOW = datetime(2026, 10, 13, 12, 0, tzinfo=timezone.utc)
 FAKE_LOG_VALUES = ("Synthetic-Log-Pw-7731", "synthetic.member@example.org")
@@ -139,7 +140,7 @@ class FakeCivisIO:
 
     def read_civis_sql(self, sql, database, **kwargs):
         self.calls.append(("read", sql, kwargs))
-        return self.read_rows
+        return civis_read_result(self.read_rows)  # Like civis: no data rows raises EmptyResultError.
 
     def dataframe_to_civis(self, df, database, table, **kwargs):
         self.calls.append(("load", table, kwargs, list(df.columns), len(df)))

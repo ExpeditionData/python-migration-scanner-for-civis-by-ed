@@ -20,6 +20,7 @@ from datetime import datetime
 from typing import Any
 
 from common import sql
+from common.civis_errors import is_empty_result
 from common.schema import (
     CHECKLIST_STATUS, SCAN_RUNS, TABLES, admin_owner_sql, admin_schema_sql, checklist_insert_sql, create_schema_sql,
     other_object_count, schema_objects_sql,
@@ -55,10 +56,17 @@ class CivisResults:
         self.credential_id = credential_id
 
     def _read(self, statement: str) -> list[dict]:
-        rows = self.io.read_civis_sql(
-            statement, self.database, return_as="list", client=self.client,
-            credential_id=self.credential_id, hidden=True,
-        )
+        """Rows as dicts. read_civis_sql raises EmptyResultError when a query returns no rows (Civis writes no
+        file for an empty result), so that error means zero rows. Every other error is raised as is."""
+        try:
+            rows = self.io.read_civis_sql(
+                statement, self.database, return_as="list", client=self.client,
+                credential_id=self.credential_id, hidden=True,
+            )
+        except Exception as exc:
+            if is_empty_result(exc):
+                return []
+            raise
         if not rows:
             return []
         header, body = rows[0], rows[1:]

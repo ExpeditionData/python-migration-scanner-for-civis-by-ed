@@ -34,6 +34,7 @@ from app.settings import Settings
 from common.disclaimer import NON_AFFILIATION
 from common.rule_loader import load_rules
 from scanner.synthetic.preview import HOSTILE_NAME, build_preview
+from tests.civis_fakes import civis_read_result, no_output
 
 NOW = datetime(2026, 10, 14, 15, 0, tzinfo=timezone.utc)
 SECRET = "app-test-secret-key-that-is-long-enough-01"  # pragma: allowlist secret  gitleaks:allow
@@ -352,8 +353,8 @@ class FakeCivisIO:
         self.reads.append(sql)
         for key, rows in self.tables.items():
             if key in sql:
-                return rows
-        return []
+                return civis_read_result(rows)  # Like civis: no data rows raises EmptyResultError.
+        raise no_output()
 
     def query_civis(self, sql, database, client=None, credential_id=None, hidden=True):
         self.queries.append(sql)

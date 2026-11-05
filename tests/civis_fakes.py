@@ -12,6 +12,25 @@ import copy
 import re
 from typing import Any
 
+try:
+    from civis.base import EmptyResultError
+except ImportError:  # Both venvs and both test images have civis; this keeps the fakes usable without it.
+    class EmptyResultError(Exception):
+        """A made-up stand-in with the name of civis.base.EmptyResultError."""
+
+
+def no_output() -> EmptyResultError:
+    """What civis.io.read_civis_sql raises for a query with no rows: Civis writes no file for an empty result."""
+    return EmptyResultError("Query 0 returned no output.")
+
+
+def civis_read_result(rows: list[list] | None) -> list[list]:
+    """Return ``rows`` (a header row, then data rows) as read_civis_sql would: no data rows raises EmptyResultError."""
+    if not rows or len(rows) < 2:
+        raise no_output()
+    return copy.deepcopy(rows)
+
+
 REPO = "https://github.com/ExpeditionData/python-migration-scanner-for-civis-by-ed.git"
 ROBOT = {"id": 15, "name": "Example Robot", "username": "example_robot"}
 
@@ -163,6 +182,9 @@ class RecordingIO:
     ``tables`` maps a text found in the SQL to the list-of-lists civis.io returns
     (a header row, then rows). ``fail`` maps a text found in the SQL to an
     exception for query_civis to raise from ``.result()``.
+
+    Like civis, read_civis_sql raises EmptyResultError when the result has no
+    data rows, including for SQL that matches no key.
     """
 
     def __init__(self, tables: dict[str, list[list]] | None = None, fail: dict[str, Exception] | None = None):
@@ -170,6 +192,7 @@ class RecordingIO:
         self.fail = fail or {}
         self.statements: list[str] = []
         self.reads: list[str] = []
+        self.empty_reads: list[str] = []  # Reads that raised EmptyResultError (zero rows).
         self.queries: list[str] = []
         self.frames: list[str] = []
         self.databases: list[Any] = []
@@ -184,14 +207,22 @@ class RecordingIO:
         for key, error in self.fail.items():
             if key in sql:
                 raise error
+        try:
+            return self._answer(sql)
+        except EmptyResultError:
+            self.empty_reads.append(sql)
+            raise
+
+    def _answer(self, sql):
         if "pg_catalog.pg_views" in sql:  # The dedicated-schema check: tables and views with a kind column.
             tables = self.tables.get("pg_catalog.pg_tables", [["tablename"]])[1:]
             views = self.tables.get("pg_catalog.pg_views", [["viewname"]])[1:]
-            return [["kind", "name"]] + [["table", r[0]] for r in tables] + [["view", r[0]] for r in views]
+            return civis_read_result(
+                [["kind", "name"]] + [["table", r[0]] for r in tables] + [["view", r[0]] for r in views])
         for key, rows in self.tables.items():
             if key in sql:
-                return copy.deepcopy(rows)
-        return []
+                return civis_read_result(rows)
+        raise no_output()
 
     def query_civis(self, sql, database, client=None, credential_id=None, hidden=True, **kwargs):
         self.statements.append(sql)

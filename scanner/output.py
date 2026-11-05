@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from common import retention, sql
+from common.civis_errors import is_empty_result
 from common.disclaimer import DISCLAIMER, NON_AFFILIATION
 from common.rule_loader import RuleSet
 from common.schema import (
@@ -209,11 +210,18 @@ class CivisSink:
         ).result()
 
     def _read(self, statement: str) -> list[dict]:
+        """Rows as dicts. read_civis_sql raises EmptyResultError when a query returns no rows (Civis writes no
+        file for an empty result), so that error means zero rows. Every other error is raised as is."""
         self.statements.append(statement)
-        rows = self.io.read_civis_sql(
-            statement, self.database, return_as="list", client=self.client,
-            credential_id=self.credential_id, hidden=True,
-        )
+        try:
+            rows = self.io.read_civis_sql(
+                statement, self.database, return_as="list", client=self.client,
+                credential_id=self.credential_id, hidden=True,
+            )
+        except Exception as exc:
+            if is_empty_result(exc):
+                return []
+            raise
         if not rows:
             return []
         header, body = rows[0], rows[1:]
