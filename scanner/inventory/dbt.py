@@ -27,16 +27,8 @@ from scanner.inventory.base import (
 )
 
 
-def inventory_dbt_scripts(ctx: InventoryContext) -> list[InventoryItem]:
-    rows = ctx.list_all(ctx.client.scripts.list, type="dbt")
-    items = []
-    for row in rows:
-        item = dbt_item(ctx, row)
-        if item is None:
-            ctx.inventory.count(ObjectType.DBT_SCRIPT).add_not_python("dbt")
-        else:
-            items.append(item)
-    return items
+def list_dbt_scripts(ctx: InventoryContext) -> list:
+    return ctx.list_all(ctx.client.scripts.list, type="dbt")
 
 
 def dbt_item(ctx: InventoryContext, row: Any) -> InventoryItem | None:

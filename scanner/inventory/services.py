@@ -28,16 +28,8 @@ from scanner.inventory.base import (
 )
 
 
-def inventory_services(ctx: InventoryContext) -> list[InventoryItem]:
-    rows = ctx.list_all(ctx.client.services.list)
-    items = []
-    for row in rows:
-        item = service_item(ctx, row)
-        if item is None:
-            ctx.inventory.count(ObjectType.SERVICE).add_not_python("r")  # Civis's Shiny image runs R.
-        else:
-            items.append(item)
-    return items
+def list_services(ctx: InventoryContext) -> list:
+    return ctx.list_all(ctx.client.services.list)
 
 
 def service_item(ctx: InventoryContext, row: Any) -> InventoryItem | None:

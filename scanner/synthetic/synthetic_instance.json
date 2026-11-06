@@ -243,6 +243,22 @@
       "last_run": null,
       "docker_image_tag": "",
       "source": "print('saved copy, may be out of date')\n"
+    },
+    {
+      "id": 304,
+      "name": "Example custom from python template",
+      "type": "Python",
+      "archived": false,
+      "hidden": false,
+      "is_template": false,
+      "from_template_id": 33,
+      "author": {
+        "id": 2,
+        "name": "Example Analyst",
+        "username": "example_analyst"
+      },
+      "docker_image_tag": "9.1.1",
+      "source": "print('template copy')\n"
     }
   ],
   "python3_git": {
@@ -416,6 +432,57 @@
       "docker_command": "python main.py",
       "repo_http_uri": "https://github.com/example-org/private-repo.git",
       "repo_ref": "main"
+    },
+    {
+      "id": 301,
+      "name": "Example custom from container template",
+      "type": "Container",
+      "archived": false,
+      "hidden": false,
+      "is_template": false,
+      "from_template_id": 31,
+      "author": {
+        "id": 2,
+        "name": "Example Analyst",
+        "username": "example_analyst"
+      },
+      "docker_image_name": "civisanalytics/datascience-python",
+      "docker_image_tag": "",
+      "docker_command": "python template.py"
+    },
+    {
+      "id": 302,
+      "name": "Example custom from locked template",
+      "type": "Container",
+      "archived": false,
+      "hidden": false,
+      "is_template": false,
+      "from_template_id": 32,
+      "author": {
+        "id": 2,
+        "name": "Example Analyst",
+        "username": "example_analyst"
+      },
+      "docker_image_name": "civisanalytics/datascience-python",
+      "docker_image_tag": "",
+      "docker_command": "python template.py"
+    },
+    {
+      "id": 208,
+      "name": "Example template copy missing from the custom list",
+      "type": "Container",
+      "archived": false,
+      "hidden": false,
+      "is_template": false,
+      "from_template_id": 31,
+      "author": {
+        "id": 2,
+        "name": "Example Analyst",
+        "username": "example_analyst"
+      },
+      "docker_image_name": "civisanalytics/datascience-python",
+      "docker_image_tag": "",
+      "docker_command": "python template.py --date 2026-10-01"
     }
   ],
   "templates": {
@@ -525,6 +592,21 @@
       "docker_image_tag": "1.2.3",
       "repo_http_uri": "github.com/example-org/example-dbt.git",
       "repo_ref": "main"
+    },
+    {
+      "id": 306,
+      "name": "Example dbt custom script on default image",
+      "type": "Dbt",
+      "archived": false,
+      "hidden": false,
+      "is_template": false,
+      "from_template_id": 34,
+      "author": {
+        "id": 2,
+        "name": "Example Analyst",
+        "username": "example_analyst"
+      },
+      "docker_image_tag": ""
     }
   ],
   "custom": [

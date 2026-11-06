@@ -27,16 +27,15 @@ def _is_python(language: str | None) -> bool:
     return not language or "python" in language.lower()
 
 
-def inventory_notebooks(ctx: InventoryContext) -> list[InventoryItem]:
-    rows = ctx.list_all(ctx.client.notebooks.list)
-    items = []
-    for row in rows:
-        item = notebook_item(ctx, row)
-        if item is None:
-            ctx.inventory.count(ObjectType.NOTEBOOK).add_not_python(field_of(row, "language"))
-        else:
-            items.append(item)
-    return items
+def list_notebooks(ctx: InventoryContext) -> list:
+    return ctx.list_all(ctx.client.notebooks.list)
+
+
+def row_not_python(row: Any) -> str | None:
+    """The language of a list row that is not a Python notebook (for example "r"), checked on the list row so
+    it costs no detail call. None for a Python notebook."""
+    language = field_of(row, "language")
+    return None if _is_python(language) else language
 
 
 def notebook_item(ctx: InventoryContext, row: Any) -> InventoryItem | None:

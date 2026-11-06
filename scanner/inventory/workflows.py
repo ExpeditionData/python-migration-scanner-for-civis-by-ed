@@ -30,7 +30,6 @@ Workflow definitions use Mistral v2 YAML:
 
 from __future__ import annotations
 
-from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -148,61 +147,58 @@ def parse_definition(text: str | None) -> WorkflowDefinition:
     return result
 
 
-def inventory_workflows(ctx: InventoryContext) -> tuple[list[InventoryItem], dict[int, set[WorkflowRef]]]:
-    """Returns workflow items with inline code, and job ID -> active workflows that run it."""
-    rows = ctx.list_all(ctx.client.workflows.list)
-    ctx.inventory.count(ObjectType.WORKFLOW).found += len(rows)
-    references: dict[int, set[WorkflowRef]] = defaultdict(set)
-    items = []
-    for row in rows:
-        obj = base_object(row, ObjectType.WORKFLOW)
-        item = InventoryItem(obj)
-        detail, reason = ctx.fetch(ctx.client.workflows.get, obj.object_id)
-        if detail is None:
-            mark_not_scanned(obj, reason, ctx.inventory)
-            items.append(item)
-            continue
-        apply_common(ctx, obj, detail, owner_field="user")
-        obj.last_run_id = field_of(detail, "last_execution_id")
-        if obj.archived:
-            continue  # Only active workflows count (decision 15).
+def list_workflows(ctx: InventoryContext) -> list:
+    return ctx.list_all(ctx.client.workflows.list)
 
-        definition, git_note = _definition(ctx, obj, detail)
-        parsed = parse_definition(definition)
-        del definition
-        if parsed.error:
-            mark_not_scanned(obj, " ".join(filter(None, [parsed.error, git_note])), ctx.inventory)
-            items.append(item)
-            continue
-        ref = WorkflowRef(obj.object_id, obj.name)
-        for job_id in parsed.job_ids:
-            references[job_id].add(ref)
-        if parsed.dynamic_references:
-            ctx.inventory.coverage.append(
-                CoverageItem(
-                    ObjectType.WORKFLOW,
-                    obj.object_id,
-                    f"{parsed.dynamic_references} task(s) choose their job or template with an expression, "
-                    "so the job they run could not be determined.",
-                )
+
+def workflow_item(ctx: InventoryContext, row: Any, references: dict[int, set[WorkflowRef]]) -> InventoryItem | None:
+    """Read one listed workflow and record the jobs it runs in ``references`` (job ID -> active workflows that
+    run it). Returns the workflow as an item when it has inline code or could not be read, otherwise None."""
+    obj = base_object(row, ObjectType.WORKFLOW)
+    item = InventoryItem(obj)
+    detail, reason = ctx.fetch(ctx.client.workflows.get, obj.object_id)
+    if detail is None:
+        mark_not_scanned(obj, reason, ctx.inventory)
+        return item
+    apply_common(ctx, obj, detail, owner_field="user")
+    obj.last_run_id = field_of(detail, "last_execution_id")
+    if obj.archived:
+        return None  # Only active workflows count (decision 15).
+
+    definition, git_note = _definition(ctx, obj, detail)
+    parsed = parse_definition(definition)
+    del definition
+    if parsed.error:
+        mark_not_scanned(obj, " ".join(filter(None, [parsed.error, git_note])), ctx.inventory)
+        return item
+    ref = WorkflowRef(obj.object_id, obj.name)
+    for job_id in parsed.job_ids:
+        references[job_id].add(ref)
+    if parsed.dynamic_references:
+        ctx.inventory.coverage.append(
+            CoverageItem(
+                ObjectType.WORKFLOW,
+                obj.object_id,
+                f"{parsed.dynamic_references} task(s) choose their job or template with an expression, "
+                "so the job they run could not be determined.",
             )
-        if not parsed.inline_tasks:
-            if git_note:
-                ctx.inventory.coverage.append(CoverageItem(ObjectType.WORKFLOW, obj.object_id, git_note))
-            continue  # Runs other jobs only. Counted as found; nothing of its own to scan.
+        )
+    if not parsed.inline_tasks:
         if git_note:
-            obj.scan_status = ScanStatus.PARTIAL
-            obj.scan_note = git_note
+            ctx.inventory.coverage.append(CoverageItem(ObjectType.WORKFLOW, obj.object_id, git_note))
+        return None  # Runs other jobs only. Counted as found; nothing of its own to scan.
+    if git_note:
+        obj.scan_status = ScanStatus.PARTIAL
+        obj.scan_note = git_note
 
-        defaults = [t.uses_default_image for t in parsed.inline_tasks]
-        if any(d is True for d in defaults):
-            obj.uses_default_image = True
-        elif all(d is False for d in defaults):
-            obj.uses_default_image = False
-        obj.impact = {True: Impact.AFFECTED, False: Impact.ADVISORY}.get(obj.uses_default_image, Impact.UNKNOWN)
-        item.code["inline_tasks"] = parsed.inline_tasks
-        items.append(item)
-    return items, references
+    defaults = [t.uses_default_image for t in parsed.inline_tasks]
+    if any(d is True for d in defaults):
+        obj.uses_default_image = True
+    elif all(d is False for d in defaults):
+        obj.uses_default_image = False
+    obj.impact = {True: Impact.AFFECTED, False: Impact.ADVISORY}.get(obj.uses_default_image, Impact.UNKNOWN)
+    item.code["inline_tasks"] = parsed.inline_tasks
+    return item
 
 
 def _definition(ctx: InventoryContext, obj: CivisObject, detail: Any) -> tuple[str | None, str | None]:

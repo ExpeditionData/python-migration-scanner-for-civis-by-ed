@@ -25,9 +25,8 @@ from scanner.inventory.base import (
 )
 
 
-def inventory_python_scripts(ctx: InventoryContext) -> list[InventoryItem]:
-    rows = ctx.list_all(ctx.client.scripts.list, type="python3")
-    return [python_item(ctx, row) for row in rows]
+def list_python_scripts(ctx: InventoryContext) -> list:
+    return ctx.list_all(ctx.client.scripts.list, type="python3")
 
 
 def python_item(ctx: InventoryContext, row: Any) -> InventoryItem:

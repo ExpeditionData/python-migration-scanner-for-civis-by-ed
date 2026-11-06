@@ -1,40 +1,79 @@
 """Inventory of Civis objects, one module per object type.
 
-``build_inventory`` runs every type, then applies two cross-type rules:
+``build_inventory`` works in three steps (docs/PLAN.md 17.6):
+
+1. List every type, all pages (the users list first, then Python, container,
+   custom, and dbt scripts, notebooks, Services, and workflows).
+2. Choose which listed rows to read. A row in the Python, container, or dbt
+   script list with ``from_template_id`` set is a custom script made from a
+   template. When the custom script list returned the same ID, it is skipped
+   there and counted as a template copy, so each custom script is inventoried
+   once, as a custom script. A copy the custom list did not return is read
+   under its own type. Rows that cannot run Python are left out on the list
+   row where it shows (a custom script on a SQL, R, or JavaScript template, a
+   notebook in another language).
+3. Make the detail calls for the rows kept, then for the workflows.
+
+Then two cross-type rules apply:
 
 - Archived jobs are skipped, except archived jobs that an active workflow runs.
-  Those are fetched one by one with jobs.get and added with archived=True.
+  Those are fetched one by one with jobs.get and added with archived=True. An
+  ID seen in any script list is known, so a reference to it never calls
+  jobs.get.
 - Every job that an active workflow runs gets that workflow's ID and name, which
   are also copied onto the job's findings.
+
+Every object ID appears at most once in ``Inventory.items``: the checkpoints,
+resume, the objects and findings rows, checklist pairs, and the web app all
+key objects by ID.
 """
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any
 
 from common.models import CoverageItem, ObjectType, WorkflowRef
 from scanner import scan_log
+from scanner.inventory import custom, notebooks
 from scanner.inventory.base import Inventory, InventoryContext, InventoryItem, field_of
-from scanner.inventory.containers import container_item, inventory_container_scripts
-from scanner.inventory.custom import custom_item, inventory_custom_scripts
-from scanner.inventory.dbt import dbt_item, inventory_dbt_scripts
-from scanner.inventory.notebooks import inventory_notebooks
-from scanner.inventory.python3 import inventory_python_scripts, python_item
-from scanner.inventory.services import inventory_services
+from scanner.inventory.containers import container_item, list_container_scripts
+from scanner.inventory.custom import TemplateCache, custom_item, list_custom_scripts
+from scanner.inventory.dbt import dbt_item, list_dbt_scripts
+from scanner.inventory.notebooks import list_notebooks, notebook_item
+from scanner.inventory.python3 import list_python_scripts, python_item
+from scanner.inventory.services import list_services, service_item
 from scanner.inventory.users import load_users
-from scanner.inventory.workflows import inventory_workflows
+from scanner.inventory.workflows import list_workflows, workflow_item
 
 __all__ = ["Inventory", "InventoryItem", "build_inventory"]
 
-_BY_TYPE = (
-    (ObjectType.PYTHON_SCRIPT, inventory_python_scripts),
-    (ObjectType.CONTAINER_SCRIPT, inventory_container_scripts),
-    (ObjectType.CUSTOM_SCRIPT, inventory_custom_scripts),
-    (ObjectType.DBT_SCRIPT, inventory_dbt_scripts),
-    (ObjectType.NOTEBOOK, inventory_notebooks),
-    (ObjectType.SERVICE, inventory_services),
+_LISTS = (
+    (ObjectType.PYTHON_SCRIPT, list_python_scripts),
+    (ObjectType.CONTAINER_SCRIPT, list_container_scripts),
+    (ObjectType.CUSTOM_SCRIPT, list_custom_scripts),
+    (ObjectType.DBT_SCRIPT, list_dbt_scripts),
+    (ObjectType.NOTEBOOK, list_notebooks),
+    (ObjectType.SERVICE, list_services),
 )
+# Script lists whose rows can be custom scripts made from a template (from_template_id set).
+_COPY_TYPES = frozenset({ObjectType.PYTHON_SCRIPT, ObjectType.CONTAINER_SCRIPT, ObjectType.DBT_SCRIPT})
+SCRIPT_TYPES = (ObjectType.PYTHON_SCRIPT, ObjectType.CONTAINER_SCRIPT, ObjectType.CUSTOM_SCRIPT, ObjectType.DBT_SCRIPT)
+# The list-row check for rows that cannot run Python, by type.
+_ROW_NOT_PYTHON = {ObjectType.CUSTOM_SCRIPT: custom.row_not_python, ObjectType.NOTEBOOK: notebooks.row_not_python}
+
+
+@dataclass
+class Listed:
+    """One type's list: every row, and the rows kept for detail calls."""
+
+    object_type: ObjectType
+    rows: list = field(default_factory=list)
+    kept: list = field(default_factory=list)
+    template_copies: int = 0
+    not_python: int = 0  # Left out on the list row; detail calls can find more (counted in coverage).
 
 
 def build_inventory(client: Any, civis_git: Any = None, step: Callable[[str], None] | None = None) -> Inventory:
@@ -51,24 +90,94 @@ def build_inventory(client: Any, civis_git: Any = None, step: Callable[[str], No
     inventory.users_source, inventory.users_note = lookup.source, lookup.note()
     ctx = InventoryContext(client, lookup.users, inventory, civis_git)
 
-    for object_type, inventory_type in _BY_TYPE:
+    # 1. List every type, all pages.
+    listed: dict[ObjectType, Listed] = {}
+    for object_type, list_rows in _LISTS:
         step(f"inventory_list_{object_type.value}")
-        items = inventory_type(ctx)
-        inventory.count(object_type).found += len(items)
-        inventory.items.extend(items)
+        listed[object_type] = Listed(object_type, list_rows(ctx))
+    step("inventory_workflows")
+    workflow_rows = list_workflows(ctx)
+
+    # 2. Choose the rows to read.
+    custom_ids = {field_of(row, "id") for row in listed[ObjectType.CUSTOM_SCRIPT].rows}
+    for entry in listed.values():
+        _choose_rows(entry, custom_ids, inventory)
+
+    # 3. Detail calls for the rows kept, then the workflows.
+    templates = TemplateCache(ctx)
+    for entry in listed.values():
+        step(f"inventory_list_{entry.object_type.value}")
+        counts = inventory.count(entry.object_type)
+        for row in entry.kept:
+            item = _detail(ctx, entry.object_type, row, templates)
+            if item is not None:
+                counts.found += 1
+                inventory.items.append(item)
 
     step("inventory_workflows")
-    workflow_items, references = inventory_workflows(ctx)
-    inventory.items.extend(workflow_items)
+    inventory.count(ObjectType.WORKFLOW).found += len(workflow_rows)
+    references: dict[int, set[WorkflowRef]] = defaultdict(set)
+    for row in workflow_rows:
+        item = workflow_item(ctx, row, references)
+        if item is not None:
+            inventory.items.append(item)
 
     step("inventory_archived_jobs")
-    _add_archived_jobs_run_by_workflows(ctx, references)
+    known = {field_of(row, "id") for t in SCRIPT_TYPES for row in listed[t].rows}
+    _add_archived_jobs_run_by_workflows(ctx, references, known, templates)
     by_id = inventory.by_id()
     for job_id, refs in references.items():
         item = by_id.get(job_id)
         if item is not None and item.obj.object_type is not ObjectType.WORKFLOW:
             item.obj.workflows = sorted(refs, key=lambda r: r.workflow_id)
     return inventory
+
+
+def _choose_rows(entry: Listed, custom_ids: set, inventory: Inventory) -> None:
+    """Sort one type's rows into template copies, rows that cannot run Python, and rows to read."""
+    counts = inventory.count(entry.object_type)
+    row_not_python = _ROW_NOT_PYTHON.get(entry.object_type)
+    for row in entry.rows:
+        if (entry.object_type in _COPY_TYPES and field_of(row, "from_template_id") is not None
+                and field_of(row, "id") in custom_ids):
+            entry.template_copies += 1
+            continue
+        language = row_not_python(row) if row_not_python else None
+        if language is not None:
+            entry.not_python += 1
+            counts.add_not_python(language)
+            continue
+        entry.kept.append(row)
+    counts.template_copies += entry.template_copies
+
+
+def _detail(ctx: InventoryContext, object_type: ObjectType, row: Any, templates: TemplateCache) -> InventoryItem | None:
+    """Read one kept row. None when the detail shows it cannot run Python (counted as not Python)."""
+    counts = ctx.inventory.count(object_type)
+    if object_type is ObjectType.PYTHON_SCRIPT:
+        return python_item(ctx, row)
+    if object_type is ObjectType.CONTAINER_SCRIPT:
+        return container_item(ctx, row)
+    if object_type is ObjectType.CUSTOM_SCRIPT:
+        item = custom_item(ctx, row, templates)
+        if custom.is_not_python(item):
+            counts.add_not_python((field_of(row, "backing_script_type") or "").lower() or "dbt")
+            return None
+        return item
+    if object_type is ObjectType.DBT_SCRIPT:
+        item = dbt_item(ctx, row)
+        if item is None:
+            counts.add_not_python("dbt")  # dbt off the default image.
+        return item
+    if object_type is ObjectType.NOTEBOOK:
+        item = notebook_item(ctx, row)
+        if item is None:
+            counts.add_not_python(field_of(row, "language"))
+        return item
+    item = service_item(ctx, row)
+    if item is None:
+        counts.add_not_python("r")  # Civis's Shiny image runs R.
+    return item
 
 
 def _job_kind(job: Any) -> ObjectType | None:
@@ -86,12 +195,16 @@ def _job_kind(job: Any) -> ObjectType | None:
     return None
 
 
-def _add_archived_jobs_run_by_workflows(ctx: InventoryContext, references: dict[int, set[WorkflowRef]]) -> None:
-    known = {item.obj.object_id for item in ctx.inventory.items}
+def _add_archived_jobs_run_by_workflows(
+    ctx: InventoryContext, references: dict[int, set[WorkflowRef]], listed_ids: set, templates: TemplateCache
+) -> None:
+    """``listed_ids`` holds every ID seen in a script list (read, template copy, or not Python): those are
+    not archived, so a workflow reference to one needs no jobs.get."""
+    known = listed_ids | {item.obj.object_id for item in ctx.inventory.items}
     builders = {
         ObjectType.PYTHON_SCRIPT: python_item,
         ObjectType.CONTAINER_SCRIPT: container_item,
-        ObjectType.CUSTOM_SCRIPT: custom_item,
+        ObjectType.CUSTOM_SCRIPT: lambda c, job: custom_item(c, job, templates),
         ObjectType.DBT_SCRIPT: dbt_item,
     }
     for job_id in sorted(references):

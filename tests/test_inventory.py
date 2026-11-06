@@ -39,7 +39,7 @@ def test_inventoried_ids_by_type(built):
         ids.setdefault(it.obj.object_type, set()).add(it.obj.object_id)
     assert ids == {
         ObjectType.PYTHON_SCRIPT: {101, 102, 105, 106, 107, 109, 110, 111, 112},
-        ObjectType.CONTAINER_SCRIPT: {201, 202, 203, 204, 205, 206},
+        ObjectType.CONTAINER_SCRIPT: {201, 202, 203, 204, 205, 206, 208},
         ObjectType.CUSTOM_SCRIPT: {301, 302, 304, 306},
         ObjectType.DBT_SCRIPT: {231},
         ObjectType.NOTEBOOK: {401, 403},
@@ -474,3 +474,58 @@ def test_git_backed_workflow_on_a_tag_is_partial_with_a_note():
     assert [t.task for t in workflow.code["inline_tasks"]] == ["from_git"]
     assert workflow.obj.scan_status is ScanStatus.PARTIAL
     assert workflow.obj.scan_note == TAG_READ_AT_BRANCH.format(item="workflow")
+
+
+# --- Template copies (docs/PLAN.md 17.6, Part A) ----------------------------------------------------
+
+
+def test_template_copies_are_skipped_in_their_own_list_and_counted(built):
+    """A Python, container, or dbt list row with from_template_id set, whose ID the custom list also returned,
+    is that custom script. It is skipped there and inventoried once, as a custom script."""
+    _, inventory = built
+    c = inventory.counts
+    assert c[ObjectType.CONTAINER_SCRIPT].template_copies == 2  # 301 and 302.
+    assert c[ObjectType.PYTHON_SCRIPT].template_copies == 1  # 304.
+    assert c[ObjectType.DBT_SCRIPT].template_copies == 1  # 306.
+    assert c[ObjectType.CUSTOM_SCRIPT].template_copies == 0
+    by_id = inventory.by_id()
+    for object_id in (301, 302, 304, 306):
+        assert by_id[object_id].obj.object_type is ObjectType.CUSTOM_SCRIPT
+
+
+def test_a_copy_the_custom_list_did_not_return_is_kept_under_its_own_type(built):
+    copy_208 = obj(built, 208)
+    assert copy_208.object_type is ObjectType.CONTAINER_SCRIPT and copy_208.impact is Impact.AFFECTED
+
+
+def test_template_copies_cost_no_detail_call(built):
+    client, _ = built
+    assert not {301, 302} & {a[0] for a, _ in client.called("scripts.get_containers")}
+    assert 304 not in {a[0] for a, _ in client.called("scripts.get_python3")}
+    assert 306 not in {a[0] for a, _ in client.called("scripts.get_dbt")}
+    assert [a[0] for a, _ in client.called("scripts.get_custom")].count(301) == 1
+
+
+def test_every_object_id_is_inventoried_once(built):
+    """Inventory.by_id, the checkpoints, resume, the objects and findings rows, and checklist pairs all key
+    objects by ID, so an instance with template copies must give one item per ID."""
+    _, inventory = built
+    ids = [it.obj.object_id for it in inventory.items]
+    assert len(ids) == len(set(ids)) == len(inventory.by_id())
+
+
+def test_every_listed_script_id_is_known_to_workflow_references():
+    """A workflow that runs a template copy or a custom script that is not Python calls no jobs.get for it, and
+    the custom script gets the workflow's name."""
+    data = copy.deepcopy(FakeClient.from_fixture("synthetic_instance.json").data)
+    data["workflows"].append({
+        "id": 607, "name": "Example template runner", "archived": False, "hidden": False, "valid": True,
+        "user": {"id": 2, "name": "Example Analyst", "username": "example_analyst"},
+        "definition": "version: '2.0'\nrunner:\n  tasks:\n    copy:\n      action: civis.run_job\n      input:\n"
+                      "        job_id: 301\n    sql:\n      action: civis.run_job\n      input:\n        job_id: 303\n",
+    })
+    client = FakeClient(data)
+    inventory = build_inventory(client)
+    assert not {301, 303} & {a[0] for a, _ in client.called("jobs.get")}
+    assert inventory.by_id()[301].obj.workflow_ids == [607]
+    assert inventory.by_id()[301].obj.object_type is ObjectType.CUSTOM_SCRIPT

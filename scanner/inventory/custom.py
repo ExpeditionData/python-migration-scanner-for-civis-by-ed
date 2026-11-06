@@ -69,22 +69,22 @@ class TemplateCache:
         return script_type, detail, None
 
 
-def inventory_custom_scripts(ctx: InventoryContext) -> list[InventoryItem]:
-    rows = ctx.list_all(ctx.client.scripts.list_custom)
-    counts = ctx.inventory.count(ObjectType.CUSTOM_SCRIPT)
-    templates = TemplateCache(ctx)
-    items = []
-    for row in rows:
-        backing_type = (field_of(row, "backing_script_type") or "").lower()
-        if backing_type and backing_type not in PYTHON_BACKING_TYPES | DBT_BACKING_TYPES:
-            counts.add_not_python(backing_type)  # SQL, R, or JavaScript template.
-            continue
-        item = custom_item(ctx, row, templates)
-        if item is _NOT_PYTHON:
-            counts.add_not_python(backing_type or "dbt")
-            continue
-        items.append(item)
-    return items
+def list_custom_scripts(ctx: InventoryContext) -> list:
+    return ctx.list_all(ctx.client.scripts.list_custom)
+
+
+def row_not_python(row: Any) -> str | None:
+    """The backing script type of a list row whose template cannot run Python (SQL, R, or JavaScript), checked
+    on the list row so it costs no detail call. None for a row that may run Python."""
+    backing_type = (field_of(row, "backing_script_type") or "").lower()
+    if backing_type and backing_type not in PYTHON_BACKING_TYPES | DBT_BACKING_TYPES:
+        return backing_type
+    return None
+
+
+def is_not_python(item: Any) -> bool:
+    """True when custom_item found a dbt-backed script that does not run on a Civis default Python image."""
+    return item is _NOT_PYTHON
 
 
 def custom_item(ctx: InventoryContext, row: Any, templates: TemplateCache | None = None):

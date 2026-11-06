@@ -175,6 +175,9 @@ class CoverageCounts:
     # Objects left out because they cannot run Python, by language
     # (for example {"r": 2, "sql": 5}).
     not_python: dict[str, int] = field(default_factory=dict)
+    # Rows in this type's list that are custom scripts made from a template (from_template_id set, and the
+    # custom script list returned the same ID). They are inventoried once, as custom scripts.
+    template_copies: int = 0
 
     def add_not_python(self, language: str | None) -> None:
         key = (language or "unknown").strip().lower() or "unknown"
