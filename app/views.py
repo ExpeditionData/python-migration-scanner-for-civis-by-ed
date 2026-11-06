@@ -186,8 +186,8 @@ class Situation:
     scans: list[ScanRun] = field(default_factory=list)
     settings_problem: str | None = None
     job_problem: str | None = None  # Why the scanner job's settings cannot be used (app/job_settings.py).
-    # The window the next scan will use (the job's LOOKBACK_DAYS, or 400 when not set); None when the saved value
-    # is not valid. Only set when the job was read and is this tool's scanner job.
+    # The window the next scan will use (the job's LOOKBACK_DAYS argument, fixed value, or default, else 400); None
+    # when that value is not valid. Only set when the job was read and is this tool's scanner job.
     job_lookback: int | None = None
     job_lookback_read: bool = False
 
@@ -360,7 +360,7 @@ def outside_window_text(count: int, days: int | None) -> str | None:
 
 
 def next_window_text(situation: "Situation") -> str | None:
-    """Next to Run scan: which window a scan will use, from the scanner job's saved LOOKBACK_DAYS."""
+    """Next to Run scan: which window a scan will use, from the scanner job's LOOKBACK_DAYS (app/job_settings.py)."""
     if not situation.job_lookback_read:
         return None
     if situation.job_lookback is None:

@@ -231,10 +231,12 @@ changed in the last 400 days were left out") but not checked.
   as year-end or fiscal-year jobs, even when a yearly run happens a few weeks
   late.
 - **To change it,** add the `LOOKBACK_DAYS` parameter to the scanner job
-  (Integer, not required), set it to any whole number from 1 to 3650, and save
-  the job. Civis starts the job with its saved parameters, so **Run scan**
-  always uses the saved value; the app cannot pass a different window. The
-  Overview shows, next to **Run scan**, which window the next scan will use.
+  (Integer, not required) and save the job. The value can be the parameter's
+  default or the value saved on the job; when both are set, the job's saved
+  value is used. Use any whole number from 1 to 3650. Civis starts the job
+  with its saved parameters, so **Run scan** always uses that value; the app
+  cannot pass a different window. The Overview shows, next to **Run scan**,
+  which window the next scan will use.
 - **A full audit.** Once before the February 2027 update, consider one scan
   with `LOOKBACK_DAYS` set to `3650`. It checks every script, at the cost of a
   much longer scan. Then set it back.

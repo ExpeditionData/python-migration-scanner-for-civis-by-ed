@@ -26,10 +26,11 @@ as a label (never the values):
 The live test confirms which shape Civis returns (docs/PLAN.md 17.2).
 
 LOOKBACK_DAYS (optional Integer): the window the next scan will use, shown
-next to Run scan. The job's saved value, or 400 days when the parameter is not
-set (``common/release.DEFAULT_LOOKBACK_DAYS``, the scanner's default). Civis's
-start-run call takes only the job ID, so Run scan cannot pass another window
-(docs/PLAN.md 17.6).
+next to Run scan. The job's saved argument, the parameter's fixed value, or
+the parameter's default (Civis passes a default when no argument is set), else
+400 days (``common/release.DEFAULT_LOOKBACK_DAYS``, the scanner's default).
+Civis's start-run call takes only the job ID, so Run scan cannot pass another
+window (docs/PLAN.md 17.6).
 """
 
 from __future__ import annotations
@@ -60,8 +61,8 @@ class JobSettings:
     problem: str | None = None
     error_type: str | None = None  # Set when the job could not be read: an exception class name, maybe with a status.
     job: dict | None = field(default=None, repr=False, compare=False)  # The job's settings, for the Setup page.
-    # The window the next scan will use: the saved LOOKBACK_DAYS, or the default when it is not set. None when the
-    # saved value is not a whole number from 1 to 3650 (the scan would stop with a configuration problem).
+    # The window the next scan will use: the saved LOOKBACK_DAYS argument, the parameter's fixed value or default, else
+    # 400. None when that value is not a whole number from 1 to 3650 (the scan would stop with a configuration problem).
     lookback_days: int | None = None
 
     @property
@@ -149,11 +150,28 @@ def parameter_value(job: dict, name: str) -> Any:
     return None
 
 
+def _not_set(value: Any) -> bool:
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
 def lookback_days(job: dict) -> int | None:
-    """The scanner job's saved LOOKBACK_DAYS, or the default (400) when it is not set. None when the saved value is
-    not a whole number in the scanner's range, which stops a scan before it starts (scanner/config.py)."""
-    value = parameter_value(job, release.LOOKBACK_PARAMETER)
-    if value is None or (isinstance(value, str) and not value.strip()):
+    """The LOOKBACK_DAYS the scanner will get, or None when it is not a whole number in the scanner's range, which
+    stops a scan before it starts (scanner/config.py).
+
+    In order: the job's saved argument, the parameter's fixed value ("value"), the parameter's "default", then 400
+    (``common/release.DEFAULT_LOOKBACK_DAYS``). Civis's API spec says a parameter's default is used when no argument
+    is set, and the scanner gets it as its LOOKBACK_DAYS environment variable. None and blank text count as not set
+    at each step. (RESULTS_DB and RESULTS_SCHEMA are required parameters, which Civis does not allow a default on,
+    so ``parameter_value`` does not read defaults.)"""
+    candidates: list[Any] = []
+    arguments = job.get("arguments")
+    if isinstance(arguments, dict):
+        candidates.append(arguments.get(release.LOOKBACK_PARAMETER))
+    param = next((p for p in parameters(job) if p.get("name") == release.LOOKBACK_PARAMETER), None)
+    if param is not None:
+        candidates += [param.get("value"), param.get("default")]
+    value = next((c for c in candidates if not _not_set(c)), None)
+    if value is None:
         return release.DEFAULT_LOOKBACK_DAYS
     if isinstance(value, bool):
         return None

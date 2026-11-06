@@ -221,9 +221,40 @@ def test_an_unreadable_job_turns_off_run_scan(civis_app):
     ({"LOOKBACK_DAYS": "-5"}, [], None),
     ({"LOOKBACK_DAYS": True}, [], None),
     ({"LOOKBACK_DAYS": 30.5}, [], None),
+    # The parameter's default, which Civis passes when no argument is set (docs/PLAN.md 17.6.34).
+    ({}, [{"name": "LOOKBACK_DAYS", "type": "integer", "default": "30"}], 30),  # Default only, as text.
+    ({}, [{"name": "LOOKBACK_DAYS", "type": "integer", "default": 30}], 30),  # Default only, as a number.
+    ({"LOOKBACK_DAYS": 60}, [{"name": "LOOKBACK_DAYS", "type": "integer", "default": "30"}], 60),  # Argument wins.
+    ({}, [{"name": "LOOKBACK_DAYS", "type": "integer", "value": "45", "default": "30"}], 45),  # Fixed value wins.
+    ({"LOOKBACK_DAYS": ""}, [{"name": "LOOKBACK_DAYS", "type": "integer", "default": "30"}], 30),  # Empty argument.
+    ({}, [{"name": "LOOKBACK_DAYS", "type": "integer", "value": None, "default": "30"}], 30),  # No fixed value.
+    ({}, [{"name": "LOOKBACK_DAYS", "type": "integer", "default": ""}], 400),  # Empty default.
+    ({}, [{"name": "LOOKBACK_DAYS", "type": "integer", "default": None}], 400),
+    ({}, [{"name": "LOOKBACK_DAYS", "type": "integer", "default": "0"}], None),  # Default outside the range.
+    ({}, [{"name": "LOOKBACK_DAYS", "type": "integer", "default": 3651}], None),
+    ({"LOOKBACK_DAYS": 30}, [{"name": "LOOKBACK_DAYS", "type": "integer", "default": "0"}], 30),  # Argument wins.
+    ({}, [{"name": "OTHER", "type": "integer", "default": "30"}], 400),  # Another parameter's default.
 ])
 def test_lookback_days_from_the_job(arguments, params, expected):
     job = scanner_job()
     job["arguments"].update(arguments)
     job["params"] += params
     assert parse_job(job).lookback_days == expected
+
+
+def test_parameter_value_does_not_read_defaults():
+    """RESULTS_DB and RESULTS_SCHEMA are required parameters, and Civis does not allow defaults on those."""
+    job = scanner_job()
+    job["arguments"].pop("RESULTS_SCHEMA")
+    for param in job["params"]:
+        if param["name"] == "RESULTS_SCHEMA":
+            param["default"] = "example_schema"
+    assert parse_job(job).problem == "schema_missing"
+
+
+def test_overview_shows_a_lookback_default_of_30(civis_app):
+    job = scanner_job()
+    job["params"].append({"name": "LOOKBACK_DAYS", "type": "integer", "required": False, "default": "30"})
+    app, _, _ = civis_app(FakeCivisClient(job))
+    body = app.test_client().get("/").get_data(as_text=True)
+    assert "A scan checks scripts that ran or changed in the last 30 days (LOOKBACK_DAYS on the scanner job)." in body

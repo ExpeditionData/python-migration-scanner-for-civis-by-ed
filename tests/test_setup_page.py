@@ -148,6 +148,17 @@ def test_git_credential_line():
      "warning", "LOOKBACK_DAYS is not the Integer type"),
     (lambda j: (j["params"].append({"name": "LOOKBACK_DAYS", "type": "integer"}), j["arguments"].update(LOOKBACK_DAYS=0)),
      "fail", "LOOKBACK_DAYS is not a whole number from 1 to 3,650"),
+    # The parameter's default is the value the scanner gets when no argument is set (docs/PLAN.md 17.6.34).
+    (lambda j: j["params"].append({"name": "LOOKBACK_DAYS", "type": "integer", "default": "0"}),
+     "fail", "LOOKBACK_DAYS is not a whole number from 1 to 3,650"),
+    (lambda j: j["params"].append({"name": "LOOKBACK_DAYS", "type": "integer", "default": 3651}),
+     "fail", "LOOKBACK_DAYS is not a whole number from 1 to 3,650"),
+    (lambda j: j["params"].append({"name": "LOOKBACK_DAYS", "type": "integer", "default": "thirty"}),
+     "fail", "LOOKBACK_DAYS is not a whole number from 1 to 3,650"),
+    (lambda j: j["params"].append({"name": "LOOKBACK_DAYS", "type": "integer", "default": "30"}), "pass", ""),
+    (lambda j: j["params"].append({"name": "LOOKBACK_DAYS", "type": "integer", "default": ""}), "pass", ""),
+    (lambda j: (j["params"].append({"name": "LOOKBACK_DAYS", "type": "integer", "default": "0"}),
+                j["arguments"].update(LOOKBACK_DAYS=30)), "pass", ""),  # The argument wins.
 ])
 def test_parameters_line(change, result, words):
     job = scanner_job()
