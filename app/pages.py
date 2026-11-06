@@ -217,16 +217,21 @@ def base_context(active: str, situation: views.Situation) -> dict:
     }
 
 
-def current_tables(situation: views.Situation) -> tuple[list, list, list, list]:
+ALL_TABLES = ("objects", "findings", "coverage", "checklist")
+
+
+def current_tables(situation: views.Situation, need: tuple[str, ...] = ALL_TABLES) -> tuple[list, list, list, list]:
+    """The current scan's objects, findings, and coverage rows, and the checklist. Only the tables in ``need`` are
+    read; the others come back empty, because each cold read is a Civis query that takes seconds."""
     scan = situation.current
     if scan is None:
         return [], [], [], []
     results = services().results
     return (
-        results.rows("objects", scan.run_id),
-        results.rows("findings", scan.run_id),
-        results.rows("coverage", scan.run_id),
-        results.checklist(),
+        results.rows("objects", scan.run_id) if "objects" in need else [],
+        results.rows("findings", scan.run_id) if "findings" in need else [],
+        results.rows("coverage", scan.run_id) if "coverage" in need else [],
+        results.checklist() if "checklist" in need else [],
     )
 
 
@@ -389,7 +394,7 @@ def scan():
 @bp.get("/inventory")
 def inventory():
     situation = load_situation()
-    objects, findings, _, _ = current_tables(situation)
+    objects, findings, _, _ = current_tables(situation, need=("objects", "findings"))
     filters = _filters("inventory")
     rows = views.inventory(objects, findings, filters)
     page = views.paginate(rows, _page_number())
@@ -403,7 +408,7 @@ def inventory():
 @bp.get("/findings")
 def findings():
     situation = load_situation()
-    objects, finding_rows, _, checklist = current_tables(situation)
+    objects, finding_rows, _, checklist = current_tables(situation, need=("objects", "findings", "checklist"))
     filters = _filters("findings")
     rows = views.findings_rows(objects, finding_rows, checklist, RULES, filters)
     page = views.paginate(rows, _page_number())

@@ -93,6 +93,18 @@ def _request_client() -> Any:
     return g.civis_client
 
 
+def _request_memo() -> dict:
+    """Small reads already sent in this request (app/backends/civis_backend.py). One per request; empty outside
+    a request."""
+    from flask import has_request_context
+
+    if not has_request_context():
+        return {}
+    if "pmsc_small_reads" not in g:
+        g.pmsc_small_reads = {}
+    return g.pmsc_small_reads
+
+
 def _civis_io() -> Any:
     import civis  # In the Service image.
 
@@ -112,11 +124,12 @@ def civis_services(
     services = Services(settings=settings, results=None, jobs_provider=jobs_provider)
 
     def make(job: JobSettings) -> CivisResults:
-        return CivisResults(client_factory(), io_factory(), job.database_id, job.schema, job.credential_id)
+        return CivisResults(client_factory(), io_factory(), job.database_id, job.schema, job.credential_id,
+                            memo=_request_memo())
 
     if job_id:
         services.results = CachedResults(lambda: services.results_backend(make))
-    services.setup_provider = lambda: CivisSetup(client_factory(), io_factory(), job_id)
+    services.setup_provider = lambda: CivisSetup(client_factory(), io_factory(), job_id, memo=_request_memo())
     return services
 
 

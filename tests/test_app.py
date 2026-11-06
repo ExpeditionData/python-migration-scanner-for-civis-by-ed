@@ -371,28 +371,7 @@ def test_saving_needs_a_civis_user(monkeypatch):
 # --- The Civis data layer (civis 2.7.1 calls only) -----------------------------------------
 
 
-class FakeFuture:
-    def result(self):
-        return None
-
-
-class FakeCivisIO:
-    def __init__(self, tables: dict[str, list[list]]):
-        self.tables = tables
-        self.reads: list[str] = []
-        self.queries: list[str] = []
-
-    def read_civis_sql(self, sql, database, return_as=None, client=None, credential_id=None, hidden=True):
-        assert return_as == "list"
-        self.reads.append(sql)
-        for key, rows in self.tables.items():
-            if key in sql:
-                return civis_read_result(rows)  # Like civis: no data rows raises EmptyResultError.
-        raise no_output()
-
-    def query_civis(self, sql, database, client=None, credential_id=None, hidden=True):
-        self.queries.append(sql)
-        return FakeFuture()
+from tests.civis_fakes import RecordingIO as FakeCivisIO  # noqa: E402  Reads like civis 2.7.1, writes recorded.
 
 
 def test_civis_results_reads_escaped_sql_and_normalizes_text():

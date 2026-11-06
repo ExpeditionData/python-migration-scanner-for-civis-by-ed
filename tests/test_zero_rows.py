@@ -196,7 +196,8 @@ def test_a_schema_without_our_tables_shows_no_scan_yet_with_run_scan_on(civis_ap
     body, text = response.get_data(as_text=True), _main_text(response)
     assert "No scan yet" in text and "Results could not be read" not in text
     assert "Set up results storage" in body and ">Run scan</button>" in body and "run-scan-off" not in body
-    assert _empty_read(io, "pg_catalog.pg_tables")
+    # The one catalog read (query_civis) returned the schema's own row and no table.
+    assert [s for s in io.small_reads if "pg_catalog.pg_tables" in s] and not io.full_reads
 
 
 def test_the_button_creates_the_schema_when_the_lookup_reads_zero_rows(civis_app):
@@ -210,7 +211,8 @@ def test_the_button_treats_a_new_empty_schema_as_dedicated(civis_app):
     io = RecordingIO(NAMESPACE)
     assert "storage=created_existing" in _post_setup(civis_app(io))
     assert io.queries == [t.create_sql(SCHEMA) for t in TABLES]
-    assert _empty_read(io, "pg_catalog.pg_views")
+    # The one catalog read (query_civis) returned the schema's own row and no table or view.
+    assert [s for s in io.small_reads if "pg_catalog.pg_views" in s]
 
 
 def test_empty_result_tables_read_as_no_rows(civis_app):
@@ -238,7 +240,8 @@ def test_setup_line_9_with_zero_row_reads(civis_app, tables, words):
     io = RecordingIO(tables)
     text = _main_text(civis_app(io).test_client().get("/setup"))
     assert words in text and "The check failed at step" not in text
-    assert io.empty_reads
+    # A missing schema reads zero catalog rows; a new empty schema reads only the schema's own row.
+    assert io.empty_reads or tables == NAMESPACE
 
 
 @pytest.mark.parametrize("tables, expected", [
@@ -255,4 +258,4 @@ def test_the_summary_with_zero_row_reads(civis_app, tables, expected):
     for line in expected:
         assert line in text, line
     assert "  9 results_storage: fail" in text if not tables else "  9 results_storage: fail" not in text
-    assert io.empty_reads
+    assert io.empty_reads or tables == NAMESPACE

@@ -91,6 +91,15 @@ def test_the_checker_allows_the_dedicated_schema_check():
     assert scope_problems(schema_objects_sql("results"), "results") == []
 
 
+def test_the_checker_allows_the_apps_one_catalog_read():
+    pytest.importorskip("flask")  # The app package needs Flask, which the scanner image does not have.
+    from app.backends.civis_backend import CivisResults
+
+    io = RecordingIO()
+    CivisResults(object(), io, 31, "results", 41).storage_facts()
+    assert io.reads and all(scope_problems(s, "results") == [] for s in io.reads)
+
+
 def test_the_checker_allows_literals_that_look_like_sql():
     assert scope_problems("INSERT INTO results.checklist_status (changed_by) VALUES ('drop; grant')", "results") == []
 
@@ -160,7 +169,8 @@ def test_app_statements_stay_in_the_results_schema(monkeypatch):
     assert web.get(stored.headers["Location"], headers=headers).status_code == 200
     _assert_in_scope(io, schema)
     kinds = {" ".join(s.split()[:2]) for s in io.statements}
-    assert {"SELECT nspname", "SELECT tablename", "INSERT INTO", "CREATE TABLE"} <= kinds
+    assert {"SELECT 'schema'", "SELECT *", "INSERT INTO", "CREATE TABLE"} <= kinds
+    assert any("pg_catalog.pg_namespace" in s and "pg_catalog.pg_views" in s for s in io.small_reads)
 
     # A missing schema: the button also sends CREATE SCHEMA IF NOT EXISTS.
     empty = RecordingIO()

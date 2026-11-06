@@ -166,13 +166,22 @@ class FakeCivisClient:
 
 
 class FakeFuture:
-    def __init__(self, error: Exception | None = None):
+    def __init__(self, error: Exception | None = None, value: Any = None):
         self.error = error
+        self.value = value
 
     def result(self):
         if self.error:
             raise self.error
-        return None
+        return self.value
+
+
+def query_result(rows: list[list] | None, preview_rows: int = 10) -> FakeResponse:
+    """What query_civis's future returns in civis 2.7.1: the query's Response, with ``result_columns`` and up to
+    ``preview_rows`` of ``result_rows``, every value as text (or None). Zero rows is a normal result."""
+    header, body = (rows[0], rows[1:]) if rows else ([], [])
+    text = [[None if v is None else str(v) for v in row] for row in body[:preview_rows]]
+    return FakeResponse({"id": 1, "state": "succeeded", "result_columns": list(header), "result_rows": text})
 
 
 _TABLE_NAME = re.compile(r"FROM\s+([A-Za-z_][\w]*)\.([A-Za-z_]\w*)", re.IGNORECASE)
@@ -183,10 +192,19 @@ class RecordingIO:
 
     ``tables`` maps a text found in the SQL to the list-of-lists civis.io returns
     (a header row, then rows). ``fail`` maps a text found in the SQL to an
-    exception for query_civis to raise from ``.result()``.
+    exception: read_civis_sql raises it, and query_civis raises it from
+    ``.result()``.
 
     Like civis, read_civis_sql raises EmptyResultError when the result has no
-    data rows, including for SQL that matches no key.
+    data rows, including for SQL that matches no key. query_civis answers a
+    SELECT the way civis 2.7.1 does: the query's Response with
+    ``result_columns`` and up to ``preview_rows`` text ``result_rows``, where
+    zero rows is normal.
+
+    ``reads`` holds every read, by either function: ``full_reads`` those by
+    read_civis_sql and ``small_reads`` the SELECTs sent with query_civis.
+    ``empty_reads`` holds the reads that returned zero rows. ``queries`` holds
+    only the statements query_civis sent that are not reads (the writes).
     """
 
     def __init__(self, tables: dict[str, list[list]] | None = None, fail: dict[str, Exception] | None = None):
@@ -194,7 +212,10 @@ class RecordingIO:
         self.fail = fail or {}
         self.statements: list[str] = []
         self.reads: list[str] = []
-        self.empty_reads: list[str] = []  # Reads that raised EmptyResultError (zero rows).
+        self.full_reads: list[str] = []
+        self.small_reads: list[str] = []
+        self.preview_rows: list[Any] = []
+        self.empty_reads: list[str] = []  # Reads that returned zero rows.
         self.queries: list[str] = []
         self.frames: list[str] = []
         self.databases: list[Any] = []
@@ -204,37 +225,53 @@ class RecordingIO:
         assert return_as == "list"
         self.statements.append(sql)
         self.reads.append(sql)
+        self.full_reads.append(sql)
         self.databases.append(database)
         self.credentials.append(credential_id)
         for key, error in self.fail.items():
             if key in sql:
                 raise error
         try:
-            return self._answer(sql)
+            return civis_read_result(self._rows(sql))
         except EmptyResultError:
             self.empty_reads.append(sql)
             raise
 
-    def _answer(self, sql):
+    def _rows(self, sql) -> list[list] | None:
+        """The header row and rows for a read, or None when no key matches."""
         if "pg_catalog.pg_views" in sql:  # The dedicated-schema check: tables and views with a kind column.
+            rows = [["kind", "name"]]
+            namespace = self.tables.get("pg_catalog.pg_namespace", [["nspname"]])[1:]
+            if "pg_catalog.pg_namespace" in sql and namespace:  # The app's catalog read adds the schema's own row.
+                rows.append(["schema", namespace[0][0]])
             tables = self.tables.get("pg_catalog.pg_tables", [["tablename"]])[1:]
             views = self.tables.get("pg_catalog.pg_views", [["viewname"]])[1:]
-            return civis_read_result(
-                [["kind", "name"]] + [["table", r[0]] for r in tables] + [["view", r[0]] for r in views])
+            return rows + [["table", r[0]] for r in tables] + [["view", r[0]] for r in views]
         for key, rows in self.tables.items():
             if key in sql:
-                return civis_read_result(rows)
-        raise no_output()
+                return rows
+        return None
 
-    def query_civis(self, sql, database, client=None, credential_id=None, hidden=True, **kwargs):
+    def query_civis(self, sql, database, client=None, credential_id=None, preview_rows=10, hidden=True, **kwargs):
         self.statements.append(sql)
-        self.queries.append(sql)
         self.databases.append(database)
         self.credentials.append(credential_id)
+        is_read = sql.lstrip().upper().startswith("SELECT")
+        if is_read:
+            self.reads.append(sql)
+            self.small_reads.append(sql)
+            self.preview_rows.append(preview_rows)
+        else:
+            self.queries.append(sql)
         for key, error in self.fail.items():
             if key in sql:
                 return FakeFuture(error)
-        return FakeFuture()
+        if not is_read:
+            return FakeFuture()
+        result = query_result(self._rows(sql), preview_rows)
+        if not result["result_rows"]:
+            self.empty_reads.append(sql)
+        return FakeFuture(value=result)
 
     def dataframe_to_civis(self, df, database, table, client=None, existing_table_rows=None, credential_id=None,
                            hidden=True, **kwargs):

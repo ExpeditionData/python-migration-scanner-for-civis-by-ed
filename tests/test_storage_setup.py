@@ -93,13 +93,17 @@ def test_existence_checks_read_pg_catalog_with_the_lower_case_name():
                       "pg_catalog.pg_tables": [["tablename"], ["scan_runs"], ["objects"]]})
     store = CivisResults(FakeCivisClient(), io, 31, "Migration_Results", 41)
     assert store.check() == "ok"
-    assert io.reads == [
-        "SELECT nspname FROM pg_catalog.pg_namespace WHERE nspname = 'migration_results'",
-        "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'migration_results' AND tablename IN "
-        "('scan_runs', 'objects', 'findings', 'coverage', 'checklist_status')",
+    # One read (docs/PLAN.md 17.6, Part D): the schema's own row, then its tables and views, the same dedicated-schema
+    # check the scanner runs (common/schema.schema_objects_sql). Sent with query_civis: the result is small.
+    assert io.reads == io.small_reads == [
+        "SELECT 'schema' AS kind, nspname AS name FROM pg_catalog.pg_namespace WHERE nspname = 'migration_results' "
+        "UNION ALL SELECT 'table' AS kind, tablename AS name FROM pg_catalog.pg_tables WHERE schemaname = "
+        "'migration_results' UNION ALL SELECT 'view' AS kind, viewname AS name FROM pg_catalog.pg_views WHERE "
+        "schemaname = 'migration_results'",
     ]
-    facts = store.storage_facts()
+    facts = store.storage_facts()  # The same store: the catalog read is not sent again.
     assert facts.schema_exists and facts.tables == frozenset({"scan_runs", "objects"}) and facts.readable is None
+    assert len(io.reads) == 1
 
 
 def test_nothing_runs_on_a_get_and_the_button_is_a_csrf_post():
