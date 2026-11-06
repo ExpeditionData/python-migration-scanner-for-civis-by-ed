@@ -207,3 +207,19 @@ def test_no_row_when_the_schema_check_fails(tmp_path, log_stream):
     assert entry.main(["--dry-run", "--out", str(tmp_path)]) == 2
     assert lines(log_stream) == [
         "FATAL error=SchemaNotDedicated reason=results_schema_holds_other_tables_or_views other_objects=1"]
+
+
+def test_a_fatal_in_the_detail_calls_names_inventory_details(tmp_path, log_stream, monkeypatch):
+    """The detail calls of the kept scripts, notebooks, and Services have their own step (docs/PLAN.md 17.6); the
+    inventory_list_<type> steps still name the list calls."""
+    import scanner.inventory as inventory
+
+    def broken_detail(*args, **kwargs):
+        raise KeyError(MARK)
+
+    monkeypatch.setattr(inventory, "_detail", broken_detail)
+    with pytest.raises(ScanFailed):
+        dry_run(tmp_path, now=NOW)
+    assert lines(log_stream)[-1] == "FATAL error=KeyError step=inventory_details"
+    assert scan_runs(tmp_path) == [("running", 0), ("failed", 1)]
+    assert "inventory_details" in scan_log.FATAL_STEPS

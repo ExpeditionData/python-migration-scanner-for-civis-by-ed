@@ -37,7 +37,7 @@ OTHER = "other"
 # Line types the scanner writes (scanner/scan_log.py). Any other log line is counted as "other".
 SCANNER_PREFIXES = (
     "RUN", "PHASE", "PROGRESS", "CHECKPOINT", "FINDINGS", "OBJECT_ERROR", "CIVIS_GIT_FAILED", "PARSE_ERROR",
-    "TABLE_WRITE_FAILED", "OUTPUT_FAILED", "FATAL", "USERS",
+    "TABLE_WRITE_FAILED", "OUTPUT_FAILED", "FATAL", "USERS", "INVENTORY",
 )
 ERROR_LINES = ("OBJECT_ERROR", "CIVIS_GIT_FAILED", "PARSE_ERROR", "TABLE_WRITE_FAILED", "OUTPUT_FAILED", "FATAL")
 # The counts on the scanner's final RUN line, in order (scanner/scan_log.py, RUN_COUNTS).
@@ -64,8 +64,13 @@ _USERS_LINE = re.compile(r"^USERS source=(\w+)(?: status=(\d{3}))?$")
 FATAL_STEPS = (
     "setup", "schema_check", "tables", "scanning_user", "inventory_users",
     *(f"inventory_list_{t.value}" for t in ObjectType if t is not ObjectType.WORKFLOW),
-    "inventory_workflows", "inventory_archived_jobs", "code_and_logs", "save_results", "output", "retention",
+    "inventory_details", "inventory_workflows", "inventory_archived_jobs", "code_and_logs", "save_results",
+    "output", "retention",
 )
+# One INVENTORY line per listed type (scanner/scan_log.py, INVENTORY_COUNTS), counts only.
+INVENTORY_COUNTS = ("listed", "kept", "outside_window", "template_copies", "not_python")
+_INVENTORY_LINE = re.compile(
+    r"^INVENTORY type=(\w+) " + " ".join(rf"{name}=(\d+)" for name in INVENTORY_COUNTS) + r"$")
 _FATAL_STEP = re.compile(r"^FATAL .*\sstep=([a-z0-9_]+)$")
 _PAIR = re.compile(r"\b(\w+)=(\S+)")
 
@@ -136,6 +141,9 @@ class LogCounts:
     other_lines: int
     users: str | None = None  # "<source>" or "<source> status=NNN", from the USERS line.
     fatal_step: str | None = None  # The step on the last FATAL line that has one.
+    # Object type (or "other") -> the INVENTORY counts, from each INVENTORY line. A line that does not match the
+    # format is counted under "other" with no counts.
+    inventory: dict[str, dict[str, int]] = field(default_factory=dict)
 
 
 def count_log(lines: list[str]) -> LogCounts:
@@ -144,6 +152,7 @@ def count_log(lines: list[str]) -> LogCounts:
     other = 0
     users = None
     fatal_step = None
+    inventory: dict[str, dict[str, int]] = {}
     for raw in lines:
         line = (raw or "").strip()
         if not _PREFIX.match(line):
@@ -165,7 +174,13 @@ def count_log(lines: list[str]) -> LogCounts:
             match = _USERS_LINE.match(line)
             source = _label(match.group(1), USER_SOURCES) if match else OTHER
             users = source if source == OTHER or not match.group(2) else f"{source} status={match.group(2)}"
-    return LogCounts(run_counts, errors, other, users, fatal_step)
+        elif line.startswith("INVENTORY"):
+            match = _INVENTORY_LINE.match(line)
+            if match and _label(match.group(1), OBJECT_TYPES) != OTHER:
+                inventory[match.group(1)] = {name: int(match.group(i + 2)) for i, name in enumerate(INVENTORY_COUNTS)}
+            else:
+                inventory.setdefault(OTHER, {})
+    return LogCounts(run_counts, errors, other, users, fatal_step, inventory)
 
 
 # --- Counts from the result tables ------------------------------------------------------------
@@ -219,6 +234,7 @@ class ScanData:
     objects: list[dict] | None = None
     findings: list[dict] | None = None
     log: LogRead | None = None
+    parameters: dict | None = None  # The scan's scan_runs.parameters (JSON written by the scanner).
 
 
 @dataclass
@@ -282,6 +298,8 @@ def _scan_lines(scan: ScanData | None) -> list[str]:
         out.append(f"  minutes_start_to_finish: {_n(max(int((scan.finished_at - scan.started_at).total_seconds() // 60), 0))}")
     else:
         out.append("  minutes_start_to_finish: not_finished")
+    lookback = (scan.parameters or {}).get("lookback_days")
+    out.append(f"  lookback_days: {_n(lookback) if lookback is not None else 'not_recorded'}")
     if scan.log is None:
         out.append("  log: not_read")
     else:
@@ -296,6 +314,12 @@ def _scan_lines(scan: ScanData | None) -> list[str]:
             out.append(f"    {_label(kind, ERROR_LINES)} {_token(token)}: {_n(count)}")
         out.append(f"  log_other_lines: {_n(counts.other_lines)}")
         out.append(f"  users_list: {counts.users or 'not_found'}")
+        out.append("  inventory:" + ("" if counts.inventory else " not_found"))
+        for object_type in OBJECT_TYPES + (OTHER,):
+            if object_type in counts.inventory:
+                c = counts.inventory[object_type]
+                out.append(f"    {object_type}:" + ("".join(f" {name}={_n(c.get(name))}" for name in INVENTORY_COUNTS)
+                                                     if c else " not_recognized"))
         if counts.fatal_step:
             out.append(f"  fatal_step: {counts.fatal_step}")
         if scan.log.error:

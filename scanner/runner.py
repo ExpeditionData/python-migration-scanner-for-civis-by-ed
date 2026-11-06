@@ -246,9 +246,8 @@ def _run_scan(
     scan_log.phase("inventory", "start")
     # The window is measured from the scan's start; a resumed run uses its first start (read above).
     cutoff = started - timedelta(days=config.lookback_days)
-    inventory = build_inventory(civis, civis_git=civis_git, step=step, cutoff=cutoff)
+    inventory = build_inventory(civis, civis_git=civis_git, step=step, cutoff=cutoff, clock=monotonic)
     total = len(inventory.items)
-    scan_log.progress("inventory", total, total)
     scan_log.phase("inventory", "done")
 
     step("code_and_logs")

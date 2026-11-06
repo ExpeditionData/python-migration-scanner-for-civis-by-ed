@@ -9,6 +9,8 @@ second layer.
 
 Line formats (parsed by the web app to show progress):
 
+    INVENTORY type=container_script listed=4768 kept=12 outside_window=66 template_copies=4690 not_python=0
+    PROGRESS phase=inventory objects_done=50 objects_total=420
     PROGRESS phase=code objects_done=420 objects_total=2000
     OBJECT_ERROR object_type=python_script object_id=107 error=CivisAPIError status=403
     CIVIS_GIT_FAILED object_type=python_script object_id=109 error=CivisAPIError status=403
@@ -24,6 +26,20 @@ Line formats (parsed by the web app to show progress):
     TABLE_WRITE_FAILED table=findings error=CivisAPIError status=403
     RUN run_id=run-20261013T120000Z-a1b2c3 status=running
     RUN run_id=run-20261013T120000Z-a1b2c3 status=succeeded objects_total=2000 objects_scanned=2000 api_calls=6120 github_tarball_requests=14 github_cache_peak_bytes=52428800 github_cache_evictions=0 civis_git_reads=37 civis_git_failures=2
+
+INVENTORY: one line per listed type (the six script, notebook, and Service
+lists, then workflows), logged after every list is read and before any detail
+call. listed is every row the list returned; the rest add up to it: kept (rows
+read with a detail call), outside_window (scripts that did not run or change
+within LOOKBACK_DAYS), template_copies (custom scripts also listed under this
+type, inventoried once as custom scripts), and not_python (rows whose list row
+shows they cannot run Python). Detail calls can find more objects that cannot
+run Python (dbt off the default image, Shiny Services); those are counted in
+the coverage table's not_python rows, not here.
+
+PROGRESS phase=inventory: during the detail calls, every 50 objects or 30
+seconds, and once more when they end. objects_total is the number of kept
+rows across every type, workflows included.
 
 The final RUN line carries the run's counts. api_calls is every Civis API
 request the scanner sent through its request budget (scanner/ratelimit.py),
@@ -161,6 +177,17 @@ def run_status(run_id: str, status: str, **counts: int) -> None:
     _logger.info("RUN run_id=%s status=%s%s", run_id, status, suffix)
 
 
+INVENTORY_COUNTS = ("listed", "kept", "outside_window", "template_copies", "not_python")
+
+
+def inventory(object_type: ObjectType | str, **counts: int) -> None:
+    """One listed type's counts (INVENTORY_COUNTS, in that order). Counts only, never names."""
+    if set(counts) != set(INVENTORY_COUNTS):
+        raise ValueError("inventory counts must be exactly INVENTORY_COUNTS")
+    values = " ".join(f"{name}={_count(counts[name], name)}" for name in INVENTORY_COUNTS)
+    _logger.info("INVENTORY type=%s %s", _object_type(object_type), values)
+
+
 USER_SOURCES = ("all", "active", "none")
 
 
@@ -181,12 +208,15 @@ def output_failed(exc: BaseException) -> None:
 
 
 # Where a scan can stop with FATAL (scanner/runner.py tracks the step). "setup" is before run_scan
-# starts (creating the client and the sink). Only these values are logged.
+# starts (creating the client and the sink). inventory_list_<type> names a type's list calls,
+# inventory_details the detail calls of the kept scripts, notebooks, and Services, and inventory_workflows
+# the workflow list and the workflows' detail calls. Only these values are logged.
 INVENTORY_LIST_TYPES = tuple(t.value for t in ObjectType if t is not ObjectType.WORKFLOW)
 FATAL_STEPS = (
     "setup", "schema_check", "tables", "scanning_user", "inventory_users",
     *(f"inventory_list_{t}" for t in INVENTORY_LIST_TYPES),
-    "inventory_workflows", "inventory_archived_jobs", "code_and_logs", "save_results", "output", "retention",
+    "inventory_details", "inventory_workflows", "inventory_archived_jobs", "code_and_logs", "save_results",
+    "output", "retention",
 )
 
 

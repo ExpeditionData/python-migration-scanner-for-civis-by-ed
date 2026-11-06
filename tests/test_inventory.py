@@ -615,3 +615,75 @@ def test_there_is_no_early_stop_on_sorted_lists():
     data["python3"].append(old_but_ran)  # Last in the list, after rows outside the window.
     inventory = build_inventory(FakeClient(data), cutoff=CUTOFF)
     assert 114 in inventory.by_id()
+
+
+# --- Inventory counts and progress (docs/PLAN.md 17.6, Part C) ------------------------------------------
+
+
+@pytest.fixture
+def scanner_log():
+    import io
+    import logging
+
+    from scanner import scan_log
+
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    logger = scan_log.configure()
+    logger.addHandler(handler)
+    yield stream
+    logger.removeHandler(handler)
+
+
+def test_one_inventory_line_per_listed_type_before_any_detail_call(scanner_log):
+    client = FakeClient.from_fixture("synthetic_instance.json")
+    build_inventory(client, cutoff=CUTOFF)
+    lines = scanner_log.getvalue().splitlines()
+    inventory_lines = [line for line in lines if line.startswith("INVENTORY ")]
+    assert inventory_lines == [
+        "INVENTORY type=python_script listed=10 kept=8 outside_window=1 template_copies=1 not_python=0",
+        "INVENTORY type=container_script listed=10 kept=7 outside_window=1 template_copies=2 not_python=0",
+        "INVENTORY type=custom_script listed=7 kept=5 outside_window=1 template_copies=0 not_python=1",
+        "INVENTORY type=dbt_script listed=3 kept=2 outside_window=0 template_copies=1 not_python=0",
+        "INVENTORY type=notebook listed=3 kept=2 outside_window=0 template_copies=0 not_python=1",
+        "INVENTORY type=service listed=5 kept=5 outside_window=0 template_copies=0 not_python=0",
+        "INVENTORY type=workflow listed=5 kept=5 outside_window=0 template_copies=0 not_python=0",
+    ]
+    # Every list is read before the first detail call.
+    lists = {"scripts.list", "scripts.list_custom", "notebooks.list", "services.list", "workflows.list"}
+    names = [name for name, _, _ in client.calls if not name.startswith("users.")]
+    last_list = max(i for i, n in enumerate(names) if n in lists)
+    first_detail = min(i for i, n in enumerate(names) if n not in lists)
+    assert last_list < first_detail and names.count("workflows.list") == 1
+    assert lines.index(inventory_lines[-1]) < lines.index("PROGRESS phase=inventory objects_done=0 objects_total=34")
+
+
+def test_inventory_progress_every_50_objects_or_30_seconds(scanner_log):
+    data = copy.deepcopy(FakeClient.from_fixture("synthetic_instance.json").data)
+    for index in range(120):
+        data["python3"].append({
+            "id": 70000 + index, "name": f"Example generated script {index}", "type": "Python", "archived": False,
+            "hidden": False, "updated_at": "2026-10-01T00:00:00Z", "docker_image_tag": "", "source": "",
+        })
+    build_inventory(FakeClient(data), cutoff=CUTOFF, clock=lambda: 0.0)
+    progress = [line for line in scanner_log.getvalue().splitlines() if line.startswith("PROGRESS phase=inventory")]
+    assert progress == [f"PROGRESS phase=inventory objects_done={n} objects_total=154" for n in (0, 50, 100, 150, 154)]
+
+    scanner_log.truncate(0)
+    scanner_log.seek(0)
+    ticks = iter(range(0, 100_000, 31))  # Each check of the clock is 31 seconds after the last.
+    build_inventory(FakeClient.from_fixture("synthetic_instance.json"), cutoff=CUTOFF, clock=lambda: next(ticks))
+    progress = [line for line in scanner_log.getvalue().splitlines() if line.startswith("PROGRESS phase=inventory")]
+    assert len(progress) == 1 + 34 + 1 and progress[-1] == "PROGRESS phase=inventory objects_done=34 objects_total=34"
+
+
+def test_the_inventory_line_takes_counts_only():
+    from scanner import scan_log
+
+    with pytest.raises(ValueError):
+        scan_log.inventory(ObjectType.PYTHON_SCRIPT, listed=1, kept=1, outside_window=0, template_copies=0)
+    with pytest.raises(ValueError):
+        scan_log.inventory(ObjectType.PYTHON_SCRIPT, listed=-1, kept=0, outside_window=0, template_copies=0,
+                           not_python=0)
+    with pytest.raises(ValueError):
+        scan_log.inventory("Example name", listed=1, kept=1, outside_window=0, template_copies=0, not_python=0)

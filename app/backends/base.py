@@ -195,6 +195,8 @@ class Progress:
     current_phase: str | None = None
     done: int | None = None
     total: int | None = None
+    # PROGRESS phase=inventory: objects read so far and the kept rows to read during inventory's detail calls.
+    inventory_done: int | None = None
     inventory_total: int | None = None
     code_started_at: str | None = None
     last_at: str | None = None
@@ -227,7 +229,7 @@ class Progress:
             elif kind == "PROGRESS":
                 done, total = _int(values.get("objects_done")), _int(values.get("objects_total"))
                 if values.get("phase") == "inventory":
-                    self.inventory_total = total
+                    self.inventory_done, self.inventory_total = done, total
                 else:
                     self.done, self.total = done, total
             elif kind == "TABLE_WRITE_FAILED":

@@ -575,7 +575,8 @@ def setup_summary():
     chosen = next((s for s in scans if s.run_id == wanted), newest_final)
     scan_data = checklist = run_rows = None
     if chosen is not None:
-        scan_data = summary.ScanData(chosen.run_id, chosen.status, chosen.started_at, chosen.finished_at)
+        scan_data = summary.ScanData(chosen.run_id, chosen.status, chosen.started_at, chosen.finished_at,
+                                     parameters=chosen.parameters)
         finished = chosen.status == "succeeded"
         try:
             scan_data.objects = svc.results.rows("objects", chosen.run_id, finished=finished)

@@ -21,7 +21,9 @@
      kept: their list rows have no reliable last-use time, and they are few.
      There is no early stop on the lists (they come back newest updated_at
      first), because updated_at does not change when a script runs.
-3. Make the detail calls for the rows kept, then for the workflows.
+3. Log one INVENTORY line per listed type (counts only), then make the detail
+   calls for the rows kept, then for the workflows, with a PROGRESS
+   phase=inventory line every 50 objects or 30 seconds.
 
 Then two cross-type rules apply:
 
@@ -39,6 +41,7 @@ key objects by ID.
 
 from __future__ import annotations
 
+import time
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -87,8 +90,32 @@ class Listed:
     outside_window: int = 0
 
 
+PROGRESS_EVERY_OBJECTS = 50
+PROGRESS_EVERY_SECONDS = 30.0
+
+
+class _DetailProgress:
+    """PROGRESS phase=inventory lines during the detail calls: at the start, every 50 objects or 30 seconds, and
+    once more at the end."""
+
+    def __init__(self, total: int, clock: Callable[[], float]):
+        self.total, self.clock, self.done = total, clock, 0
+        self.last = clock()
+        scan_log.progress("inventory", 0, total)
+
+    def tick(self) -> None:
+        self.done += 1
+        if self.done % PROGRESS_EVERY_OBJECTS == 0 or self.clock() - self.last >= PROGRESS_EVERY_SECONDS:
+            scan_log.progress("inventory", self.done, self.total)
+            self.last = self.clock()
+
+    def finish(self) -> None:
+        if self.done % PROGRESS_EVERY_OBJECTS or self.done == 0:
+            scan_log.progress("inventory", self.done, self.total)
+
+
 def build_inventory(client: Any, civis_git: Any = None, step: Callable[[str], None] | None = None,
-                    cutoff: datetime | None = None) -> Inventory:
+                    cutoff: datetime | None = None, clock: Callable[[], float] = time.monotonic) -> Inventory:
     """``civis_git`` (a CivisGitFiles) reads git-backed workflows' definitions through Civis.
     Without it, every workflow is read from the definition saved in Civis.
 
@@ -118,16 +145,25 @@ def build_inventory(client: Any, civis_git: Any = None, step: Callable[[str], No
     for entry in listed.values():
         _choose_rows(entry, custom_ids, inventory, cutoff)
 
-    # 3. Detail calls for the rows kept, then the workflows.
+    # 3. Counts per listed type, then the detail calls for the rows kept, then the workflows.
+    for entry in listed.values():
+        scan_log.inventory(entry.object_type, listed=len(entry.rows), kept=len(entry.kept),
+                           outside_window=entry.outside_window, template_copies=entry.template_copies,
+                           not_python=entry.not_python)
+    scan_log.inventory(ObjectType.WORKFLOW, listed=len(workflow_rows), kept=len(workflow_rows), outside_window=0,
+                       template_copies=0, not_python=0)
+    progress = _DetailProgress(sum(len(entry.kept) for entry in listed.values()) + len(workflow_rows), clock)
+
+    step("inventory_details")
     templates = TemplateCache(ctx)
     for entry in listed.values():
-        step(f"inventory_list_{entry.object_type.value}")
         counts = inventory.count(entry.object_type)
         for row in entry.kept:
             item = _detail(ctx, entry.object_type, row, templates)
             if item is not None:
                 counts.found += 1
                 inventory.items.append(item)
+            progress.tick()
 
     step("inventory_workflows")
     inventory.count(ObjectType.WORKFLOW).found += len(workflow_rows)
@@ -136,6 +172,8 @@ def build_inventory(client: Any, civis_git: Any = None, step: Callable[[str], No
         item = workflow_item(ctx, row, references)
         if item is not None:
             inventory.items.append(item)
+        progress.tick()
+    progress.finish()
 
     step("inventory_archived_jobs")
     known = {field_of(row, "id") for t in SCRIPT_TYPES for row in listed[t].rows}

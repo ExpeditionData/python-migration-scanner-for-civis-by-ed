@@ -8,8 +8,10 @@ summary. No Civis calls.
 from __future__ import annotations
 
 import html
+import json
 import re
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -378,3 +380,70 @@ def test_the_default_scan_is_the_newest_finished_one(monkeypatch):
     assert f"scan: {RUN_B}" in _summary_text(app.test_client().get("/setup/summary"))
     running = _summary_text(app.test_client().get(f"/setup/summary?run={run_c}"))
     assert f"scan: {run_c}" in running and "status: running" in running
+
+
+# --- Inventory counts and the lookback window (docs/PLAN.md 17.6, Part C) -------------------------------
+
+
+def test_inventory_lines_are_counted_per_type_and_are_not_other_lines():
+    lines = [
+        "INVENTORY type=container_script listed=4768 kept=12 outside_window=66 template_copies=4690 not_python=0",
+        "INVENTORY type=custom_script listed=5553 kept=221 outside_window=5277 template_copies=0 not_python=55",
+        f"INVENTORY type={MARK} listed=1 kept=1 outside_window=0 template_copies=0 not_python=0",
+        f"INVENTORY type=notebook listed=68 kept=68 outside_window=0 template_copies=0 not_python=0 {MARK}",
+        "PROGRESS phase=inventory objects_done=50 objects_total=301",
+    ]
+    counts = summary.count_log(lines)
+    assert counts.other_lines == 0
+    assert counts.inventory == {
+        "container_script": {"listed": 4768, "kept": 12, "outside_window": 66, "template_copies": 4690, "not_python": 0},
+        "custom_script": {"listed": 5553, "kept": 221, "outside_window": 5277, "template_copies": 0, "not_python": 55},
+        "other": {},
+    }
+    text = "\n".join(summary._scan_lines(summary.ScanData(
+        RUN_A, "succeeded", None, None, log=summary.LogRead(lines), parameters={"lookback_days": 30})))
+    assert "  lookback_days: 30" in text
+    assert ("    container_script: listed=4768 kept=12 outside_window=66 template_copies=4690 not_python=0"
+            in text)
+    assert "    other: not_recognized" in text and MARK not in text
+
+
+def test_inventory_counts_match_the_scanner():
+    from scanner import scan_log
+
+    assert summary.INVENTORY_COUNTS == scan_log.INVENTORY_COUNTS
+
+
+@pytest.mark.parametrize("parameters, expected", [
+    ({"lookback_days": 400}, "400"), ({"lookback_days": f"{MARK}"}, "other"), ({"lookback_days": -1}, "other"),
+    ({}, "not_recorded"), (None, "not_recorded"),
+])
+def test_lookback_days_from_the_scan_runs_parameters(parameters, expected):
+    text = "\n".join(summary._scan_lines(summary.ScanData(RUN_A, "succeeded", None, None, parameters=parameters)))
+    assert f"  lookback_days: {expected}" in text
+
+
+def test_the_summary_reports_the_dry_runs_inventory(tmp_path):
+    """The summary's INVENTORY counts and lookback_days for a dry run of the synthetic instance."""
+    import io as io_module
+    import logging
+
+    from scanner import scan_log
+
+    stream = io_module.StringIO()
+    handler = logging.StreamHandler(stream)
+    logger = scan_log.configure()
+    logger.addHandler(handler)
+    try:
+        dry_run(tmp_path, now=datetime(2026, 10, 13, 12, tzinfo=timezone.utc))
+    finally:
+        logger.removeHandler(handler)
+    counts = summary.count_log(stream.getvalue().splitlines())
+    assert counts.inventory["python_script"] == {
+        "listed": 10, "kept": 8, "outside_window": 1, "template_copies": 1, "not_python": 0}
+    assert counts.inventory["workflow"]["kept"] == counts.inventory["workflow"]["listed"] == 5
+    for c in counts.inventory.values():
+        assert c["listed"] == c["kept"] + c["outside_window"] + c["template_copies"] + c["not_python"]
+    conn = sqlite3.connect(tmp_path / "results.sqlite")
+    parameters = json.loads(conn.execute("SELECT parameters FROM scan_runs LIMIT 1").fetchone()[0])
+    assert parameters["lookback_days"] == 400

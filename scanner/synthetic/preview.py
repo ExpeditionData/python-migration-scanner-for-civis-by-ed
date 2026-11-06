@@ -247,7 +247,7 @@ def build_preview(out: Path, now: datetime | None = None) -> dict:
         if state == "running" and stop_after:
             # A real scan logs progress every 30 seconds; this short made-up run did not get there.
             total = next((line.split("objects_total=")[1] for line in capture.lines
-                          if line.startswith("PROGRESS phase=inventory")), "0")
+                          if line.startswith("PROGRESS phase=code")), "0")
             capture.lines.append(f"PROGRESS phase=code objects_done={stop_after} objects_total={total}")
         logs[str(civis_run_id)] = _log_entries(capture.lines, start, span)
         runs.append({

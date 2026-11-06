@@ -877,3 +877,61 @@ def test_outside_window_text():
 
 def test_the_scan_page_window_defaults_to_400_days(app):
     assert "Lookback window: 400 days." in text_of(app.test_client().get("/scan"))
+
+
+# --- Inventory progress (docs/PLAN.md 17.6, Part C) -----------------------------------------------------
+
+
+def test_progress_view_shows_inventory_n_of_m_while_it_runs():
+    progress = Progress()
+    progress.feed([
+        LogLine(1, "RUN run_id=run-9 status=running", "2026-10-14T12:00:00Z"),
+        LogLine(2, "PHASE name=inventory state=start", "2026-10-14T12:00:01Z"),
+        LogLine(3, "INVENTORY type=python_script listed=426 kept=58 outside_window=295 template_copies=73 "
+                   "not_python=0", "2026-10-14T12:05:00Z"),
+        LogLine(4, "PROGRESS phase=inventory objects_done=0 objects_total=301", "2026-10-14T12:05:00Z"),
+        LogLine(5, "PROGRESS phase=inventory objects_done=50 objects_total=301", "2026-10-14T12:05:30Z"),
+    ])
+    assert (progress.inventory_done, progress.inventory_total) == (50, 301)
+    view = views.progress_view(JobRun(9, "running", "2026-10-14T12:00:00Z"), progress)
+    assert view["headline"] == "Inventory: 50 of 301 objects read"
+    assert view["steps"][0] == {"name": "1. Inventory", "state": "Running", "detail": "50 of 301 objects"}
+    assert view["percent"] == 0
+
+    progress.feed([
+        LogLine(6, "PROGRESS phase=inventory objects_done=301 objects_total=301", "2026-10-14T12:08:00Z"),
+        LogLine(7, "PHASE name=inventory state=done", "2026-10-14T12:08:00Z"),
+        LogLine(8, "PHASE name=code state=start", "2026-10-14T12:08:00Z"),
+        LogLine(9, "PROGRESS phase=code objects_done=0 objects_total=280", "2026-10-14T12:08:00Z"),
+    ])
+    view = views.progress_view(JobRun(9, "running", "2026-10-14T12:00:00Z"), progress)
+    assert view["steps"][0] == {"name": "1. Inventory", "state": "Done", "detail": "280 Python objects listed"}
+    assert view["headline"] == "Scanning code and logs: 0 of 280 objects"
+
+
+def test_scan_history_and_the_status_api_show_inventory_progress(monkeypatch):
+    from app.services import civis_services
+    from tests.civis_fakes import FakeCivisClient, RecordingIO
+
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    client = FakeCivisClient()
+    client.handlers.update({
+        "scripts.list_containers_runs": lambda id, limit=None: [
+            {"id": 801, "state": "running", "created_at": "2026-11-06T12:00:00Z", "started_at": "2026-11-06T12:00:00Z"}],
+        "scripts.list_containers_runs_logs": lambda id, run_id, last_id=None, limit=None: [] if last_id else [
+            {"id": 1, "message": "RUN run_id=run-20261106T120000Z-abc123 status=running"},
+            {"id": 2, "message": "PHASE name=inventory state=start"},
+            {"id": 3, "message": "PROGRESS phase=inventory objects_done=100 objects_total=301"},
+        ],
+    })
+    io = RecordingIO({"pg_catalog.pg_namespace": [["nspname"], ["migration_results"]],
+                      "pg_catalog.pg_tables": [["tablename"]] + [[t] for t in
+                                                                ("scan_runs", "objects", "findings", "coverage",
+                                                                 "checklist_status")]})
+    services = civis_services(Settings(scanner_job_id=1234), client_factory=lambda: client, io_factory=lambda: io)
+    app = create_app({"SECRET_KEY": SECRET, "SERVICES": services, "TESTING": True})
+    data = app.test_client().get("/api/scan-status").get_json()
+    assert data["state"] == "running" and data["headline"] == "Inventory: 100 of 301 objects read"
+    assert data["steps"][0] == {"name": "1. Inventory", "state": "Running", "detail": "100 of 301 objects"}
+    page = text_of(app.test_client().get("/scan"))
+    assert "1. Inventory" in page and "100 of 301 objects" in page
