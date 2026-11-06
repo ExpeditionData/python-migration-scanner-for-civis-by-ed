@@ -8,14 +8,14 @@
     <p class="subtitle">Counts, fixed labels, and error types only, so you can share it with whoever supports your setup. It holds no names, addresses, code, or log text. Read it before you send it.</p>
   </div>
   <div class="actions">
-    <a class="button button-secondary" href="{{ url_for('pages.setup_page') }}">Back to Setup</a>
+    <a class="button button-secondary" href="{{ url_for('pages.setup_page') }}" data-busy>Back to Setup</a>
   </div>
 </div>
 
 <section class="card" aria-labelledby="summary-heading">
   <h2 id="summary-heading">Summary</h2>
   {% if scans %}
-  <form method="get" action="{{ url_for('pages.setup_summary') }}" class="filters">
+  <form method="get" action="{{ url_for('pages.setup_summary') }}" class="filters" data-busy>
     <label for="summary-run">Scan</label>
     <select id="summary-run" name="run">
       {% for scan in scans %}

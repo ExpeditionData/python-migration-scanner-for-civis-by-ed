@@ -236,8 +236,13 @@ class Situation:
     @property
     def can_start(self) -> bool:
         """Run scan stays off while the results schema is missing (the button creates it)."""
-        return (self.job_readable and not self.jobs_error and self.active_run is None
-                and self.results_state != "schema_missing" and self.job_problem != "not_scanner_job")
+        return self.active_run is None and self.can_start_when_idle
+
+    @property
+    def can_start_when_idle(self) -> bool:
+        """Run scan would be on if no run were active (the Overview's button comes back when the run ends)."""
+        return (self.job_readable and not self.jobs_error and self.results_state != "schema_missing"
+                and self.job_problem != "not_scanner_job")
 
 
 # ---------------------------------------------------------------------------

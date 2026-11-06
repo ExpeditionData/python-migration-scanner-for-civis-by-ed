@@ -6,6 +6,7 @@
   <title>{% block title %}Overview{% endblock %} | Python Migration Scanner for Civis Platform</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
   <script src="{{ url_for('static', filename='js/local-time.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/busy.js') }}" defer></script>
   {% block scripts %}{% endblock %}
 </head>
 <body>
@@ -20,7 +21,7 @@
         </div>
         <nav aria-label="Main" class="main-nav">
           {% for key, label, endpoint in [("overview", "Overview", "pages.overview"), ("inventory", "Inventory", "pages.inventory"), ("findings", "Findings", "pages.findings"), ("scan", "Scan history", "pages.scan"), ("setup", "Setup", "pages.setup_page")] %}
-          <a href="{{ url_for(endpoint) }}"{% if active == key %} class="active" aria-current="page"{% endif %}>{{ label }}</a>
+          <a href="{{ url_for(endpoint) }}"{% if active == key %} class="active" aria-current="page"{% endif %}{% if key == "setup" %} data-busy{% endif %}>{{ label }}</a>
           {% endfor %}
         </nav>
         <div class="signed-in">
@@ -37,6 +38,8 @@
           <p><strong>For Civis admins only.</strong> Results include the names, owners, and links of private objects, so share this app with Civis admins only.</p>
         </div>
       </div>
+      {#- js/busy.js shows "Working. This can take up to a minute." here when a slow action starts. -#}
+      <div class="banner banner-info" data-busy-region role="status" aria-live="polite" hidden></div>
       {% for banner in banners %}
       <div class="banner banner-{{ banner.kind }}" role="{{ 'alert' if banner.kind == 'error' else 'status' }}">
         <p>{{ banner.text }}{% if banner.when %} {{ local_time(banner.when) }}{{ banner.tail }}{% endif %}{% if banner.link %} <a href="{{ banner.link }}">{{ banner.link_text }}</a>{% endif %}</p>

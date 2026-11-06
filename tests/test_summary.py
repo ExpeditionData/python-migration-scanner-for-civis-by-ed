@@ -337,7 +337,7 @@ def test_the_summary_is_a_read_only_get(marked_app):
 
 def test_the_setup_page_links_to_the_summary_and_the_copy_button_is_vendored(marked_app):
     app, _, _ = marked_app
-    assert 'href="/setup/summary">Build test summary</a>' in app.test_client().get("/setup").get_data(as_text=True)
+    assert 'href="/setup/summary" data-busy>Build test summary</a>' in app.test_client().get("/setup").get_data(as_text=True)
     body = app.test_client().get("/setup/summary").get_data(as_text=True)
     assert 'src="/static/js/copy-summary.js"' in body and 'id="copy-summary"' in body and " hidden>" in body
     assert app.test_client().get("/static/js/copy-summary.js").status_code == 200

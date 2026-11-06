@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "macros.html" import run_scan_button, empty_block, local_time, storage_result %}
 {% block title %}Overview{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/run-scan.js') }}" defer></script>{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
@@ -8,7 +9,7 @@
     {% if stats %}<p class="subtitle">Last scan: {{ local_time(last_scan) }}. Completed in {{ duration }}. {{ scan_label }}.</p>{% endif %}
   </div>
   <div class="actions">
-    {{ run_scan_button(can_start, situation) }}
+    {{ run_scan_button(can_start, situation, live=True) }}
     {% if stats and situation.current.civis_run_id %}
     <a class="button button-secondary" href="{{ url_for('pages.download', civis_run_id=situation.current.civis_run_id) }}">Download CSV</a>
     {% endif %}

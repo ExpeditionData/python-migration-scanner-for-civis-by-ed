@@ -34,6 +34,13 @@ NOTICES = {
     "not-scanner": ("error", "The scan was not started, because SCANNER_JOB_ID does not point to this tool's scanner "
                              "job. See lines 1 and 2 on the Setup page."),
 }
+# The Overview starts a scan without leaving the page (js/run-scan.js asks for JSON), so its messages say where
+# progress is shown. Same keys as NOTICES.
+START_MESSAGES = {
+    **NOTICES,
+    "started": ("success", "The scan has started. The button comes back when it ends, and Scan history shows its "
+                           "progress."),
+}
 FILTER_KEYS = {
     "inventory": ("q", "type", "image", "status"),
     "findings": ("impact", "ruleset", "confidence", "status", "owner"),
@@ -456,27 +463,42 @@ def save_findings():
     return back(saved=str(len(changes)))
 
 
+def _wants_json() -> bool:
+    """True for js/run-scan.js, which asks for JSON. A form post from a browser prefers HTML."""
+    return request.accept_mimetypes.best_match(["text/html", "application/json"]) == "application/json"
+
+
+def _started(notice: str, run_id: int | None = None):
+    """Where Run scan goes next: Scan history with a notice, or, for the Overview's script, JSON with the notice
+    key, its fixed message, and the new run's ID."""
+    if _wants_json():
+        kind, message = START_MESSAGES[notice]
+        return jsonify({"notice": notice, "kind": kind, "message": message, "civis_run_id": run_id})
+    return redirect(url_for("pages.scan", notice=notice))
+
+
 @bp.post("/scan/start")
 def start_scan():
     svc = services()
     jobs = svc.jobs()
     if jobs is None:
-        return redirect(url_for("pages.scan", notice="no-job"))
+        return _started("no-job")
     try:
         with svc.start_lock:  # One check-then-start at a time in this worker.
             # Read the job fresh and start it only if it is this tool's scanner job (common/release.py). This
             # holds even if the button is shown by mistake.
             settings = svc.job_settings(fresh=True)
             if settings is None or settings.problem == "job_unreadable":
-                return redirect(url_for("pages.scan", notice="start-failed"))
+                return _started("start-failed")
             if not release.is_scanner_job(settings.job):
-                return redirect(url_for("pages.scan", notice="not-scanner"))
-            if any(run.active for run in jobs.runs(limit=10)):
-                return redirect(url_for("pages.scan", notice="busy"))
-            jobs.start()
+                return _started("not-scanner")
+            active = next((run for run in jobs.runs(limit=10) if run.active), None)
+            if active is not None:
+                return _started("busy", active.id)
+            run = jobs.start()
     except Exception:
-        return redirect(url_for("pages.scan", notice="start-failed"))
-    return redirect(url_for("pages.scan", notice="started"))
+        return _started("start-failed")
+    return _started("started", run.id)
 
 
 @bp.get("/api/scan-status")

@@ -424,8 +424,8 @@ def test_report_only_is_a_warning_on_the_setup_page(civis_app):
 def test_setup_is_in_the_navigation(civis_app):
     app, _, _ = civis_app()
     body = app.test_client().get("/").get_data(as_text=True)
-    assert '<a href="/setup">Setup</a>' in body
-    assert 'class="active" aria-current="page">Setup</a>' in app.test_client().get("/setup").get_data(as_text=True)
+    assert '<a href="/setup" data-busy>Setup</a>' in body  # js/busy.js shows a message on click.
+    assert 'class="active" aria-current="page" data-busy>Setup</a>' in app.test_client().get("/setup").get_data(as_text=True)
 
 
 def test_every_preview_state_renders_the_setup_page(tmp_path, monkeypatch):

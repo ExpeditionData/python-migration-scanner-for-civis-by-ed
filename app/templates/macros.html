@@ -20,11 +20,15 @@
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 {%- endmacro %}
 
-{% macro run_scan_button(can_start, situation) -%}
-{% if can_start %}
+{% macro run_scan_button(can_start, situation, live=False) -%}
+{#- live: the Overview's button, which js/run-scan.js starts without leaving the page and switches between
+    "Run scan" and "Scan running" while it polls the scan status API. The form is there while a run is active,
+    so the button can come back when the run ends. -#}
+{% if live %}<div class="run-scan" data-run-scan data-status="{{ url_for('pages.scan_status') }}" data-state="{{ 'active' if situation.active_run else 'idle' }}"{% if situation.active_run %} data-run="{{ situation.active_run.id }}"{% endif %}>{% endif %}
+{% if can_start or (live and situation.active_run and situation.can_start_when_idle) %}
 <form method="post" action="{{ url_for('pages.start_scan') }}">
   {{ csrf_field() }}
-  <button type="submit" class="button button-primary">Run scan</button>
+  {% if can_start %}<button type="submit" class="button button-primary">Run scan</button>{% else %}<button type="submit" class="button" disabled>Scan running</button>{% endif %}
 </form>
 {% elif situation.active_run %}
 <button type="button" class="button" disabled>Scan running</button>
@@ -32,10 +36,11 @@
 <button type="button" class="button" disabled aria-describedby="run-scan-off">Run scan</button>
 <span id="run-scan-off" class="sr-only">Run scan is turned off. See the message at the top of the page.</span>
 {% endif %}
+{% if live %}<p class="note run-scan-note" data-run-scan-note role="status" aria-live="polite" hidden></p></div>{% endif %}
 {%- endmacro %}
 
 {% macro storage_button() -%}
-<form method="post" action="{{ url_for('pages.setup_storage') }}">
+<form method="post" action="{{ url_for('pages.setup_storage') }}" data-busy>
   {{ csrf_field() }}
   <button type="submit" class="button button-primary">Set up results storage</button>
 </form>
