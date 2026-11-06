@@ -60,8 +60,9 @@ be made public at any time.
   credential. Rob changes its visibility himself; never change it from a
   session.
 - Releases are git tags, protected by the "release tags" ruleset. The first
-  live test set up on `v0.1.0-rc5` and runs its scans on `v0.1.0-rc6`. Create a tag or a
-  GitHub Release only when Rob's prompt says to.
+  live test set up on `v0.1.0-rc5` and runs its scans on `v0.1.0-rc7`, with
+  `LOOKBACK_DAYS` 30. Create a tag or a GitHub Release only when Rob's prompt
+  says to.
 - Commit after each completed step, with a clear message that says what changed
   and why.
 - Before every commit, review the staged files (`git diff --cached --name-only`
@@ -164,7 +165,12 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   the Civis sharing lists (docs/PLAN.md 17.4). Setup of `v0.1.0-rc5` passed;
   its first scan failed in inventory, fixed for `v0.1.0-rc6` (docs/PLAN.md
   17.5): the users list fallback, no hidden counts, shorter retries, and the
-  FATAL step. The build under test is `v0.1.0-rc6`.
+  FATAL step. Scan A on `v0.1.0-rc6` was still in Inventory after about 1.5
+  hours, so the November 6, 2026 speed build (docs/PLAN.md 17.6) inventories
+  template copies once, reads only scripts in the `LOOKBACK_DAYS` window,
+  logs inventory counts and progress, reads small results with
+  `query_civis`, adds progress messages and a live Run scan button, and shows
+  templates. The build under test is `v0.1.0-rc7`.
   Implementation choices not in the approved plan are in docs/PLAN.md
   sections 10 to 17.
 - **App flow.** `app/__init__.create_app` -> `app/services.py` (Civis or local
@@ -172,7 +178,21 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   (pure shaping) -> `app/templates/`. Data layer:
   `app/backends/civis_backend.py` (civis 2.7.1 calls only: `CivisResults`,
   `CivisJobs`, `CivisSetup`), `local_backend.py` (dry-run preview files and
-  a made-up job and Service), `cache.py`. `app/job_settings.py` parses the
+  a made-up job and Service), `cache.py`. Reads that are small by design
+  (one catalog read for the existence and dedicated-schema checks, Setup line
+  9's counts, and `scan_runs`) use `query_civis` with 1,000 preview rows
+  (text values, converted by column type; `read_civis_sql` when a result
+  fills the limit) and a per-request memo on `g`, cleared by any write; the
+  objects, findings, coverage, and checklist rows use `read_civis_sql`, and
+  each page reads only the tables it shows (docs/PLAN.md 17.6). Inventory
+  and Findings show each custom script's template and backing script IDs,
+  link the backing script only when it is in the same scan (its stored
+  link; no URL pattern is guessed), and filter by template ID; the Overview
+  shows the next scan's window, the scripts left out, and the templates with
+  findings. `app/static/js/busy.js` shows "Working. This can take up to a
+  minute." for slow actions, and `app/static/js/run-scan.js` starts a scan
+  from the Overview without a reload (`POST /scan/start` answers JSON when
+  asked) and polls the status API only while a run is starting or active. `app/job_settings.py` parses the
   job's parameters, `app/setup.py` gathers and evaluates the Setup checks,
   `app/summary.py` builds the test summary, and `common/release.py` holds
   what the README sets (pinned images read from the requirements files).
@@ -224,6 +244,24 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   `scan_log.FATAL_STEPS`), then appends a final "failed" `scan_runs` row if
   the "running" row was written and the tables are usable, and raises
   `ScanFailed`. `SchemaNotDedicated` still writes nothing.
+- **Inventory order and the window (docs/PLAN.md 17.6).** `build_inventory`
+  lists every type first (all pages; no early stop, because `updated_at` does
+  not change on a run), then chooses rows: a Python, container, or dbt row
+  with `from_template_id` whose ID the custom list also returned is a
+  template copy (skipped, counted once as a custom script), then the list-row
+  not-Python checks, then the window: a Python, container, custom, or dbt
+  script is kept when its last run time (finished, else started, else
+  created) or `updated_at` is within `LOOKBACK_DAYS` of the scan's start (a
+  resume uses its first start); notebooks, Services, and workflows are always
+  kept. Then the detail calls. `LOOKBACK_DAYS` defaults to 400
+  (`common/release.DEFAULT_LOOKBACK_DAYS`, range 1 to 3650) and still decides
+  whose run log is read. One object ID is one inventory item. Coverage gets
+  `outside_window` and `template_copies` rows per type (`found_count`, no
+  column change). One `INVENTORY type=... listed= kept= outside_window=
+  template_copies= not_python=` line per listed type, then `PROGRESS
+  phase=inventory` every 50 objects or 30 seconds during the detail calls;
+  the FATAL step for detail calls is `inventory_details`. Every script ID
+  listed is known to workflow references, so no `jobs.get` for it.
 - **Live test.** TESTING.md is the checklist for the first live test. Records
   are pass or fail and aggregate counts only.
 
@@ -356,7 +394,16 @@ Run the full suite on both Python versions before every commit:
 - `tests/test_app.py` covers every page and API, CSRF on every POST, escaping
   of hostile object names, security headers, the concurrent-run guard, the
   batched checklist save, the empty and error states, text contrast, and local
-  preview mode.
+  preview mode, and the templates display and filter.
+- `tests/test_read_counts.py` checks how many `civis.io` reads each page
+  sends, cold and warm, and the `query_civis` preview limit, fallback,
+  conversion, and request memo. The recording fake's `query_civis` answers a
+  SELECT like civis 2.7.1 (`result_columns` and text `result_rows`, zero rows
+  normal); its `reads` holds every read, `full_reads` and `small_reads` split
+  them, and `queries` holds writes only.
+- `tests/test_scripts_js.py` runs `busy.js` and `run-scan.js` under Node with
+  a stand-in page (skipped if Node is not installed) and checks the markup
+  and the JSON start.
 - `tests/test_deploy.py` checks `start_service.sh` (executable bit, LF endings,
   no installs), the Dockerfiles, `.dockerignore`, and `docker/check_image.py`.
   Two of its tests run only inside the test images.

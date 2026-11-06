@@ -217,6 +217,28 @@ You need:
    (`.../spa/#/scripts/containers/<ID>`).
 7. Share the job with Civis admins only. Do not schedule it.
 
+**Which scripts a scan checks (`LOOKBACK_DAYS`).** A scan lists every script
+the scanning user can see. It then checks only the Python, container, custom,
+and dbt scripts that ran or changed in the last `LOOKBACK_DAYS` days, and
+reads the most recent run log only for those. Notebooks, Services, and
+workflows are always checked: Civis's lists do not show when they were last
+used, and there are usually few of them. Scripts outside the window are
+counted on the Overview (for example "1,234 scripts that have not run or
+changed in the last 400 days were left out") but not checked.
+
+- **Default: 400 days.** A script that has not run or changed in that time is
+  very likely unused. 400 days, not 365, keeps jobs that run once a year, such
+  as year-end or fiscal-year jobs, even when a yearly run happens a few weeks
+  late.
+- **To change it,** add the `LOOKBACK_DAYS` parameter to the scanner job
+  (Integer, not required), set it to any whole number from 1 to 3650, and save
+  the job. Civis starts the job with its saved parameters, so **Run scan**
+  always uses the saved value; the app cannot pass a different window. The
+  Overview shows, next to **Run scan**, which window the next scan will use.
+- **A full audit.** Once before the February 2027 update, consider one scan
+  with `LOOKBACK_DAYS` set to `3650`. It checks every script, at the cost of a
+  much longer scan. Then set it back.
+
 **Who the job runs as.** The scan sees only what the user it runs as can see.
 Civis's help describes that user two ways: as the user who runs the script, and
 as the user who last updated it. Until this is confirmed, set things up so both
@@ -316,17 +338,36 @@ cancelled or hit the 5-day limit for container scripts):
 ### Run the first scan
 
 1. Open the app (**View Report** on the Service).
-2. On the Overview page, click **Run scan**. The button is off while a scan is
-   queued or running, so only one scan runs at a time.
+2. On the Overview page, click **Run scan**. The button changes to "Scan
+   running" and stays off until the scan ends, so only one scan runs at a
+   time.
 3. The Scan history page shows progress: Inventory, Code and log scan, and
-   Save results. Expect about 20 minutes for 500 objects and about 70 minutes
-   for 2,000 at the default request budget. You can close the app; the scan
-   keeps running.
+   Save results. How long a scan takes depends mostly on how many scripts ran
+   or changed in the `LOOKBACK_DAYS` window, not on how many exist. Listing
+   every script takes a few minutes on its own. For example, in a test
+   organization with about 11,000 scripts, of which about 420 ran or changed
+   in the last year, a scan was estimated at about 20 minutes with the
+   default request budget. A full audit (`LOOKBACK_DAYS` of 3650) of an
+   organization that size can take several hours. You can close the app; the
+   scan keeps running.
 4. When the scan finishes, review the Overview, Inventory, and Findings pages.
    Change checklist statuses on the Findings page and click **Save changes**.
    Each change is saved with your Civis user name and the time.
 5. **Download CSV** saves the full report to your computer (see
    [Security and privacy](#security-and-privacy)).
+
+**Custom scripts and templates.** A custom script runs its template's code:
+it has no code of its own and takes every change made to the template's
+backing script. So a fix in the backing script fixes every custom script made
+from that template. Inventory and Findings show each custom script's template
+ID and backing script ID (the backing script is linked when the scan also
+checked it), and both pages can be filtered by template ID. The Overview says
+how many templates, used by how many custom scripts, have findings. Civis
+also lists each custom script under its backing script's type; the scan
+counts it once, as a custom script.
+
+**"Cookie expired" in Civis.** If the Service's page in Civis shows "Cookie
+expired", the message is Civis's own, not the app's. Reload the Civis page.
 
 ### The CSV report
 

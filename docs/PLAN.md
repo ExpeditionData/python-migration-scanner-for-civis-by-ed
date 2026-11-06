@@ -214,6 +214,8 @@ Each `read_civis_sql` and `query_civis` call starts a query run, and Civis limit
 
 **Conclusion:** at a safe share of the rate limit, expect about **20 minutes for 500 objects, 70 minutes for 2,000, and 5.5 hours for 10,000**.
 
+**Updated November 6, 2026 (17.6):** the count of active scripts sets the time, not the count of scripts. Inventory lists every script (a few minutes on its own: in the first live test the custom script list took 327 seconds for 112 pages, and the other lists about 1 second per page or less), then reads only the Python, container, custom, and dbt scripts that ran or changed in the `LOOKBACK_DAYS` window, plus every notebook, Service, and workflow. The estimates below now apply to those objects. For example, the live test's organization listed about 11,000 script rows (4,763 of them template copies of custom scripts), of which 291 (30 days), 376 (200 days), or 422 (365 days) ran or changed in the window, not counting template copies. The check script estimated a whole scan at about 17, 19, and 20 minutes for those windows at the default budget, against over 2 hours of inventory alone before this change.
+
 - **Default max concurrency: 4 worker threads**, plus a shared request budget of **500 requests per 5 minutes** (half the published limit).
 - **The rate limit, not concurrency, sets the speed.** More threads do not make a scan faster once the budget is in use.
 
@@ -949,3 +951,117 @@ Decision 11 said to skip hidden objects and count them in coverage. The count is
 | 17.5.9 | The FATAL line adds the HTTP status when the exception has an integer `status_code`, and the step from a fixed allow list (`scan_log.FATAL_STEPS`): `setup`, `schema_check`, `tables`, `scanning_user`, `inventory_users`, `inventory_list_<object type>` (Python, container, custom, and dbt scripts, notebooks, Services), `inventory_workflows`, `inventory_archived_jobs`, `code_and_logs`, `save_results`, `output`, and `retention`. For example, `FATAL error=CivisAPIError status=404 step=inventory_users`. `scan_log.fatal` rejects an unknown step. **Implementation choice:** `run_scan` tracks the step in a small object that `build_inventory` also updates through a callback, logs the FATAL line itself, and raises `ScanFailed`. `main` logs `step=setup` only for a failure before `run_scan` starts (creating the client or the sink). The test summary reports the step as `fatal_step`, from the same allow list. | Fix approved by Rob on November 5, 2026 |
 | 17.5.10 | When a scan stops with FATAL after its "running" `scan_runs` row was written, and the tables are usable, it appends a final row with status "failed" and `finished_at`, the same way a normal finish appends its row. Best effort: if that write fails, it logs `TABLE_WRITE_FAILED` and still exits 1. `SchemaNotDedicated` still writes nothing and keeps its own FATAL line, and a finished run ID (`AlreadyFinished`) is unchanged. | Fix approved by Rob on November 5, 2026 |
 | 17.5.11 | Tests (`tests/test_fatal.py`): the FATAL line with and without a status, unknown steps rejected, the failed row after a FATAL in the users list, a list call, and the code scan, a failed row that cannot be written, no failed row when the running row was not written, and no row when the schema check fails. | Fix approved by Rob on November 5, 2026 |
+
+### 17.6 Speed build (November 6, 2026)
+
+**Why.** Setup of `v0.1.0-rc5` passed, and scans moved to `v0.1.0-rc6`. Scan A got past the `v0.1.0-rc5` failure, but it was still in Inventory after about 1.5 hours and was cancelled. Found in the first live test on November 5 and 6, 2026; approved by Rob on November 6, 2026. Scans in the live test move to `v0.1.0-rc7`, with `LOOKBACK_DAYS` set to 30.
+
+#### What the live test showed
+
+Counts, timings, and HTTP statuses only.
+
+- A read-only check script, run in Civis as the scanning user (civis 2.10.0), read every row of the visible, non-archived lists the scanner reads, 50 per page, sorted by `updated_at` newest first, with no detail calls. Rows: Python scripts 426, container scripts 4,768, custom scripts 5,553, dbt scripts 9, notebooks 68, Services 24, workflows 165.
+- **Template copies.** 4,690 of the 4,768 container script rows and 73 of the 426 Python script rows have `from_template_id` set, and every one of those IDs is also in the custom script list. Rows with `is_template` true: 5 Python, 2 container. So each of those 4,763 custom scripts was inventoried twice, under two object types with the same object ID, and cost two detail calls.
+- Custom scripts by `backing_script_type`: container 5,425, python 73, sql 54, javascript 1.
+- **Scripts that ran or were updated in the window** (last run finished, started, or created time, or `updated_at`), not counting template copies: 30 days: Python 58, container 12, dbt 0, custom 221 (all Python-capable). 200 days: Python 83, container 18, dbt 1, custom 274 Python-capable. 365 days: Python 92, container 24, dbt 1, custom 305 Python-capable.
+- **`updated_at` does not change when a script runs.** Of the 220 custom scripts that ran in the last 30 days, 208 were last updated before that; of the 96 Python scripts that ran, 85. Every list came back in `updated_at` order.
+- **Timing.** The custom list took 327 seconds for 112 pages (slowest page 60.6 seconds). The other lists took about 1 second per page or less. Detail calls take 0.2 to 0.4 seconds. Inventory made about 11,800 calls at the default budget of 500 per 5 minutes (100 per minute), one at a time behind civis's lock: over 2 hours before the code and log scan started.
+- The check's own estimate with the changes below: about 17 minutes for a whole scan with a 30-day window, about 19 minutes with 200 days, and about 20 minutes with 365 days.
+- Civis's help says custom scripts have no code or configuration of their own and "automatically inherit all changes from the backing script", and each custom script has its own parameter values. So a fix in a template's backing script fixes every custom script made from that template.
+- Civis's start-run call (`POST /scripts/containers/{id}/runs`) takes only the job ID, so the app cannot pass a lookback window with Run scan.
+- In the live test, `civis.io.read_civis_sql` took 4 to 6 seconds per read (15 seconds for the first one) and `civis.io.query_civis` about 2 seconds.
+
+#### Part A: template copies
+
+| # | Change | Status |
+|---|---|---|
+| 17.6.1 | Inventory lists every type first, then chooses the rows to read. In the Python, container, and dbt script lists, a row with `from_template_id` set is a custom script: it is skipped there when the custom list returned the same ID, and counted as a template copy for that type (`CoverageCounts.template_copies`). A copy the custom list did not return is read under its own type, as before, so nothing is lost. | Approved by Rob on November 6, 2026 |
+| 17.6.2 | **One inventory item per object ID.** Places that assume it: `Inventory.by_id`, the checkpoints and resume (`finished_object_ids`), `objects` and `findings` rows and `_dedupe_findings`, checklist pairs (object ID and rule ID), workflow references (`references` by job ID), archived jobs run by workflows (`known`), and the web app (every page keys objects by ID). Tests check that the synthetic instance, which now has template copies, gives one item and one `objects` row per ID. | Approved by Rob on November 6, 2026 |
+| 17.6.3 | Every ID seen in a script list (read, outside the window, template copy, or not Python) is known, so a workflow reference to it never calls `jobs.get`. Archived jobs run by active workflows are found and read as before. **Implementation choice:** "known" is the four script lists' IDs plus every inventoried item's ID (as before), not the notebook, Service, and workflow list IDs, because `jobs.get` takes job IDs. | Approved by Rob on November 6, 2026; the implementation choice is for review |
+| 17.6.4 | Templates are read once per scan (one `TemplateCache`), shared with archived custom scripts run by workflows. | Implementation choice |
+| 17.6.5 | The synthetic instance has template copies in the Python, container, and dbt lists, one copy the custom list does not return (208), and one listed template backing script (108, `is_template` true, with a made-up `list_me` call), so the dry run and the preview show copies, a backing script link, and a template with findings. The preview's generated custom scripts are listed under their backing type too. | Implementation choice |
+
+#### Part B: `LOOKBACK_DAYS` in inventory
+
+| # | Change | Status |
+|---|---|---|
+| 17.6.6 | Order: list every type (all pages, as before), then choose rows (template copies, rows that cannot run Python on the list row, then the window), then make the detail calls. | Approved by Rob on November 6, 2026 |
+| 17.6.7 | A Python, container, custom, or dbt script is kept when its last run time (`last_run` `finished_at`, else `started_at`, else `created_at`, the order of `last_run_fields`) or its `updated_at` is at or after the cutoff: the scan's start minus `LOOKBACK_DAYS`. A row with neither time is outside the window. Others are counted as outside the window (`CoverageCounts.outside_window`) and get no detail call. The existing row checks still apply (custom scripts on SQL, R, or JavaScript templates, notebooks in other languages). | Approved by Rob on November 6, 2026 |
+| 17.6.8 | **Notebooks, Services, and workflows are always kept:** their list rows have no reliable last-use time, and they are few. | Approved by Rob on November 6, 2026 |
+| 17.6.9 | **No early stop on the sorted lists.** The lists come back newest `updated_at` first, but `updated_at` does not change when a script runs, so stopping at the window's edge would miss scripts that ran but were not edited (208 of the 220 custom scripts that ran in the last 30 days in the live test). Every page is read and every row checked. | Approved by Rob on November 6, 2026 |
+| 17.6.10 | The cutoff uses the scan's start; a resumed run uses its first start, as the runner already does for `scan_runs`. `LOOKBACK_DAYS` still also decides whose run log is read (measured from the scan's time, as before). | Approved by Rob on November 6, 2026 |
+| 17.6.11 | **Default changes from 200 to 400 days (decided by Rob),** so jobs that run once a year are kept even when a yearly run is a few weeks late. The range stays 1 to 3650. One source: `common/release.DEFAULT_LOOKBACK_DAYS` and `LOOKBACK_DAYS_RANGE`, used by `scanner/config.py` and the app. Changed in the scanner config, the app's fallback (Scan history's "Lookback window"), the local preview's made-up job, the README, this plan, and tests. The live test uses 30. | Decided by Rob on November 6, 2026 |
+| 17.6.12 | **Coverage, no column change.** Per object type, `outside_window` and `template_copies` rows (`row_kind` of 14 and 15 characters; the column is `VARCHAR(16)`) with the count in `found_count`, written only when above 0. The Overview's "By object type" table counts the objects in the window as Found, and one fixed sentence under it gives the number left out: "1,234 scripts that have not run or changed in the last 400 days were left out. To include them, raise LOOKBACK_DAYS on the scanner job." (the days from the scan's `scan_runs.parameters`). Template copies get no Overview text: they are counted once, as custom scripts. | Approved by Rob on November 6, 2026 |
+| 17.6.13 | **Next to Run scan,** the Overview says which window a scan will use: "A scan checks scripts that ran or changed in the last 400 days (LOOKBACK_DAYS on the scanner job)." The value is the job's saved `LOOKBACK_DAYS` (the argument, or a fixed value on the parameter), or 400 when it is not set, read with the job settings the app already reads (`JobSettings.lookback_days`). A saved value that is not a whole number from 1 to 3650 says the scan would stop before it starts. Nothing is said when the job could not be read or is not this tool's scanner job. | Approved by Rob on November 6, 2026 |
+| 17.6.14 | **Setup line 4** accepts `LOOKBACK_DAYS` as an optional Integer parameter: another type is a warning, and a value outside 1 to 3650 is a fail. | Approved by Rob on November 6, 2026 |
+| 17.6.15 | **Run scan cannot pass a window:** Civis's start-run call takes only the job ID. To change the window, change the job's `LOOKBACK_DAYS`. | Approved by Rob on November 6, 2026 |
+
+#### Part C: inventory counts and progress
+
+| # | Change | Status |
+|---|---|---|
+| 17.6.16 | One `INVENTORY` line per listed type through `scan_log`, counts only, after every list is read and before any detail call: `INVENTORY type=container_script listed=4768 kept=12 outside_window=66 template_copies=4690 not_python=0`. `listed` is every row the list returned, and the other four add up to it. `not_python` counts only rows the list row shows cannot run Python; detail calls can find more (dbt off the default image, Shiny Services), which stay in the coverage table's `not_python` rows. Workflows get a line too (all kept). | Approved by Rob on November 6, 2026 |
+| 17.6.17 | During the detail calls, `PROGRESS phase=inventory objects_done=N objects_total=M` every 50 objects or 30 seconds, at the start, and once at the end, where M is the number of kept rows, workflows included. The runner's one inventory PROGRESS line after the fact is removed. | Approved by Rob on November 6, 2026 |
+| 17.6.18 | The app keeps inventory progress (`Progress.inventory_done` and `inventory_total`). Scan history and the scan status API show "1. Inventory" with "N of M objects" while it runs, and the headline "Inventory: N of M objects read". When inventory is done, the step says how many objects were listed (the code scan's total). | Approved by Rob on November 6, 2026 |
+| 17.6.19 | New FATAL step `inventory_details` (the detail calls of the kept scripts, notebooks, and Services) in `scan_log.FATAL_STEPS` and the summary's allow list. `inventory_list_<type>` still names the list calls, and `inventory_workflows` the workflow list and the workflows' detail calls, as before. | Approved by Rob on November 6, 2026 |
+| 17.6.20 | The test summary reports, per type, the `INVENTORY` counts (`inventory:` lines, from an allow list; a line that does not match is `other: not_recognized`) and the scan's `lookback_days` from `scan_runs.parameters` (`not_recorded` when absent). `INVENTORY` lines no longer count as other log lines. | Approved by Rob on November 6, 2026 |
+
+The dry run of the synthetic instance logs:
+
+```
+INVENTORY type=python_script listed=11 kept=9 outside_window=1 template_copies=1 not_python=0
+INVENTORY type=container_script listed=10 kept=7 outside_window=1 template_copies=2 not_python=0
+INVENTORY type=custom_script listed=7 kept=5 outside_window=1 template_copies=0 not_python=1
+INVENTORY type=dbt_script listed=3 kept=2 outside_window=0 template_copies=1 not_python=0
+INVENTORY type=notebook listed=3 kept=2 outside_window=0 template_copies=0 not_python=1
+INVENTORY type=service listed=5 kept=5 outside_window=0 template_copies=0 not_python=0
+INVENTORY type=workflow listed=5 kept=5 outside_window=0 template_copies=0 not_python=0
+PROGRESS phase=inventory objects_done=0 objects_total=35
+PROGRESS phase=inventory objects_done=35 objects_total=35
+RUN run_id=run-... status=succeeded objects_total=31 objects_scanned=31 api_calls=87 github_tarball_requests=8 github_cache_peak_bytes=1026 github_cache_evictions=0 civis_git_reads=2 civis_git_failures=4
+```
+
+#### Part D: app page speed
+
+Reads per page, measured with the recording fakes (two completed scans), as `read_civis_sql` + `query_civis`, with a cold cache and then the same page again with a warm cache. `tests/test_read_counts.py` checks the "after" counts.
+
+| Page | Before: cold | Before: warm | After: cold | After: warm |
+|---|---|---|---|---|
+| Overview | 7 + 0 | 0 | 4 + 2 | 0 |
+| Inventory | 7 + 0 | 0 | 2 + 2 | 0 |
+| Findings | 7 + 0 | 0 | 3 + 2 | 0 |
+| Scan history | 7 + 0 | 0 | 4 + 2 | 0 |
+| Setup | 6 + 0 | 3 + 0 | 0 + 3 | 0 + 2 |
+| Test summary | 9 + 0 | 3 + 0 | 3 + 3 | 0 + 2 |
+| Scan status API | 3 + 0 | 0 | 0 + 2 | 0 |
+
+| # | Change | Status |
+|---|---|---|
+| 17.6.21 | Reads whose result is small by design use `civis.io.query_civis` with `preview_rows=1000` (the API's maximum, civis 2.7.1 spec) and take the rows from the query's own response (`result_columns`, `result_rows`): the catalog check, the dedicated-schema check, Setup line 9's row counts, and the `scan_runs` rows. A result that fills the 1,000-row limit is read again with `read_civis_sql`. The API returns preview values as text (or None), so values are converted by column type where it matters (`normalize_row`); a zero-row result is normal there. The objects, findings, coverage, and checklist rows, which can be large, keep `read_civis_sql`. The scanner's reads are unchanged. | Approved by Rob on November 6, 2026 |
+| 17.6.22 | **Repeated reads in one request.** The existence and dedicated-schema checks are one catalog read: the schema's own row from `pg_catalog.pg_namespace`, then `common/schema.schema_objects_sql` (the scanner's own tables-and-views check). A small read with the same SQL is sent once per request (a memo on Flask's `g`, cleared by any write), so the Overview's check and Setup line 9 share it. Inventory reads only objects and findings, and Findings also the checklist. The 5-minute job settings cache and the results cache are unchanged. | Approved by Rob on November 6, 2026 |
+| 17.6.23 | The SQL scope test and the civis 2.7.1 compatibility test pass with no new statement kinds (`preview_rows` is a `query_civis` argument in 2.7.1). The recording fake answers `query_civis` like civis 2.7.1 and keeps writes (`queries`) apart from reads (`reads`, `full_reads`, `small_reads`). | Approved by Rob on November 6, 2026 |
+| 17.6.24 | **Known limit, not changed:** Scan history reads objects and findings for each completed scan it lists (up to 10), cold once per worker. The results cache keeps 12 run tables, so with more than about 6 completed scans those reads repeat on later page loads. | For review |
+
+#### Part E: progress messages and the Run scan button
+
+| # | Change | Status |
+|---|---|---|
+| 17.6.25 | `app/static/js/busy.js` shows "Working. This can take up to a minute." in a status region at the top of every page as soon as a slow action starts: the "Set up results storage" form, the Setup link, Build test summary, the summary's Build summary form, and Back to Setup. Plain clicks only; it hides when the page comes back from the browser's history. | Approved by Rob on November 6, 2026 |
+| 17.6.26 | `app/static/js/run-scan.js` (the Overview only) sends Run scan with `fetch`. The button changes to "Scan running" without a reload; the page asks `/api/scan-status` every 15 seconds only while a run is starting or active, and changes the button back when it ends (off if the app says Run scan is off), with "The scan has ended. Reload this page to see its results." A run Civis does not list yet gets about 2 minutes. `POST /scan/start` answers JSON (notice key, fixed message, run ID) when the request asks for JSON, and redirects a form post as before; the CSRF and job checks are unchanged. While a run is active, the Overview keeps the form with a disabled "Scan running" button, so it can come back. | Approved by Rob on November 6, 2026 |
+| 17.6.27 | Both scripts are vendored, with no inline script and no change to the Content Security Policy. Without JavaScript, every action works as before. `tests/test_scripts_js.py` runs both scripts under Node with a stand-in page (skipped without Node). | Approved by Rob on November 6, 2026 |
+
+#### Part F: templates in the app
+
+| # | Change | Status |
+|---|---|---|
+| 17.6.28 | Inventory and Findings show each custom script's template ID and backing script ID, from the `objects` table's `template_id` and `backing_script_id` (no new columns). **The backing script is linked only when it is itself in the same scan**, with the link the scan stored for it (`common/urls.object_url`). The `objects` row stores the backing script's ID but not its type, and a Civis link needs the type, so otherwise both IDs are shown as text. No URL pattern is guessed. | Approved by Rob on November 6, 2026 |
+| 17.6.29 | Both pages filter by template ID like the other filters. A value that is not a template ID (digits, at most 18) matches nothing; the checklist save keeps the filter. | Approved by Rob on November 6, 2026 |
+| 17.6.30 | One fixed sentence where custom scripts with findings are shown: "Custom scripts run their template's code. Fixing the template's backing script fixes every custom script made from that template." | Approved by Rob on November 6, 2026 |
+| 17.6.31 | The Overview adds "N templates, used by M custom scripts, have findings." for the current scan, from its objects and findings rows, with a link to Findings. **Implementation choice:** shown when the scan has custom scripts made from a template, including when N is 0. | Approved by Rob on November 6, 2026; the implementation choice is for review |
+| 17.6.32 | The CSV report had no `template_id` column and gains no columns. | Approved by Rob on November 6, 2026 |
+
+#### Not changed
+
+- `REQUEST_BUDGET` stays 500 per 5 minutes.
+- Scanner resources (CPU, memory, disk) stay as they are until the live test measures peak memory (TESTING item 1.4).
+- The synthetic instance's times are fixed (2026). Tests pass a fixed scan time; a dry run on this machine uses today's date, so its window is measured from today.

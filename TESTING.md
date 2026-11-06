@@ -16,10 +16,20 @@ README setup and every fact that could not be confirmed from documentation
   `error=CivisAPIError status=403`) are fine to record; they hold no content.
 - If something you would need to record looks like client content, write
   "content withheld" and describe it in general terms instead.
-- **Release tag:** scans use `v0.1.0-rc6`. Setup (section 1) was done on
-  `v0.1.0-rc5` and passed, and it stays: before the first scan, move the
-  scanner job and the Service to `v0.1.0-rc6` by changing their tag only
-  (README "Update to a new release", steps 2 to 4). `v0.1.0-rc6` follows
+- **Release tag:** scans use `v0.1.0-rc7`, with `LOOKBACK_DAYS` set to `30`
+  on the scanner job. Setup (section 1) was done on `v0.1.0-rc5` and passed,
+  and it stays: before the next scan, move the scanner job and the Service to
+  `v0.1.0-rc7` by changing their tag only (README "Update to a new release",
+  steps 2 to 4), then add the optional `LOOKBACK_DAYS` parameter (Integer, not
+  required) to the scanner job, set its value to `30`, and save. The Overview
+  then says a scan checks scripts that ran or changed in the last 30 days.
+  `v0.1.0-rc7` follows `v0.1.0-rc6` because Scan A on `v0.1.0-rc6` was still
+  in Inventory after about 1.5 hours and was cancelled (docs/PLAN.md 17.6):
+  template copies are inventoried once, only scripts that ran or changed in
+  the `LOOKBACK_DAYS` window are read (default 400 days), inventory logs its
+  counts and progress, the app reads small results faster and shows progress
+  messages, and the app shows each custom script's template.
+  `v0.1.0-rc6` followed
   `v0.1.0-rc5` because of fixes from the first scan on `v0.1.0-rc5`
   (docs/PLAN.md 17.5): a scanning user who cannot list deactivated users,
   hidden objects no longer counted, shorter Civis API retries, and the step
@@ -28,9 +38,9 @@ README setup and every fact that could not be confirmed from documentation
   no rows, and the shape of the Civis sharing lists. `v0.1.0-rc4` followed
   `v0.1.0-rc3` because of two safety guards: Run scan starts only this tool's
   scanner job, and the tool refuses a results schema that holds anything
-  else. Use `v0.1.0-rc6` wherever the README says `<release tag>` from now on.
+  else. Use `v0.1.0-rc7` wherever the README says `<release tag>` from now on.
   Item 5.6 (update to a new release) waits for the first release tag after
-  `v0.1.0-rc6`.
+  `v0.1.0-rc7`.
 - **Browser:** Chrome, Edge, or Firefox. Safari ignores the report-only frame
   rule (item 2.1).
 
@@ -39,8 +49,9 @@ README setup and every fact that could not be confirmed from documentation
 1. Section 1 (setup) on `v0.1.0-rc5`, with no GitHub token attached to the
    scanner job. Done.
 2. Section 2 (frame rule), then the Setup page again (end of item 1.10).
-   Then move the scanner job and the Service to `v0.1.0-rc6` (tag only), and
-   check that the Setup page's lines 2 and 7 still pass.
+   Then move the scanner job and the Service to `v0.1.0-rc7` (tag only), add
+   `LOOKBACK_DAYS` with the value `30` to the scanner job, and check that the
+   Setup page's lines 2, 4, and 7 still pass.
 3. Section 3 (the first scan, with no GitHub token) and the first-scan part
    of item 4.8.
 4. Items 4.1 to 4.3, 4.6, 4.7, and 5.1.
@@ -51,7 +62,7 @@ README setup and every fact that could not be confirmed from documentation
    results.
 
 Item 5.6 is not part of this run. It waits for the first release tag after
-`v0.1.0-rc6`.
+`v0.1.0-rc7`.
 
 ## Prepare the test organization
 
@@ -244,7 +255,8 @@ finish the step the way the interface allows and record the difference.
 - **Steps:** On the Overview page, click **Run scan**. Then click it again, or
   reload and look at the button.
 - **Expected:** A run starts on the scanner job (its Run History shows it).
-  The button shows "Scan running" and a second scan cannot start.
+  The button changes to "Scan running" without a reload, and a second scan
+  cannot start.
 - **Record:** pass or fail; pass or fail for the second-scan guard.
 
 ### 3.2 The scan runs as the Robot user
@@ -261,9 +273,13 @@ finish the step the way the interface allows and record the difference.
 ### 3.3 Progress
 
 - **Steps:** Watch the Scan history page.
-- **Expected:** Inventory, then Code and log scan with a moving count, then
-  Save results. The page updates without reloading.
-- **Record:** pass or fail.
+- **Expected:** Inventory with a moving count ("1. Inventory" shows "N of M
+  objects" while it reads the scripts in the window, after a few minutes of
+  listing), then Code and log scan with a moving count, then Save results.
+  The page updates without reloading. On the Overview, the Run scan button
+  comes back when the scan ends.
+- **Record:** pass or fail for each: the inventory count moved, the code scan
+  count moved, the Overview button came back.
 
 ### 3.4 Scan results
 
@@ -272,10 +288,13 @@ finish the step the way the interface allows and record the difference.
   counts below, so you do not need to copy them from the run log. Then read
   the counts on the Overview page.
 - **Expected:** Status `succeeded`; Overview counts match the summary.
-- **Record:** status; minutes from start to finish; `objects_total`,
-  `objects_scanned`, `api_calls`, `civis_git_reads`, `civis_git_failures`;
-  objects scanned, partly scanned, and not scanned; affected and advisory
-  counts; total findings.
+- **Record:** status; minutes from start to finish; `lookback_days`;
+  `objects_total`, `objects_scanned`, `api_calls`, `civis_git_reads`,
+  `civis_git_failures`; the summary's `inventory` lines (listed, kept,
+  outside_window, template_copies, and not_python per type); objects scanned,
+  partly scanned, and not scanned; affected and advisory counts; total
+  findings; the Overview's "templates, used by custom scripts, have findings"
+  line.
 
 ### 3.5 Calls per object (PLAN.md section 5)
 
@@ -298,7 +317,8 @@ finish the step the way the interface allows and record the difference.
 - **Steps:** The test summary's `log_errors` and `log_other_lines` lines count
   these for you. Scanner lines start with `RUN`, `PHASE`, `PROGRESS`,
   `CHECKPOINT`, `FINDINGS`, `OBJECT_ERROR`, `CIVIS_GIT_FAILED`,
-  `PARSE_ERROR`, `TABLE_WRITE_FAILED`, `OUTPUT_FAILED`, `FATAL`, or `USERS`.
+  `PARSE_ERROR`, `TABLE_WRITE_FAILED`, `OUTPUT_FAILED`, `FATAL`, `USERS`, or
+  `INVENTORY`.
   If `log_other_lines` is not 0, scan the run log without copying it to see
   what kind of lines they are. The summary's `users_list` line says which user
   list the scan used (`all`, or `active` or `none` with an HTTP status), and
@@ -525,12 +545,12 @@ finish the step the way the interface allows and record the difference.
 
 ### 5.6 Update to a new release, and removal
 
-This item waits for the first release tag after `v0.1.0-rc6`. It is not part
+This item waits for the first release tag after `v0.1.0-rc7`. It is not part
 of this run.
 
 - **Steps:**
   1. Follow README "Update to a new release" to move both objects from
-     `v0.1.0-rc6` to the new tag. Its last step ("Run a new scan") is a new
+     `v0.1.0-rc7` to the new tag. Its last step ("Run a new scan") is a new
      scan from the app.
   2. Optional, at the end of that test: follow README "Remove the tool".
 - **Expected:** Each step works as written. After the update, the Service
@@ -561,7 +581,7 @@ item 5.7 pasted below it. Counts and redacted error types only.
 
 ```
 Python Migration Scanner: first live test results
-Release tag: v0.1.0-rc5 (setup), v0.1.0-rc6 (scans)
+Release tag: v0.1.0-rc5 (setup), v0.1.0-rc7 (scans, LOOKBACK_DAYS 30)
 Date (MM/DD/YYYY):
 Browser:
 
@@ -589,10 +609,12 @@ Item  Result (pass/fail/skipped)  Counts or note
 2.3   seen/not seen
 3.1   guard:
 3.2   Scan history shows Robot user: yes/no   job run started by Robot user: yes/no
-3.3
-3.4   status=  minutes=  objects_total=  objects_scanned=  api_calls=
+3.3   inventory count moved:  code scan count moved:  Overview button came back:
+3.4   status=  minutes=  lookback_days=  objects_total=  objects_scanned=  api_calls=
       civis_git_reads=  civis_git_failures=
+      inventory (from the summary, per type): listed=  kept=  outside_window=  template_copies=  not_python=
       scanned=  partly scanned=  not scanned=  affected=  advisory=  findings=
+      templates with findings=  custom scripts using them=
 3.5   calls per object=  minutes per 100 objects=  github_tarball_requests=  github_cache_evictions=
 3.6   other lines=   kind (general terms):   error types: (line type, error type, and count)
 3.7   seconds: overview=  inventory=  findings=  slowest=   any failed or timed out: yes/no
@@ -617,7 +639,7 @@ Item  Result (pass/fail/skipped)  Counts or note
       step 3 edit by Robot user: yes/no   resumed run shows Robot user: yes/no
       step 4 edit by Robot user: yes/no   next run shows Robot user: yes/no
 5.5   minutes to wake=
-5.6   waits for the first tag after v0.1.0-rc6
+5.6   waits for the first tag after v0.1.0-rc7
 5.7   built:  copied (button/by hand):  sent:  looked like a name: yes/no
 
 Error types seen (from the scanner's log only), with counts:
