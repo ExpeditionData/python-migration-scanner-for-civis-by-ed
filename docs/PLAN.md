@@ -1023,7 +1023,7 @@ RUN run_id=run-... status=succeeded objects_total=31 objects_scanned=31 api_call
 
 #### Part D: app page speed
 
-Reads per page, measured with the recording fakes (two completed scans), as `read_civis_sql` + `query_civis`, with a cold cache and then the same page again with a warm cache. `tests/test_read_counts.py` checks the "after" counts.
+Reads per page, measured with the recording fakes (two completed scans), as `read_civis_sql` + `query_civis`, with a cold cache and then the same page again with a warm cache. `tests/test_read_counts.py` checks the "after" counts. The counts are the same with 100 preview rows as with 1,000 (17.6.33): two scans are four `scan_runs` rows, well under either limit.
 
 | Page | Before: cold | Before: warm | After: cold | After: warm |
 |---|---|---|---|---|
@@ -1037,7 +1037,7 @@ Reads per page, measured with the recording fakes (two completed scans), as `rea
 
 | # | Change | Status |
 |---|---|---|
-| 17.6.21 | Reads whose result is small by design use `civis.io.query_civis` with `preview_rows=1000` (the API's maximum, civis 2.7.1 spec) and take the rows from the query's own response (`result_columns`, `result_rows`): the catalog check, the dedicated-schema check, Setup line 9's row counts, and the `scan_runs` rows. A result that fills the 1,000-row limit is read again with `read_civis_sql`. The API returns preview values as text (or None), so values are converted by column type where it matters (`normalize_row`); a zero-row result is normal there. The objects, findings, coverage, and checklist rows, which can be large, keep `read_civis_sql`. The scanner's reads are unchanged. | Approved by Rob on November 6, 2026 |
+| 17.6.21 | Reads whose result is small by design use `civis.io.query_civis` with `preview_rows=100` (changed from 1,000 in review, 17.6.33) and take the rows from the query's own response (`result_columns`, `result_rows`): the catalog check, the dedicated-schema check, Setup line 9's row counts, and the `scan_runs` rows. A result with 100 preview rows or more may be cut, so it is read again with `read_civis_sql`. `scan_runs` holds two rows per scan, so its read falls back to `read_civis_sql` after 50 scans, which is expected. The API returns preview values as text (or None), so values are converted by column type where it matters (`normalize_row`); a zero-row result is normal there. The objects, findings, coverage, and checklist rows, which can be large, keep `read_civis_sql`. The scanner's reads are unchanged. | Approved by Rob on November 6, 2026 |
 | 17.6.22 | **Repeated reads in one request.** The existence and dedicated-schema checks are one catalog read: the schema's own row from `pg_catalog.pg_namespace`, then `common/schema.schema_objects_sql` (the scanner's own tables-and-views check). A small read with the same SQL is sent once per request (a memo on Flask's `g`, cleared by any write), so the Overview's check and Setup line 9 share it. Inventory reads only objects and findings, and Findings also the checklist. The 5-minute job settings cache and the results cache are unchanged. | Approved by Rob on November 6, 2026 |
 | 17.6.23 | The SQL scope test and the civis 2.7.1 compatibility test pass with no new statement kinds (`preview_rows` is a `query_civis` argument in 2.7.1). The recording fake answers `query_civis` like civis 2.7.1 and keeps writes (`queries`) apart from reads (`reads`, `full_reads`, `small_reads`). | Approved by Rob on November 6, 2026 |
 | 17.6.24 | **Known limit, not changed:** Scan history reads objects and findings for each completed scan it lists (up to 10), cold once per worker. The results cache keeps 12 run tables, so with more than about 6 completed scans those reads repeat on later page loads. | For review |
@@ -1059,6 +1059,12 @@ Reads per page, measured with the recording fakes (two completed scans), as `rea
 | 17.6.30 | One fixed sentence where custom scripts with findings are shown: "Custom scripts run their template's code. Fixing the template's backing script fixes every custom script made from that template." | Approved by Rob on November 6, 2026 |
 | 17.6.31 | The Overview adds "N templates, used by M custom scripts, have findings." for the current scan, from its objects and findings rows, with a link to Findings. **Implementation choice:** shown when the scan has custom scripts made from a template, including when N is 0. | Approved by Rob on November 6, 2026; the implementation choice is for review |
 | 17.6.32 | The CSV report had no `template_id` column and gains no columns. | Approved by Rob on November 6, 2026 |
+
+#### Review changes (November 6, 2026)
+
+| # | Change | Status |
+|---|---|---|
+| 17.6.33 | **Preview rows: ask for 100, fall back at 100** (changes 17.6.21). `PREVIEW_ROWS` in `app/backends/civis_backend.py` is 100, not 1,000. The civis 2.10 API spec gives 1,000 as the maximum, but civis 2.7.1's own `query_civis` docstring says "No more than 100 rows can be returned at once", and the first live test never asked for more than 10. If the Queries API refused 1,000, every page would fail; if it silently kept only 100, a larger result would be cut with no fallback. Asking for 100 is safe either way. A result with 100 rows or more is read again with `read_civis_sql`; `scan_runs` (two rows per scan) does so after 50 scans. The request memo, `normalize_row`, and zero rows being normal are unchanged, and so is the reads-per-page table. | Approved by Rob on November 6, 2026 |
 
 #### Not changed
 

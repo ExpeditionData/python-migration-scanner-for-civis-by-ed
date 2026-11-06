@@ -3,12 +3,17 @@
 Reads whose result is small by design (the catalog check of the schema and
 its tables, Setup line 9's row counts, and the scan_runs rows) use
 ``civis.io.query_civis`` and take the result from the query's preview rows,
-up to 1,000 (the API's maximum). It returns the rows in the query's own
-response, so no export file is written and read: in the first live test it
-took about 2 seconds a read, against 4 to 6 seconds for ``read_civis_sql``.
-The API returns preview values as text, so values are converted by column
-type (``normalize_row``) where it matters. A result that fills the 1,000-row
-limit is read again with ``read_civis_sql``. A zero-row result is normal
+asking for 100. The civis 2.10 API spec gives 1,000 as the maximum, but civis
+2.7.1's own ``query_civis`` docstring says "No more than 100 rows can be
+returned at once", and the first live test never asked for more than 10, so
+100 is safe either way. It returns the rows in the query's own response, so
+no export file is written and read: in the first live test it took about 2
+seconds a read, against 4 to 6 seconds for ``read_civis_sql``. The API
+returns preview values as text, so values are converted by column type
+(``normalize_row``) where it matters. A result with 100 or more preview rows
+may be cut, so it is read again with ``read_civis_sql``. ``scan_runs`` holds
+two rows per scan, so after 50 scans its read falls back to
+``read_civis_sql`` every time; that is expected. A zero-row result is normal
 there. The objects, findings, coverage, and checklist rows, which can be
 large, use ``read_civis_sql`` (docs/PLAN.md 17.6, Part D).
 
@@ -51,7 +56,9 @@ from app.job_settings import JobSettings, parse_job, unreadable
 
 TABLE_NAMES = frozenset(t.name for t in TABLES)
 MAX_SERVICES = 1000  # The Setup page looks at no more Services than this.
-PREVIEW_ROWS = 1000  # The most preview rows the Queries API keeps (civis 2.7.1 API spec: "maximum: 1000").
+# Preview rows asked for. civis 2.7.1's query_civis docstring: "No more than 100 rows can be returned at once".
+# A result with this many rows or more is read again with read_civis_sql (scan_runs: after 50 scans).
+PREVIEW_ROWS = 100
 
 
 def _get(obj: Any, key: str, default: Any = None) -> Any:
@@ -96,7 +103,7 @@ class CivisResults:
 
     def _small(self, statement: str) -> list[dict]:
         """Rows of a read whose result is small by design, from query_civis's preview rows (values as text, or
-        None). A result that fills the preview limit may be cut, so it is read again with read_civis_sql. The same
+        None). A result with PREVIEW_ROWS rows or more may be cut, so it is read again with read_civis_sql. The same
         SQL is sent once per request (``memo``)."""
         key = (self.database, self.credential_id, statement)
         if key in self.memo:

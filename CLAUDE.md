@@ -180,9 +180,9 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   `CivisJobs`, `CivisSetup`), `local_backend.py` (dry-run preview files and
   a made-up job and Service), `cache.py`. Reads that are small by design
   (one catalog read for the existence and dedicated-schema checks, Setup line
-  9's counts, and `scan_runs`) use `query_civis` with 1,000 preview rows
+  9's counts, and `scan_runs`) use `query_civis` with 100 preview rows
   (text values, converted by column type; `read_civis_sql` when a result
-  fills the limit) and a per-request memo on `g`, cleared by any write; the
+  has 100 rows or more, so `scan_runs` after 50 scans) and a per-request memo on `g`, cleared by any write; the
   objects, findings, coverage, and checklist rows use `read_civis_sql`, and
   each page reads only the tables it shows (docs/PLAN.md 17.6). Inventory
   and Findings show each custom script's template and backing script IDs,

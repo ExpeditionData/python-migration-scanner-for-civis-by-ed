@@ -100,13 +100,13 @@ def test_no_small_read_is_sent_twice_in_one_request(monkeypatch):
         assert len(sent) == len(set(sent)), page
 
 
-def test_small_reads_ask_for_the_most_preview_rows():
+def test_small_reads_ask_for_100_preview_rows():
     io = _io()
     store = CivisResults(object(), io, 31, SCHEMA, 41)
     store.check()
     store.scan_runs()
     store.storage_facts()
-    assert io.preview_rows and set(io.preview_rows) == {PREVIEW_ROWS} == {1000}
+    assert io.preview_rows and set(io.preview_rows) == {PREVIEW_ROWS} == {100}
     assert not io.full_reads
 
 
@@ -124,6 +124,17 @@ def test_a_result_that_fills_the_preview_limit_is_read_again_in_full():
     rows = CivisResults(object(), io, 31, SCHEMA, 41).scan_runs()
     assert len(rows) == PREVIEW_ROWS + 5
     assert io.small_reads == io.full_reads == [f"SELECT * FROM {SCHEMA}.scan_runs"]
+
+
+@pytest.mark.parametrize(("scans", "read_again"), [(49, False), (50, True)])
+def test_scan_runs_falls_back_to_read_civis_sql_at_50_scans(scans, read_again):
+    """scan_runs holds two rows per scan (running, then the final row), so 50 scans fill the 100 preview rows."""
+    rows = [["run_id", "status"]]
+    for i in range(scans):
+        rows += [[f"run-{i}", "running"], [f"run-{i}", "succeeded"]]
+    io = RecordingIO({f"{SCHEMA}.scan_runs": rows})
+    assert len(CivisResults(object(), io, 31, SCHEMA, 41).scan_runs()) == 2 * scans
+    assert io.full_reads == ([f"SELECT * FROM {SCHEMA}.scan_runs"] if read_again else [])
 
 
 def test_a_small_read_with_zero_rows_is_normal():
