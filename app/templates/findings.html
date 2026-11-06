@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import empty_block, object_link, pager, csrf_field, impact_badge, local_time %}
+{% from "macros.html" import empty_block, object_link, pager, csrf_field, impact_badge, local_time, template_line %}
 {% block title %}Findings and checklist{% endblock %}
 {% block scripts %}<script src="{{ url_for('static', filename='js/findings.js') }}" defer></script>{% endblock %}
 {% block content %}
@@ -66,11 +66,15 @@
       {% for owner in owners %}<option value="{{ owner }}"{% if filters.owner == owner %} selected{% endif %}>{{ owner }}</option>{% endfor %}
     </select>
   </label>
+  <label class="field">Template ID
+    <input type="text" name="template" value="{{ filters.template or '' }}" inputmode="numeric" autocomplete="off">
+  </label>
   <div class="actions">
     <button type="submit" class="button button-secondary">Apply filters</button>
     {% if filters %}<a href="{{ url_for('pages.findings') }}">Clear filters</a>{% endif %}
   </div>
 </form>
+{% if template_sentence %}<p class="note">{{ template_sentence }}</p>{% endif %}
 
 <form id="checklist-form" method="post" action="{{ url_for('pages.save_findings') }}">
   {{ csrf_field() }}
@@ -88,6 +92,7 @@
             <td>
               {{ object_link({"name": row.object_name, "url": row.object_url}) }}
               <div class="cell-sub">{{ row.type }}, owner {{ row.owner }}</div>
+              {{ template_line(row.template) }}
               {% if row.workflows %}<div class="cell-sub">Run by: {{ row.workflows | join(", ") }}</div>{% endif %}
             </td>
             <td><div class="mono small">{{ row.rule_id }}</div><div>{{ row.title }}</div></td>

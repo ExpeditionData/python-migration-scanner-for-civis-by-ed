@@ -74,6 +74,7 @@
       {% if stats.hidden_skipped %}Hidden objects skipped: {{ stats.hidden_skipped | number }}.{% endif %}
     </p>
     {% endif %}
+    {% if stats.templates_text %}<p class="note">{{ stats.templates_text }} <a href="{{ url_for('pages.findings', status='all') }}">See findings</a></p>{% endif %}
     {% if stats.outside_window_text %}<p class="note">{{ stats.outside_window_text }}</p>{% endif %}
     <p class="note">Hidden objects (workflow-created copies and Civis's own query and import jobs) are not scanned or counted.</p>
     {% if stats.users_note %}

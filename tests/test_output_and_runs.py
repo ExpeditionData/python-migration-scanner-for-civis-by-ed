@@ -282,11 +282,11 @@ def test_checkpoints_every_n_objects_or_n_seconds():
 
 def test_dry_run_end_to_end(tmp_path, log_stream):
     result = dry_run(tmp_path, now=NOW)
-    assert result.status == "succeeded" and result.report_saved and result.objects == 30
+    assert result.status == "succeeded" and result.report_saved and result.objects == 31
     conn = db(tmp_path)
     assert count(conn, "scan_runs") == 2
     assert [r[0] for r in conn.execute("SELECT status FROM scan_runs ORDER BY rowid")] == ["running", "succeeded"]
-    assert count(conn, "objects") == 30
+    assert count(conn, "objects") == 31
     assert count(conn, "findings") == result.findings > 0
     assert count(conn, "coverage", "row_kind = 'summary'") == len(ObjectType)
     assert count(conn, "coverage", "row_kind = 'not_python'") == 5
@@ -296,9 +296,9 @@ def test_dry_run_end_to_end(tmp_path, log_stream):
     assert "synthetic-github-token" not in params
 
     logged = log_stream.getvalue()
-    assert "PROGRESS phase=code objects_done=30 objects_total=30" in logged
+    assert "PROGRESS phase=code objects_done=31 objects_total=31" in logged
     assert re.search(r"RUN run_id=run-\d{8}T\d{6}Z-[0-9a-f]{6} status=succeeded", logged)
-    assert f" objects_total=30 objects_scanned=30 api_calls={result.api_calls} " in logged.splitlines()[-1]
+    assert f" objects_total=31 objects_scanned=31 api_calls={result.api_calls} " in logged.splitlines()[-1]
 
     report = next(tmp_path.glob("*.csv")).read_bytes()
     database = (tmp_path / "results.sqlite").read_bytes()
@@ -388,7 +388,7 @@ def test_final_log_line_counts_every_civis_api_call(tmp_path, log_stream, monkey
     assert (reads, failures) == (2, 4)  # Read: 109 and 605. Failed: 110, 111, 112, and 606.
     final = logged.splitlines()[-1]
     counts = re.fullmatch(
-        rf"RUN run_id={result.run_id} status=succeeded objects_total=30 objects_scanned=30 api_calls={sent} "
+        rf"RUN run_id={result.run_id} status=succeeded objects_total=31 objects_scanned=31 api_calls={sent} "
         rf"github_tarball_requests={tarballs} github_cache_peak_bytes=(\d+) github_cache_evictions=0 "
         rf"civis_git_reads={reads} civis_git_failures={failures}",
         final,
@@ -438,8 +438,8 @@ def test_resumed_run_counts_only_its_own_calls_and_objects(tmp_path, log_stream)
     result = dry_run(tmp_path, now=NOW, run_id=run_id)
     final = log_stream.getvalue().splitlines()[-1]
     scanned = int(re.search(r"objects_scanned=(\d+)", final).group(1))
-    assert final.startswith(f"RUN run_id={run_id} status=succeeded objects_total=30 ")
-    assert 0 < scanned < 30 and f" api_calls={result.api_calls} " in final
+    assert final.startswith(f"RUN run_id={run_id} status=succeeded objects_total=31 ")
+    assert 0 < scanned < 31 and f" api_calls={result.api_calls} " in final
 
 
 def test_rescan_adds_only_new_open_checklist_rows(tmp_path):
@@ -468,8 +468,8 @@ def test_stop_partway_then_resume(tmp_path):
     resumed = dry_run(tmp_path, now=NOW, run_id=run_id, checkpoint_objects=5)
     assert resumed.status == "succeeded" and resumed.skipped_as_done == 10
     conn = db(tmp_path)
-    assert count(conn, "objects") == 30
-    assert count(conn, "(SELECT DISTINCT object_id FROM objects)") == 30  # No object written twice.
+    assert count(conn, "objects") == 31
+    assert count(conn, "(SELECT DISTINCT object_id FROM objects)") == 31  # No object written twice.
 
     full = tmp_path / "full"
     complete = dry_run(full, now=NOW)
@@ -478,7 +478,7 @@ def test_stop_partway_then_resume(tmp_path):
     assert conn.execute(finding_set).fetchall() == reference.execute(finding_set).fetchall()
     assert resumed.findings == complete.findings
     report = next(tmp_path.glob("*.csv")).read_text(encoding="utf-8-sig")
-    assert len({row["object_id"] for row in report_rows(report)}) == 30
+    assert len({row["object_id"] for row in report_rows(report)}) == 31
 
     with pytest.raises(AlreadyFinished):
         dry_run(tmp_path, now=NOW, run_id=run_id)
@@ -496,7 +496,7 @@ def test_table_failure_still_saves_the_csv(tmp_path, monkeypatch, log_stream):
     assert result.status == "tables_failed" and result.report_saved and not result.tables_ok
     assert "TABLE_WRITE_FAILED table=findings" in log_stream.getvalue()
     report = next(tmp_path.glob("*.csv")).read_text(encoding="utf-8-sig")
-    assert len({row["object_id"] for row in report_rows(report)}) == 30
+    assert len({row["object_id"] for row in report_rows(report)}) == 31
 
 
 def test_retention_deletes_old_runs_but_not_the_current_one(tmp_path):

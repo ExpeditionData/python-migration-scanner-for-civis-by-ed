@@ -42,8 +42,8 @@ START_MESSAGES = {
                            "progress."),
 }
 FILTER_KEYS = {
-    "inventory": ("q", "type", "image", "status"),
-    "findings": ("impact", "ruleset", "confidence", "status", "owner"),
+    "inventory": ("q", "type", "image", "status", "template"),
+    "findings": ("impact", "ruleset", "confidence", "status", "owner", "template"),
 }
 
 
@@ -409,6 +409,7 @@ def inventory():
     return render_template(
         "inventory.html", **base_context("inventory", situation), page=page, filters=filters, types=types,
         total_objects=len(objects), empty=empty_state(situation), current=situation.current,
+        template_sentence=views.TEMPLATE_SENTENCE if any(r["custom"] and r["findings"] for r in page.rows) else None,
     )
 
 
@@ -424,6 +425,7 @@ def findings():
     return render_template(
         "findings.html", **base_context("findings", situation), page=page, filters=filters,
         owners=views.owners(objects, finding_rows), empty=empty_state(situation), current=situation.current,
+        template_sentence=views.TEMPLATE_SENTENCE if any(r["custom"] for r in page.rows) else None,
         saved=int(saved) if saved.isdigit() else None,
         error={"viewer": "Saving needs a signed-in Civis user. Open the app through Civis Platform and try again.",
                "invalid": "The form contained a value that is not allowed. Reload the page and try again.",

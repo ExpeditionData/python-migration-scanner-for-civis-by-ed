@@ -82,6 +82,15 @@
 </div>
 {%- endmacro %}
 
+{% macro template_line(info) -%}
+{#- A custom script's template and backing script (docs/PLAN.md 17.6). The backing script is linked only when the
+    scan stored its link; the IDs are numbers from the objects table. -#}
+{%- if info -%}
+<div class="cell-sub">Template {{ info.template_id if info.template_id is not none else "not known" }}, backing script
+{%- if info.backing_id is not none %} {% if info.backing_url %}<a href="{{ info.backing_url | safe_href }}" target="_blank" rel="noopener noreferrer">{{ info.backing_id }}<span class="sr-only"> (opens Civis in a new tab)</span></a>{% else %}{{ info.backing_id }}{% endif %}{% else %} not known{% endif %}</div>
+{%- endif -%}
+{%- endmacro %}
+
 {% macro impact_badge(impact) -%}
 {% if impact == "affected" %}<span class="badge badge-affected">Affected</span>
 {% elif impact == "advisory" %}<span class="badge badge-advisory">Advisory</span>

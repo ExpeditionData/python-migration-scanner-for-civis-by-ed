@@ -331,6 +331,7 @@ def overview(objects: list[dict], findings: list[dict], coverage: list[dict], ch
         "left_out": left_out,
         "hidden_skipped": hidden,
         "outside_window": outside_window,
+        "templates_text": template_findings_text(objects, findings),
         "users_note": users_note,
         "checklist": {
             "total": total_pairs, "objects": len({p[0] for p in pairs}),
@@ -488,6 +489,54 @@ def owner_text(name: str | None, active: bool | None) -> str:
     return f"{text} (deactivated)" if active is False else text
 
 
+# ---------------------------------------------------------------------------
+# Templates (docs/PLAN.md 17.6, Part F)
+# ---------------------------------------------------------------------------
+
+TEMPLATE_SENTENCE = ("Custom scripts run their template's code. Fixing the template's backing script fixes every custom "
+                     "script made from that template.")
+# A backing script is one of these types (common/urls.py builds their links).
+BACKING_TYPES = ("python_script", "container_script", "dbt_script")
+
+
+def template_info(obj: dict, by_id: dict[int, dict]) -> dict | None:
+    """A custom script's template ID and backing script ID, and a link to the backing script, where the fix is
+    made. The objects row stores the backing script's ID but not its type, and a Civis link needs the type, so the
+    link is the backing script's own stored link, used only when that script is in the same scan. Otherwise the
+    IDs are shown as text; no link pattern is guessed."""
+    if obj.get("object_type") != "custom_script":
+        return None
+    template_id, backing_id = obj.get("template_id"), obj.get("backing_script_id")
+    if template_id is None and backing_id is None:
+        return None
+    backing = by_id.get(backing_id) if backing_id is not None else None
+    url = backing.get("url") if backing and backing.get("object_type") in BACKING_TYPES else None
+    return {"template_id": template_id, "backing_id": backing_id, "backing_url": url or None}
+
+
+def template_filter(value: str | None) -> int | None | bool:
+    """The template filter: an integer, None when not set, or False when the value is not a template ID (then
+    nothing matches)."""
+    text = (value or "").strip()
+    if not text:
+        return None
+    return int(text) if text.isdigit() and len(text) <= 18 else False
+
+
+def template_findings_text(objects: list[dict], findings: list[dict]) -> str | None:
+    """The Overview's line: how many templates, used by how many custom scripts, have findings. Shown when the
+    scan has custom scripts made from a template."""
+    custom = {o["object_id"]: o.get("template_id") for o in objects
+              if o.get("object_type") == "custom_script" and o.get("template_id") is not None}
+    if not custom:
+        return None
+    with_findings = {f["object_id"] for f in findings} & set(custom)
+    templates = {custom[object_id] for object_id in with_findings}
+    n, m = len(templates), len(with_findings)
+    return (f"{n:,} template{'' if n == 1 else 's'}, used by {m:,} custom script{'' if m == 1 else 's'}, "
+            f"{'has' if n == 1 else 'have'} findings.")
+
+
 @dataclass
 class Page:
     rows: list
@@ -513,6 +562,8 @@ def paginate(rows: list, page: int) -> Page:
 def inventory(objects: list[dict], findings: list[dict], filters: dict) -> list[dict]:
     counts = Counter(f["object_id"] for f in findings)
     query = (filters.get("q") or "").strip().lower()
+    by_id = {o["object_id"]: o for o in objects}
+    template = template_filter(filters.get("template"))
     rows = []
     for obj in objects:
         default = obj.get("uses_default_image")
@@ -527,8 +578,12 @@ def inventory(objects: list[dict], findings: list[dict], filters: dict) -> list[
             continue
         if filters.get("status") and status != filters["status"]:
             continue
+        if template is not None and obj.get("template_id") != template:
+            continue
         rows.append({
             "object_id": obj["object_id"],
+            "custom": obj.get("object_type") == "custom_script",
+            "template": template_info(obj, by_id),
             "name": obj.get("name") or f"Object {obj['object_id']}",
             "url": obj.get("url"),
             "type": TYPE_LABELS.get(obj.get("object_type"), obj.get("object_type")),
@@ -558,6 +613,7 @@ _LEVELS = {"high": 3, "medium": 2, "low": 1}
 def findings_rows(objects: list[dict], findings: list[dict], checklist: list[dict], rules: RuleSet, filters: dict) -> list[dict]:
     """One row per object and rule, the unit the checklist tracks, with every location listed."""
     by_object = {o["object_id"]: o for o in objects}
+    template = template_filter(filters.get("template"))
     status_of = current_checklist(checklist)
     grouped: dict[tuple[int, str], list[dict]] = defaultdict(list)
     for f in findings:
@@ -585,6 +641,8 @@ def findings_rows(objects: list[dict], findings: list[dict], checklist: list[dic
             continue
         if filters.get("owner") and (obj.get("owner_name") or "") != filters["owner"]:
             continue
+        if template is not None and obj.get("template_id") != template:
+            continue
         locations = sorted(
             {(_location(i), i.get("line_number") or 0) for i in items}, key=lambda loc: (loc[0], loc[1])
         )
@@ -594,6 +652,8 @@ def findings_rows(objects: list[dict], findings: list[dict], checklist: list[dic
             "object_name": obj.get("name") or f"Object {object_id}",
             "object_url": obj.get("url"),
             "type": TYPE_LABELS.get(obj.get("object_type"), obj.get("object_type") or ""),
+            "custom": obj.get("object_type") == "custom_script",
+            "template": template_info(obj, by_object),
             "owner": owner,
             "rule_id": rule_id,
             "title": rule.title if rule else rule_id,

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import empty_block, object_link, pager, local_time %}
+{% from "macros.html" import empty_block, object_link, pager, local_time, template_line %}
 {% block title %}Inventory{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -36,11 +36,15 @@
       {% endfor %}
     </select>
   </label>
+  <label class="field">Template ID
+    <input type="text" name="template" value="{{ filters.template or '' }}" inputmode="numeric" autocomplete="off">
+  </label>
   <div class="actions">
     <button type="submit" class="button button-secondary">Apply filters</button>
     {% if filters %}<a href="{{ url_for('pages.inventory') }}">Clear filters</a>{% endif %}
   </div>
 </form>
+{% if template_sentence %}<p class="note">{{ template_sentence }}</p>{% endif %}
 
 <section class="card card-flush" aria-label="Inventory">
   <div class="table-wrap">
@@ -56,7 +60,7 @@
         {% for row in page.rows %}
         <tr>
           <td class="strong">{{ object_link({"name": row.name, "url": row.url}) }}{% if row.archived %}<div class="cell-sub">Archived, but an active workflow runs it</div>{% endif %}</td>
-          <td>{{ row.type }}</td>
+          <td>{{ row.type }}{{ template_line(row.template) }}</td>
           <td>{{ row.owner }}</td>
           <td class="mono">{{ row.image }}</td>
           <td>

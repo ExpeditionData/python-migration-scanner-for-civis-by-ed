@@ -121,7 +121,7 @@ def test_static_assets_are_vendored(app):
 
 def test_overview_numbers(app):
     page = text_of(app.test_client().get("/"))
-    assert "Python objects found 94" in page
+    assert "Python objects found 95" in page
     assert "Checklist progress" in page and "Most common issues" in page
     assert "Last scan: October 7, 2026" in page and "Run 3." in page
     assert "A scan is running." in page
@@ -170,7 +170,7 @@ def test_overview_counts_partly_scanned_objects(app):
 
 def test_scan_page_progress_and_history(app):
     page = text_of(app.test_client().get("/scan"))
-    assert "Scanning code and logs: 40 of 94 objects" in page
+    assert "Scanning code and logs: 40 of 95 objects" in page
     assert "1. Inventory" in page and "2. Code and log scan" in page and "3. Save results" in page
     for status in ("In progress", "Completed", "Failed"):
         assert status in page
@@ -189,7 +189,7 @@ def test_scan_status_api(app):
 def test_inventory_filters_reasons_and_workflows(app):
     client = app.test_client()
     everything = text_of(client.get("/inventory"))
-    assert "Showing 1 to 50 of 94 objects" in everything
+    assert "Showing 1 to 50 of 95 objects" in everything
     partial = text_of(client.get("/inventory?status=partial"))
     assert "Scanned the code preview instead." in partial
     # The preview uses the normal setup, with no GitHub token.
@@ -204,7 +204,7 @@ def test_inventory_filters_reasons_and_workflows(app):
     assert "Example nightly pipeline" in run_by
     assert "No objects match" in text_of(client.get("/inventory?q=zzzz-no-match"))
     page_two = text_of(client.get("/inventory?page=2"))
-    assert "Showing 51 to 94 of 94 objects" in page_two
+    assert "Showing 51 to 95 of 95 objects" in page_two
 
 
 def test_findings_filters_show_location_never_code(app):
@@ -914,3 +914,117 @@ def test_scan_history_and_the_status_api_show_inventory_progress(monkeypatch):
     assert data["steps"][0] == {"name": "1. Inventory", "state": "Running", "detail": "100 of 301 objects"}
     page = text_of(app.test_client().get("/scan"))
     assert "1. Inventory" in page and "100 of 301 objects" in page
+
+
+# --- Templates (docs/PLAN.md 17.6, Part F) ----------------------------------------------------------------
+
+
+def _template_rows():
+    objects = [
+        {"object_id": 108, "object_type": "python_script", "name": "Example backing", "url": "https://civis.test/108"},
+        {"object_id": 301, "object_type": "custom_script", "name": "Custom A", "template_id": 31,
+         "backing_script_id": 211, "url": "https://civis.test/301"},
+        {"object_id": 304, "object_type": "custom_script", "name": "Custom B", "template_id": 33,
+         "backing_script_id": 108, "url": "https://civis.test/304"},
+        {"object_id": 305, "object_type": "custom_script", "name": "Custom C", "template_id": 33,
+         "backing_script_id": 108, "url": "https://civis.test/305"},
+        {"object_id": 306, "object_type": "custom_script", "name": "Custom D", "template_id": 34,
+         "backing_script_id": None, "url": "https://civis.test/306"},
+    ]
+    findings = [{"object_id": i, "rule_id": "CV3-ML", "impact": "affected", "file": "f", "line_number": 1}
+                for i in (304, 305, 301)]
+    return objects, findings
+
+
+def test_template_info_links_the_backing_script_only_when_the_scan_stored_its_link():
+    objects, _ = _template_rows()
+    by_id = {o["object_id"]: o for o in objects}
+    assert views.template_info(by_id[304], by_id) == {"template_id": 33, "backing_id": 108,
+                                                       "backing_url": "https://civis.test/108"}
+    # 211 is not in the scan: its type, and so its link, is not known. The IDs are shown as text.
+    assert views.template_info(by_id[301], by_id) == {"template_id": 31, "backing_id": 211, "backing_url": None}
+    assert views.template_info(by_id[306], by_id)["backing_id"] is None
+    assert views.template_info(by_id[108], by_id) is None  # Not a custom script.
+
+
+def test_the_overview_line_counts_templates_and_custom_scripts_with_findings():
+    objects, findings = _template_rows()
+    assert views.template_findings_text(objects, findings) == (
+        "2 templates, used by 3 custom scripts, have findings.")
+    assert views.template_findings_text(objects, findings[:1]) == "1 template, used by 1 custom script, has findings."
+    assert views.template_findings_text(objects, []) == "0 templates, used by 0 custom scripts, have findings."
+    assert views.template_findings_text(objects[:1], findings) is None  # No custom script from a template.
+
+
+@pytest.mark.parametrize("value, expected", [
+    ("33", [304, 305]), (" 31 ", [301]), ("", [108, 301, 304, 305, 306]), ("99", []),
+    ("33 OR 1=1", []), ('"><script>alert(1)</script>', []), ("-1", []), ("1" * 40, []),
+])
+def test_the_template_filter(value, expected):
+    objects, findings = _template_rows()
+    rows = views.inventory(objects, findings, {"template": value} if value else {})
+    assert sorted(r["object_id"] for r in rows) == expected
+    found = views.findings_rows(objects, findings, [], load_rules(), {"template": value, "status": "all"})
+    assert sorted(r["object_id"] for r in found) == [i for i in expected if i in (301, 304, 305)]
+
+
+def test_inventory_and_findings_show_templates_and_the_sentence(app):
+    client = app.test_client()
+    body = client.get("/inventory?type=custom_script").get_data(as_text=True)
+    text = text_of(client.get("/inventory?type=custom_script"))
+    assert "Template 33, backing script 108" in text and "Template 31, backing script 211" in text
+    assert re.search(r'backing script <a href="https://platform\.civisanalytics\.com/spa/#/scripts/python3/108" '
+                     r'target="_blank" rel="noopener noreferrer">108<span class="sr-only">', body)
+    assert 'backing script 211</div>' in body  # Not in the scan: text, no link.
+    assert views.TEMPLATE_SENTENCE in text
+    findings = text_of(client.get("/findings?status=all&template=33"))
+    assert "Template 33, backing script 108" in findings and views.TEMPLATE_SENTENCE in findings
+    assert "Template 31" not in findings
+    assert views.TEMPLATE_SENTENCE not in text_of(client.get("/findings?status=all&type=x&template=99999"))
+    overview = text_of(client.get("/"))
+    assert re.search(r"\d+ templates?, used by \d+ custom scripts?, (has|have) findings\. See findings", overview)
+
+
+def test_a_hostile_template_filter_is_escaped_and_matches_nothing(app):
+    client = app.test_client()
+    hostile = '"><script>alert(1)</script>'
+    for page in ("/inventory", "/findings"):
+        response = client.get(page, query_string={"template": hostile})
+        body = response.get_data(as_text=True)
+        assert response.status_code == 200
+        assert "<script>alert(1)</script>" not in body
+        assert 'value="&#34;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"' in body
+        assert ("No objects match these filters." if page == "/inventory" else "No findings match these filters.") in body
+
+
+def test_a_hostile_backing_script_link_is_not_followed(monkeypatch):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    objects = [
+        {"object_id": 108, "object_type": "python_script", "name": "<b>x</b>", "url": "javascript:alert(1)"},
+        {"object_id": 304, "object_type": "custom_script", "name": "<img src=x onerror=alert(1)>", "template_id": 33,
+         "backing_script_id": 108, "url": "https://civis.test/304"},
+    ]
+    from flask import render_template_string
+
+    info = views.template_info(objects[1], {o["object_id"]: o for o in objects})
+    app = create_app({"SECRET_KEY": SECRET, "SERVICES": Services(Settings(), None, None), "TESTING": True})
+    with app.test_request_context("/"):
+        html_text = render_template_string('{% from "macros.html" import template_line %}{{ template_line(info) }}',
+                                           info=info)
+    assert 'href="#"' in html_text and "javascript:" not in html_text
+
+
+def test_the_findings_save_keeps_the_template_filter(app):
+    with app.test_request_context("/", headers={"Civis-User-Id": "77"}):
+        token = generate_csrf_token(app)
+    response = app.test_client().post(
+        "/findings/save", headers={"Civis-User-Id": "77", "Civis-Username": "example_admin"},
+        data={"csrf_token": token, "f_template": "33", "f_status": "all"})
+    assert "template=33" in response.headers["Location"]
+
+
+def test_the_csv_report_has_no_template_columns():
+    """The CSV gains no columns (docs/PLAN.md 17.6, Part F): it had no template_id before."""
+    from scanner.output import REPORT_COLUMNS
+
+    assert "template_id" not in REPORT_COLUMNS and "backing_script_id" not in REPORT_COLUMNS

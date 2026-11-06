@@ -166,14 +166,15 @@
       "type": "Python",
       "archived": false,
       "hidden": false,
-      "_listed": false,
       "author": {
         "id": 1,
         "name": "Example Robot",
         "username": "example_robot"
       },
       "docker_image_tag": "9.1.1",
-      "source": "import civis\nprint('template')\n"
+      "source": "import civis\nclient = civis.APIClient()\nprint(client.users.list_me())\n",
+      "is_template": true,
+      "updated_at": "2026-04-20T09:00:00Z"
     },
     {
       "id": 109,
