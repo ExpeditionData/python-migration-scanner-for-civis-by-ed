@@ -33,7 +33,7 @@ import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from common.disclaimer import DISCLAIMER
@@ -244,7 +244,9 @@ def _run_scan(
     state.running_written = tables.ok
 
     scan_log.phase("inventory", "start")
-    inventory = build_inventory(civis, civis_git=civis_git, step=step)
+    # The window is measured from the scan's start; a resumed run uses its first start (read above).
+    cutoff = started - timedelta(days=config.lookback_days)
+    inventory = build_inventory(civis, civis_git=civis_git, step=step, cutoff=cutoff)
     total = len(inventory.items)
     scan_log.progress("inventory", total, total)
     scan_log.phase("inventory", "done")
@@ -407,6 +409,11 @@ def _summary_rows(inventory, all_objects: list[dict]) -> list[dict]:
             rows.append(
                 {"row_kind": "not_python", "object_type": str(object_type), "language": language, "found_count": count}
             )
+        # Scripts left out because they did not run or change within LOOKBACK_DAYS, and rows that are custom
+        # scripts listed under another type (counted once, as custom scripts). Written only when above 0.
+        for kind, count in (("outside_window", counts.outside_window), ("template_copies", counts.template_copies)):
+            if count:
+                rows.append({"row_kind": kind, "object_type": str(object_type), "found_count": count})
     return rows
 
 

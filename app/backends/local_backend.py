@@ -65,7 +65,7 @@ def preview_job(job_id: int, state: str = "normal") -> dict:
             {"name": "RESULTS_DB", "type": "database", "required": True},
             {"name": "RESULTS_SCHEMA", "type": "string", "required": True},
             {"name": "GITHUB", "type": "credential_custom", "required": False},
-            {"name": "LOOKBACK_DAYS", "type": "integer", "required": False, "default": "200"},
+            {"name": "LOOKBACK_DAYS", "type": "integer", "required": False, "default": "400"},
         ],
         "arguments": {"RESULTS_DB": database, "RESULTS_SCHEMA": LOCAL_SCHEMA},
     }

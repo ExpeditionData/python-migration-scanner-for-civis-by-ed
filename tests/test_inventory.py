@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -16,10 +17,15 @@ from scanner.retrieval.civis_git import TAG_READ_AT_BRANCH, CivisGitFiles
 from tests.fake_civis import FakeAPIError, FakeClient
 
 
+# A scan on this day with the default 400-day LOOKBACK_DAYS, as the runner passes it (docs/PLAN.md 17.6).
+SCAN_START = datetime(2026, 10, 13, 12, 0, tzinfo=timezone.utc)
+CUTOFF = SCAN_START - timedelta(days=400)
+
+
 @pytest.fixture(scope="module")
 def built():
     client = FakeClient.from_fixture("synthetic_instance.json")
-    return client, build_inventory(client)
+    return client, build_inventory(client, cutoff=CUTOFF)
 
 
 def obj(built, object_id):
@@ -529,3 +535,83 @@ def test_every_listed_script_id_is_known_to_workflow_references():
     assert not {301, 303} & {a[0] for a, _ in client.called("jobs.get")}
     assert inventory.by_id()[301].obj.workflow_ids == [607]
     assert inventory.by_id()[301].obj.object_type is ObjectType.CUSTOM_SCRIPT
+
+
+# --- LOOKBACK_DAYS in inventory (docs/PLAN.md 17.6, Part B) -----------------------------------------
+
+
+@pytest.mark.parametrize("row, inside", [
+    ({"last_run": {"finished_at": "2026-01-01T00:00:00Z"}}, True),
+    ({"last_run": {"started_at": "2026-01-01T00:00:00Z"}}, True),  # No finish time: the start time is used.
+    ({"last_run": {"created_at": "2026-01-01T00:00:00.000Z"}}, True),  # Neither: the run's creation time.
+    ({"last_run": {"finished_at": "2024-01-01T00:00:00Z", "started_at": "2026-01-01T00:00:00Z"}}, False),
+    ({"updated_at": "2026-01-01T00:00:00Z"}, True),  # Changed, never ran.
+    ({"updated_at": "2024-01-01T00:00:00Z", "last_run": {"finished_at": "2026-09-30T06:41:00Z"}}, True),
+    ({"updated_at": "2024-01-01T00:00:00Z", "last_run": None}, False),
+    ({}, False),  # Neither time: outside the window.
+    ({"updated_at": "not a time", "last_run": {"finished_at": ""}}, False),
+    ({"updated_at": CUTOFF.strftime("%Y-%m-%dT%H:%M:%SZ")}, True),  # Exactly at the cutoff.
+])
+def test_the_window_uses_the_last_run_time_or_updated_at(row, inside):
+    from scanner.inventory.base import in_window
+
+    assert in_window(row, CUTOFF) is inside
+
+
+def test_scripts_outside_the_window_are_counted_and_not_read(built):
+    client, inventory = built
+    c = inventory.counts
+    assert (c[ObjectType.PYTHON_SCRIPT].outside_window, c[ObjectType.CONTAINER_SCRIPT].outside_window,
+            c[ObjectType.CUSTOM_SCRIPT].outside_window, c[ObjectType.DBT_SCRIPT].outside_window) == (1, 1, 1, 0)
+    by_id = inventory.by_id()
+    assert not {113, 207, 308} & set(by_id)
+    detail_ids = {a[0] for name, a, _ in client.calls if name.startswith("scripts.get_")}
+    assert not {113, 207, 308} & detail_ids
+    # 101 was last updated in 2024 but ran in September 2026: updated_at does not change on a run, so it is kept.
+    assert 101 in by_id
+
+
+def test_notebooks_services_and_workflows_are_always_kept(built):
+    """Their list rows have no reliable last-use time, so the window does not apply to them."""
+    _, inventory = built
+    c = inventory.counts
+    assert all(c[t].outside_window == 0 for t in (ObjectType.NOTEBOOK, ObjectType.SERVICE, ObjectType.WORKFLOW))
+    assert {401, 403, 501, 502, 503, 601} <= set(inventory.by_id())
+
+
+def test_without_a_cutoff_every_script_is_kept():
+    inventory = build_inventory(FakeClient.from_fixture("synthetic_instance.json"))
+    assert {113, 207, 308} <= set(inventory.by_id())
+    assert all(counts.outside_window == 0 for counts in inventory.counts.values())
+
+
+def test_a_workflow_reference_to_a_script_outside_the_window_calls_no_jobs_get():
+    data = copy.deepcopy(FakeClient.from_fixture("synthetic_instance.json").data)
+    data["workflows"].append({
+        "id": 608, "name": "Example yearly runner", "archived": False, "hidden": False, "valid": True,
+        "user": {"id": 2, "name": "Example Analyst", "username": "example_analyst"},
+        "definition": "version: '2.0'\nyearly:\n  tasks:\n    old:\n      action: civis.run_job\n      input:\n"
+                      "        job_id: 113\n",
+    })
+    client = FakeClient(data)
+    inventory = build_inventory(client, cutoff=CUTOFF)
+    assert 113 not in {a[0] for a, _ in client.called("jobs.get")}
+    assert 113 not in inventory.by_id()
+    # Archived jobs that active workflows run are still found and read.
+    assert inventory.by_id()[105].obj.archived is True
+
+
+def test_there_is_no_early_stop_on_sorted_lists():
+    """The lists come back newest updated_at first, but a script that ran recently can have an old updated_at, so
+    every page is read and every row is checked."""
+    data = copy.deepcopy(FakeClient.from_fixture("synthetic_instance.json").data)
+    old_but_ran = {
+        "id": 114, "name": "Example yearly job", "type": "Python", "archived": False, "hidden": False,
+        "author": {"id": 2, "name": "Example Analyst", "username": "example_analyst"},
+        "updated_at": "2023-01-01T00:00:00Z",
+        "last_run": {"id": 9014, "state": "succeeded", "finished_at": "2026-01-02T00:00:00Z"},
+        "docker_image_tag": "", "source": "print('yearly')\n",
+    }
+    data["python3"].append(old_but_ran)  # Last in the list, after rows outside the window.
+    inventory = build_inventory(FakeClient(data), cutoff=CUTOFF)
+    assert 114 in inventory.by_id()

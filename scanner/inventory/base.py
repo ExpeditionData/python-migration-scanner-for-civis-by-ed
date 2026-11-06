@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Callable
 
 from common.models import CivisObject, CoverageCounts, CoverageItem, Impact, ObjectType, ScanStatus
@@ -205,6 +206,28 @@ def last_run_fields(last_run: Any) -> tuple[int | None, str | None, str | None]:
         return None, None, None
     when = field_of(last_run, "finished_at") or field_of(last_run, "started_at") or field_of(last_run, "created_at")
     return field_of(last_run, "id"), when, field_of(last_run, "state")
+
+
+def parse_time(value: Any) -> datetime | None:
+    """A Civis time (ISO 8601 text) as an aware datetime. None when missing or not a time."""
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def in_window(row: Any, cutoff: datetime) -> bool:
+    """True when a script's list row shows a run or a change at or after ``cutoff``: its last run time
+    (finished, else started, else created, as last_run_fields) or its updated_at. A row with neither time is
+    outside the window. updated_at does not change when a script runs, so both times are checked."""
+    _, last_run_at, _ = last_run_fields(field_of(row, "last_run"))
+    times = (parse_time(last_run_at), parse_time(field_of(row, "updated_at")))
+    return any(when is not None and when >= cutoff for when in times)
 
 
 def mark_not_scanned(obj: CivisObject, reason: str, inventory: Inventory) -> None:

@@ -139,6 +139,15 @@ def test_git_credential_line():
     (lambda j: j["params"].append({"name": "LOOKBAK_DAYS", "type": "integer"}), "warning", "1 parameter name not in the README"),
     (lambda j: (j["params"].append({"name": "RUN_ID", "type": "string"}), j["arguments"].update(RUN_ID="run-x")),
      "warning", "RUN_ID has a value"),
+    # LOOKBACK_DAYS is an optional Integer parameter (docs/PLAN.md 17.6).
+    (lambda j: (j["params"].append({"name": "LOOKBACK_DAYS", "type": "integer"}), j["arguments"].update(LOOKBACK_DAYS=30)),
+     "pass", ""),
+    (lambda j: j["params"].append({"name": "LOOKBACK_DAYS", "type": "integer", "required": False, "default": "400"}),
+     "pass", ""),
+    (lambda j: (j["params"].append({"name": "LOOKBACK_DAYS", "type": "string"}), j["arguments"].update(LOOKBACK_DAYS="30")),
+     "warning", "LOOKBACK_DAYS is not the Integer type"),
+    (lambda j: (j["params"].append({"name": "LOOKBACK_DAYS", "type": "integer"}), j["arguments"].update(LOOKBACK_DAYS=0)),
+     "fail", "LOOKBACK_DAYS is not a whole number from 1 to 3,650"),
 ])
 def test_parameters_line(change, result, words):
     job = scanner_job()

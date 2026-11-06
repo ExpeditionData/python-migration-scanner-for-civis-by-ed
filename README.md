@@ -199,7 +199,7 @@ You need:
 
    | Parameter Name | Type | Default | Meaning |
    |---|---|---|---|
-   | `LOOKBACK_DAYS` | Integer | `200` | Read the most recent run log only for objects that ran in this many days (1 to 3,650). |
+   | `LOOKBACK_DAYS` | Integer | `400` | Check only scripts that ran or changed in this many days, and read their most recent run log (1 to 3,650). |
    | `MAX_CONCURRENCY` | Integer | `4` | Worker threads (1 to 16). For each thread above 4, add 512 MB to **Memory**. |
    | `REQUEST_BUDGET` | Integer | `500` | Civis API requests per 5 minutes (10 to 1,000). Civis allows 1,000 per user, shared with the web app and any other jobs that run as the Robot user. |
    | `RETENTION_DAYS` | Integer | blank (keep every scan) | A number deletes scans older than that many days. Blank or 0 keeps every scan. The newest scan is not deleted. |

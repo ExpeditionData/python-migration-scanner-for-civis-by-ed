@@ -2,8 +2,9 @@
 
 Rules (build brief section 4 and docs/PLAN.md):
 
-- Jobs (Python, container, and custom scripts): only the most recent run, and
-  only if it finished inside the lookback window (default 200 days).
+- Jobs (Python, container, custom, and dbt scripts): only the most recent run,
+  and only if it finished inside the lookback window (LOOKBACK_DAYS, default
+  400 days). The same window decides which scripts are inventoried.
 - Services: only the current deployment's logs.
 - Notebooks and workflows: no log scan. Notebook outputs are scanned from the
   notebook file instead.
@@ -15,11 +16,11 @@ are read in pages with ``last_id``; reading stops at MAX_LOG_LINES.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 
 from common.models import CivisObject, ObjectType
-from scanner.inventory.base import describe_error, field_of
+from scanner.inventory.base import describe_error, field_of, parse_time
 
 LOG_PAGE_SIZE = 10_000
 MAX_LOG_LINES = 200_000
@@ -33,16 +34,6 @@ class LogRead:
     label: str = "run log"
     note: str | None = None  # Set when the log could not be read in full.
     read: bool = False
-
-
-def parse_time(value: str | None) -> datetime | None:
-    if not value or not isinstance(value, str):
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 def in_lookback(obj: CivisObject, lookback_days: int, now: datetime) -> bool:

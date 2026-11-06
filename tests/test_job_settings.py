@@ -203,3 +203,27 @@ def test_an_unreadable_job_turns_off_run_scan(civis_app):
     body = app.test_client().get("/").get_data(as_text=True)
     assert "Run scan is turned off because the scanner job could not be read" in body
     assert 'disabled aria-describedby="run-scan-off">Run scan</button>' in body
+
+
+# --- LOOKBACK_DAYS: the window the next scan will use (docs/PLAN.md 17.6) ------------------------------
+
+
+@pytest.mark.parametrize("arguments, params, expected", [
+    ({}, [], 400),  # Not set: the scanner's default.
+    ({"LOOKBACK_DAYS": ""}, [], 400),
+    ({"LOOKBACK_DAYS": 30}, [], 30),
+    ({"LOOKBACK_DAYS": "30"}, [], 30),
+    ({"LOOKBACK_DAYS": " 3650 "}, [], 3650),
+    ({}, [{"name": "LOOKBACK_DAYS", "type": "integer", "value": "45"}], 45),  # A fixed value on the parameter.
+    ({"LOOKBACK_DAYS": 0}, [], None),
+    ({"LOOKBACK_DAYS": 3651}, [], None),
+    ({"LOOKBACK_DAYS": "thirty"}, [], None),
+    ({"LOOKBACK_DAYS": "-5"}, [], None),
+    ({"LOOKBACK_DAYS": True}, [], None),
+    ({"LOOKBACK_DAYS": 30.5}, [], None),
+])
+def test_lookback_days_from_the_job(arguments, params, expected):
+    job = scanner_job()
+    job["arguments"].update(arguments)
+    job["params"] += params
+    assert parse_job(job).lookback_days == expected

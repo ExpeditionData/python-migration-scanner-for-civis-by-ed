@@ -4,14 +4,23 @@
 
 1. List every type, all pages (the users list first, then Python, container,
    custom, and dbt scripts, notebooks, Services, and workflows).
-2. Choose which listed rows to read. A row in the Python, container, or dbt
-   script list with ``from_template_id`` set is a custom script made from a
-   template. When the custom script list returned the same ID, it is skipped
-   there and counted as a template copy, so each custom script is inventoried
-   once, as a custom script. A copy the custom list did not return is read
-   under its own type. Rows that cannot run Python are left out on the list
-   row where it shows (a custom script on a SQL, R, or JavaScript template, a
-   notebook in another language).
+2. Choose which listed rows to read, in this order:
+   - A row in the Python, container, or dbt script list with
+     ``from_template_id`` set is a custom script made from a template. When
+     the custom script list returned the same ID, it is skipped there and
+     counted as a template copy, so each custom script is inventoried once, as
+     a custom script. A copy the custom list did not return is read under its
+     own type.
+   - Rows that cannot run Python are left out on the list row where it shows
+     (a custom script on a SQL, R, or JavaScript template, a notebook in
+     another language).
+   - A Python, container, custom, or dbt script is kept only when its last run
+     time (finished, else started, else created) or its updated_at is within
+     LOOKBACK_DAYS of the scan's start. Others are counted as outside the
+     window, with no detail call. Notebooks, Services, and workflows are always
+     kept: their list rows have no reliable last-use time, and they are few.
+     There is no early stop on the lists (they come back newest updated_at
+     first), because updated_at does not change when a script runs.
 3. Make the detail calls for the rows kept, then for the workflows.
 
 Then two cross-type rules apply:
@@ -33,12 +42,13 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 from common.models import CoverageItem, ObjectType, WorkflowRef
 from scanner import scan_log
 from scanner.inventory import custom, notebooks
-from scanner.inventory.base import Inventory, InventoryContext, InventoryItem, field_of
+from scanner.inventory.base import Inventory, InventoryContext, InventoryItem, field_of, in_window
 from scanner.inventory.containers import container_item, list_container_scripts
 from scanner.inventory.custom import TemplateCache, custom_item, list_custom_scripts
 from scanner.inventory.dbt import dbt_item, list_dbt_scripts
@@ -74,14 +84,19 @@ class Listed:
     kept: list = field(default_factory=list)
     template_copies: int = 0
     not_python: int = 0  # Left out on the list row; detail calls can find more (counted in coverage).
+    outside_window: int = 0
 
 
-def build_inventory(client: Any, civis_git: Any = None, step: Callable[[str], None] | None = None) -> Inventory:
+def build_inventory(client: Any, civis_git: Any = None, step: Callable[[str], None] | None = None,
+                    cutoff: datetime | None = None) -> Inventory:
     """``civis_git`` (a CivisGitFiles) reads git-backed workflows' definitions through Civis.
     Without it, every workflow is read from the definition saved in Civis.
 
     ``step`` is told each part as it starts (names from scan_log.FATAL_STEPS), so a FATAL line can
-    say where the scan stopped."""
+    say where the scan stopped.
+
+    ``cutoff`` is the scan's start minus LOOKBACK_DAYS (a resumed run uses its first start). Scripts that did
+    not run or change since then are counted as outside the window and not read. None keeps every script."""
     step = step or (lambda name: None)
     inventory = Inventory()
     step("inventory_users")
@@ -101,7 +116,7 @@ def build_inventory(client: Any, civis_git: Any = None, step: Callable[[str], No
     # 2. Choose the rows to read.
     custom_ids = {field_of(row, "id") for row in listed[ObjectType.CUSTOM_SCRIPT].rows}
     for entry in listed.values():
-        _choose_rows(entry, custom_ids, inventory)
+        _choose_rows(entry, custom_ids, inventory, cutoff)
 
     # 3. Detail calls for the rows kept, then the workflows.
     templates = TemplateCache(ctx)
@@ -133,10 +148,12 @@ def build_inventory(client: Any, civis_git: Any = None, step: Callable[[str], No
     return inventory
 
 
-def _choose_rows(entry: Listed, custom_ids: set, inventory: Inventory) -> None:
-    """Sort one type's rows into template copies, rows that cannot run Python, and rows to read."""
+def _choose_rows(entry: Listed, custom_ids: set, inventory: Inventory, cutoff: datetime | None) -> None:
+    """Sort one type's rows into template copies, rows that cannot run Python, scripts outside the lookback
+    window, and rows to read."""
     counts = inventory.count(entry.object_type)
     row_not_python = _ROW_NOT_PYTHON.get(entry.object_type)
+    windowed = cutoff is not None and entry.object_type in SCRIPT_TYPES
     for row in entry.rows:
         if (entry.object_type in _COPY_TYPES and field_of(row, "from_template_id") is not None
                 and field_of(row, "id") in custom_ids):
@@ -147,8 +164,12 @@ def _choose_rows(entry: Listed, custom_ids: set, inventory: Inventory) -> None:
             entry.not_python += 1
             counts.add_not_python(language)
             continue
+        if windowed and not in_window(row, cutoff):
+            entry.outside_window += 1
+            continue
         entry.kept.append(row)
     counts.template_copies += entry.template_copies
+    counts.outside_window += entry.outside_window
 
 
 def _detail(ctx: InventoryContext, object_type: ObjectType, row: Any, templates: TemplateCache) -> InventoryItem | None:

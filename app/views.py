@@ -186,6 +186,10 @@ class Situation:
     scans: list[ScanRun] = field(default_factory=list)
     settings_problem: str | None = None
     job_problem: str | None = None  # Why the scanner job's settings cannot be used (app/job_settings.py).
+    # The window the next scan will use (the job's LOOKBACK_DAYS, or 400 when not set); None when the saved value
+    # is not valid. Only set when the job was read and is this tool's scanner job.
+    job_lookback: int | None = None
+    job_lookback_read: bool = False
 
     @property
     def active_run(self) -> JobRun | None:
@@ -289,6 +293,9 @@ def overview(objects: list[dict], findings: list[dict], coverage: list[dict], ch
         for r in coverage if r.get("row_kind") == "not_python"
     ]
     hidden = sum(r.get("hidden_skipped_count") or 0 for r in coverage if r.get("row_kind") == "summary")
+    # Scripts that did not run or change within LOOKBACK_DAYS (docs/PLAN.md 17.6). Template copies need no text:
+    # they are counted once, as custom scripts.
+    outside_window = sum(r.get("found_count") or 0 for r in coverage if r.get("row_kind") == "outside_window")
     # The scanner's fixed note when owner active status is only partly known or not known (row_kind "users").
     users_note = next((r.get("reason") for r in coverage if r.get("row_kind") == "users" and r.get("reason")), None)
 
@@ -318,6 +325,7 @@ def overview(objects: list[dict], findings: list[dict], coverage: list[dict], ch
         "types": types,
         "left_out": left_out,
         "hidden_skipped": hidden,
+        "outside_window": outside_window,
         "users_note": users_note,
         "checklist": {
             "total": total_pairs, "objects": len({p[0] for p in pairs}),
@@ -327,6 +335,33 @@ def overview(objects: list[dict], findings: list[dict], coverage: list[dict], ch
         },
         "issues": issues,
     }
+
+
+def _days(days: int) -> str:
+    return "1 day" if days == 1 else f"{days:,} days"
+
+
+def outside_window_text(count: int, days: int | None) -> str | None:
+    """The fixed sentence under "By object type" for scripts left out by the scan's LOOKBACK_DAYS."""
+    if not count:
+        return None
+    window = f"the last {_days(days)}" if isinstance(days, int) and days > 0 else "the scan's LOOKBACK_DAYS window"
+    if count == 1:
+        return (f"1 script that has not run or changed in {window} was left out. To include it, raise LOOKBACK_DAYS "
+                "on the scanner job.")
+    return (f"{count:,} scripts that have not run or changed in {window} were left out. To include them, raise "
+            "LOOKBACK_DAYS on the scanner job.")
+
+
+def next_window_text(situation: "Situation") -> str | None:
+    """Next to Run scan: which window a scan will use, from the scanner job's saved LOOKBACK_DAYS."""
+    if not situation.job_lookback_read:
+        return None
+    if situation.job_lookback is None:
+        return ("The scanner job's LOOKBACK_DAYS is not a whole number from 1 to 3,650, so a scan would stop before "
+                "it starts. See line 4 on the Setup page.")
+    return (f"A scan checks scripts that ran or changed in the last {_days(situation.job_lookback)} (LOOKBACK_DAYS "
+            "on the scanner job).")
 
 
 def _pct(part: int, whole: int) -> int:

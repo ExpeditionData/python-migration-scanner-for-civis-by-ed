@@ -68,6 +68,10 @@ def _person(owner_id: int, name: str) -> dict:
     return {"id": owner_id, "name": name, "username": name.lower().replace(" ", "_")}
 
 
+def _stamp(moment: datetime) -> str:
+    return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def preview_instance(fixed: bool, now: datetime) -> dict:
     """The synthetic instance plus generated objects. ``fixed`` applies some code fixes."""
     data = json.loads((FIXTURES / "synthetic_instance.json").read_text(encoding="utf-8"))
@@ -99,7 +103,7 @@ def preview_instance(fixed: bool, now: datetime) -> dict:
             name = HOSTILE_NAME
         data["python3"].append({
             "id": object_id, "name": name, "type": "Python", "archived": False, "hidden": False,
-            "author": _person(owner[0], owner[1]),
+            "author": _person(owner[0], owner[1]), "updated_at": _stamp(now - timedelta(days=20 + index)),
             "schedule": {"scheduled": index % 2 == 0, "scheduled_days": [1, 3, 5], "scheduled_hours": [6]},
             "last_run": last_run,
             "docker_image_tag": rng.choice(["", "", "latest", "9.1.1", "8.4.0"]),
@@ -128,7 +132,25 @@ def preview_instance(fixed: bool, now: datetime) -> dict:
             "id": object_id, "name": f"Example template run {index + 1:02d}", "type": "Custom",
             "backing_script_type": "python3" if index % 2 else "container", "archived": False, "hidden": False,
             "from_template_id": 33 if index % 2 else 31, "author": _person(*_OWNERS[index % 4][:2]),
-            "code_preview": "print('preview')",
+            "updated_at": _stamp(now - timedelta(days=5 + index)), "code_preview": "print('preview')",
+        })
+        # Civis also lists each custom script under its backing script's type. The scan counts these copies
+        # and inventories each custom script once (docs/PLAN.md 17.6).
+        data["python3" if index % 2 else "containers"].append({
+            "id": object_id, "name": f"Example template run {index + 1:02d}",
+            "type": "Python" if index % 2 else "Container", "archived": False, "hidden": False,
+            "from_template_id": 33 if index % 2 else 31, "is_template": False,
+            "author": _person(*_OWNERS[index % 4][:2]), "updated_at": _stamp(now - timedelta(days=5 + index)),
+        })
+
+    # Scripts that have not run or changed in years: counted as outside the lookback window, not read.
+    for index in range(12):
+        data["python3"].append({
+            "id": 1101 + index, "name": f"Example retired report {index + 1:02d}", "type": "Python",
+            "archived": False, "hidden": False, "author": _person(*_OWNERS[index % 4][:2]),
+            "updated_at": _stamp(now - timedelta(days=700 + index)),
+            "last_run": {"id": 51000 + index, "state": "succeeded", "finished_at": _stamp(now - timedelta(days=650))},
+            "docker_image_tag": "", "source": "print('retired')\n",
         })
 
     for index in range(6):

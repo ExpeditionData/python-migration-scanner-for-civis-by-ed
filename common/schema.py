@@ -112,11 +112,16 @@ COVERAGE = Table(
     "Counts by object type, plus every object not fully scanned and why.",
     (
         Column("run_id", "VARCHAR(64)", "Scan run ID."),
-        Column("row_kind", "VARCHAR(16)", "summary, object, not_python, or users (owner active status not fully known)."),
+        Column("row_kind", "VARCHAR(16)",
+               "summary, object, not_python, outside_window (scripts that did not run or change within "
+               "LOOKBACK_DAYS), template_copies (custom scripts also listed under another type), or users "
+               "(owner active status not fully known)."),
         Column("object_type", "VARCHAR(32)", "Object type. Empty on users rows."),
         Column("object_id", "BIGINT", "Object ID, on object rows only."),
         Column("language", "VARCHAR(32)", "Language of objects left out, on not_python rows only (for example r or sql)."),
-        Column("found_count", "INTEGER", "Objects found on summary rows; objects left out on not_python rows."),
+        Column("found_count", "INTEGER",
+               "Objects found on summary rows; objects left out on not_python, outside_window, and "
+               "template_copies rows."),
         Column("scanned_count", "INTEGER", "Objects fully scanned, on summary rows only."),
         Column("hidden_skipped_count", "INTEGER",
                "Hidden objects skipped, on summary rows only. Empty from v0.1.0-rc6: hidden objects are not counted."),

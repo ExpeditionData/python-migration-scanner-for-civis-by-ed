@@ -102,10 +102,12 @@ def load_situation() -> views.Situation:
             runs = jobs.runs()
         except Exception:
             jobs_error = True
+    lookback_read = job_settings is not None and job_settings.job is not None and not foreign
     return views.Situation(
         results_state=results_state, job_configured=jobs is not None, jobs_error=jobs_error,
         runs=runs, scans=scans, settings_problem=svc.settings.problem,
         job_problem=job_settings.problem if job_settings else None,
+        job_lookback=job_settings.lookback_days if lookback_read else None, job_lookback_read=lookback_read,
     )
 
 
@@ -341,8 +343,12 @@ def _overview(storage: dict | None = None):
     stats = views.overview(objects, findings, coverage, checklist, RULES) if situation.current else None
     current = situation.current
     run = next((r for r in situation.runs if current and r.id == current.civis_run_id), None)
+    if stats:
+        scan_days = current.parameters.get("lookback_days")
+        stats["outside_window_text"] = views.outside_window_text(stats["outside_window"], scan_days)
     return render_template(
         "overview.html", **base_context("overview", situation), stats=stats, empty=empty_state(situation),
+        next_window=views.next_window_text(situation),
         last_scan=views.when(current.started_at) if current else None,
         duration=views.format_duration(run.started_at, run.finished_at) if run else (
             views.format_duration(current.started_at, current.finished_at) if current else None),
@@ -369,7 +375,7 @@ def scan():
             "objects": len(objects),
         }
     scan_run = situation.scan_for(run)
-    lookback = (scan_run.parameters.get("lookback_days") if scan_run else None) or 200
+    lookback = (scan_run.parameters.get("lookback_days") if scan_run else None) or release.DEFAULT_LOOKBACK_DAYS
     notice = NOTICES.get(request.args.get("notice", ""))
     view = views.progress_view(run, progress)
     return render_template(

@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.backends.base import StorageFacts, error_token
-from app.job_settings import DATABASE_PARAMETER, SCHEMA_PARAMETER, JobSettings, parameter_value, parameters
+from app.job_settings import DATABASE_PARAMETER, SCHEMA_PARAMETER, JobSettings, lookback_days, parameter_value, parameters
 from common import release, sql
 from common.schema import TABLES
 
@@ -305,6 +305,11 @@ def _parameters(job: dict, settings: JobSettings | None) -> Line:
     if unknown:
         issues.append(("warning", f"{_plural(len(unknown), 'parameter name')} not in the README (a typo?)"))
         details.append("Parameter names not in the README: " + ", ".join(unknown))
+    lookback = by_name.get(release.LOOKBACK_PARAMETER)
+    if lookback is not None and str(lookback.get("type") or "").lower() != "integer":
+        issues.append(("warning", f"{release.LOOKBACK_PARAMETER} is not the Integer type"))
+    if lookback_days(job) is None:
+        issues.append(("fail", f"{release.LOOKBACK_PARAMETER} is not a whole number from 1 to 3,650"))
     if parameter_value(job, "RUN_ID") not in (None, ""):
         issues.append(("warning", "RUN_ID has a value, so every scan resumes that run"))
     details.append(f"{DATABASE_PARAMETER} value shape: {shape}")

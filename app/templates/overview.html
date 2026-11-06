@@ -14,6 +14,7 @@
     {% endif %}
   </div>
 </div>
+{% if next_window %}<p class="note run-window">{{ next_window }}</p>{% endif %}
 
 {% if storage %}{{ storage_result(storage) }}{% endif %}
 {% if empty %}
@@ -72,6 +73,7 @@
       {% if stats.hidden_skipped %}Hidden objects skipped: {{ stats.hidden_skipped | number }}.{% endif %}
     </p>
     {% endif %}
+    {% if stats.outside_window_text %}<p class="note">{{ stats.outside_window_text }}</p>{% endif %}
     <p class="note">Hidden objects (workflow-created copies and Civis's own query and import jobs) are not scanned or counted.</p>
     {% if stats.users_note %}
     <p class="note">{{ stats.users_note }}</p>

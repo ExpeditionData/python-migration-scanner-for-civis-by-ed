@@ -8,7 +8,7 @@ Civis exposes each container script parameter as an environment variable
 | RESULTS_DB | Database | RESULTS_DB_NAME (or RESULTS_DB_ID), RESULTS_DB_CREDENTIAL_ID |
 | RESULTS_SCHEMA | String | RESULTS_SCHEMA |
 | GITHUB | Custom credential (optional) | GITHUB_PASSWORD (the token) |
-| LOOKBACK_DAYS | Integer, default 200 | LOOKBACK_DAYS |
+| LOOKBACK_DAYS | Integer, default 400 | LOOKBACK_DAYS |
 | MAX_CONCURRENCY | Integer, default 4 | MAX_CONCURRENCY |
 | REQUEST_BUDGET | Integer, default 500 per 5 minutes | REQUEST_BUDGET |
 | RETENTION_DAYS | Integer, blank keeps every run | RETENTION_DAYS |
@@ -29,8 +29,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from common import sql
-
-DEFAULT_LOOKBACK_DAYS = 200
+from common.release import DEFAULT_LOOKBACK_DAYS, LOOKBACK_DAYS_RANGE
 DEFAULT_MAX_CONCURRENCY = 4
 DEFAULT_REQUEST_BUDGET = 500
 _RUN_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -97,7 +96,7 @@ class ScanConfig:
             schema=schema,
             credential_id=_int(env, "RESULTS_DB_CREDENTIAL_ID", None, 1, None),
             github_token=(env.get("GITHUB_PASSWORD") or "").strip() or None,
-            lookback_days=_int(env, "LOOKBACK_DAYS", DEFAULT_LOOKBACK_DAYS, 1, 3650),
+            lookback_days=_int(env, "LOOKBACK_DAYS", DEFAULT_LOOKBACK_DAYS, *LOOKBACK_DAYS_RANGE),
             max_concurrency=_int(env, "MAX_CONCURRENCY", DEFAULT_MAX_CONCURRENCY, 1, 16),
             request_budget=_int(env, "REQUEST_BUDGET", DEFAULT_REQUEST_BUDGET, 10, 1000),
             retention_days=retention or None,

@@ -491,7 +491,7 @@ How each object runs:
 | RESULTS_DB | Database | `RESULTS_DB_NAME` (or `RESULTS_DB_ID`), `RESULTS_DB_CREDENTIAL_ID` | Required |
 | RESULTS_SCHEMA | String | `RESULTS_SCHEMA` | Required. Must be a plain SQL identifier. |
 | GITHUB | Custom credential, optional | `GITHUB_PASSWORD` (the token) | None |
-| LOOKBACK_DAYS | Integer | `LOOKBACK_DAYS` | 200 (1 to 3,650) |
+| LOOKBACK_DAYS | Integer | `LOOKBACK_DAYS` | 400 (1 to 3,650; 200 before 17.6) |
 | MAX_CONCURRENCY | Integer | `MAX_CONCURRENCY` | 4 (1 to 16) |
 | REQUEST_BUDGET | Integer, requests per 5 minutes | `REQUEST_BUDGET` | 500 (10 to 1,000) |
 | RETENTION_DAYS | Integer | `RETENTION_DAYS` | Blank or 0 keeps every run |

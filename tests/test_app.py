@@ -838,3 +838,42 @@ def test_hostile_name_is_in_the_preview(preview):
     conn = sqlite3.connect(preview / "results.sqlite")
     assert conn.execute("SELECT COUNT(*) FROM objects WHERE name = ?", (HOSTILE_NAME,)).fetchone()[0] > 0
     json.loads((preview / "local_jobs.json").read_text(encoding="utf-8"))
+
+
+# --- LOOKBACK_DAYS on the Overview (docs/PLAN.md 17.6) ------------------------------------------------
+
+
+def test_overview_says_which_window_a_scan_uses_and_how_many_scripts_were_left_out(app):
+    page = text_of(app.test_client().get("/"))
+    assert "A scan checks scripts that ran or changed in the last 400 days (LOOKBACK_DAYS on the scanner job)." in page
+    # 12 retired reports, plus one Python, one container, and one custom script in the synthetic instance.
+    assert ("15 scripts that have not run or changed in the last 400 days were left out. To include them, raise "
+            "LOOKBACK_DAYS on the scanner job.") in page
+
+
+@pytest.mark.parametrize("lookback, read, expected", [
+    (30, True, "A scan checks scripts that ran or changed in the last 30 days (LOOKBACK_DAYS on the scanner job)."),
+    (1, True, "A scan checks scripts that ran or changed in the last 1 day (LOOKBACK_DAYS on the scanner job)."),
+    (3650, True, "A scan checks scripts that ran or changed in the last 3,650 days (LOOKBACK_DAYS on the scanner job)."),
+    (None, True, "The scanner job's LOOKBACK_DAYS is not a whole number from 1 to 3,650, so a scan would stop "
+                 "before it starts. See line 4 on the Setup page."),
+    (400, False, None),  # The job was not read, or is not this tool's scanner job: nothing is said.
+])
+def test_next_window_text(lookback, read, expected):
+    situation = views.Situation(results_state="ok", job_configured=True, job_lookback=lookback, job_lookback_read=read)
+    assert views.next_window_text(situation) == expected
+
+
+def test_outside_window_text():
+    assert views.outside_window_text(0, 400) is None
+    assert views.outside_window_text(1, 30) == (
+        "1 script that has not run or changed in the last 30 days was left out. To include it, raise LOOKBACK_DAYS "
+        "on the scanner job.")
+    assert views.outside_window_text(1234, 400) == (
+        "1,234 scripts that have not run or changed in the last 400 days were left out. To include them, raise "
+        "LOOKBACK_DAYS on the scanner job.")
+    assert "the scan's LOOKBACK_DAYS window" in views.outside_window_text(2, None)
+
+
+def test_the_scan_page_window_defaults_to_400_days(app):
+    assert "Lookback window: 400 days." in text_of(app.test_client().get("/scan"))

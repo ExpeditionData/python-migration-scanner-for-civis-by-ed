@@ -25,6 +25,12 @@ DEFAULT_THREADS = 4
 RELEASE_TAG = re.compile(r"^v\d+(\.\d+)*(-rc\d+)?$")
 _IMAGE = re.compile(r"image:\s*([a-z0-9][a-z0-9._/-]*):([A-Za-z0-9._-]+)\s*\(Python")
 REQUIREMENTS = {"scanner": "requirements-scanner.txt", "service": "requirements-service.txt"}
+# The scanner job's LOOKBACK_DAYS parameter: which scripts are inventoried (those that ran or changed in this many
+# days) and whose most recent run log is read. 400 days, not 365, keeps jobs that run once a year even when a yearly
+# run happens a few weeks late (docs/PLAN.md 17.6). The scanner (scanner/config.py) and the app share these.
+LOOKBACK_PARAMETER = "LOOKBACK_DAYS"
+DEFAULT_LOOKBACK_DAYS = 400
+LOOKBACK_DAYS_RANGE = (1, 3650)
 
 
 @lru_cache(maxsize=None)

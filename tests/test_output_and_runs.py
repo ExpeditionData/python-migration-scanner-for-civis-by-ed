@@ -77,7 +77,7 @@ BASE_ENV = {"RESULTS_DB_NAME": "analytics", "RESULTS_SCHEMA": "migration_scan"}
 def test_config_from_env_defaults():
     config = ScanConfig.from_env(BASE_ENV)
     assert (config.database, config.schema, config.lookback_days, config.max_concurrency, config.request_budget) == (
-        "analytics", "migration_scan", 200, 4, 500
+        "analytics", "migration_scan", 400, 4, 500
     )
     assert config.retention_days is None and config.run_id is None and config.github_token is None
 
@@ -546,12 +546,12 @@ def test_optional_parameters_that_do_not_exist_use_their_defaults():
     for name in ("LOOKBACK_DAYS", "MAX_CONCURRENCY", "REQUEST_BUDGET", "RETENTION_DAYS", "RUN_ID", "GITHUB_PASSWORD"):
         assert name not in env
     config = ScanConfig.from_env(env)
-    assert (config.lookback_days, config.max_concurrency, config.request_budget) == (200, 4, 500)
+    assert (config.lookback_days, config.max_concurrency, config.request_budget) == (400, 4, 500)
     assert config.retention_days is None and config.run_id is None and config.github_token is None
     blank = ScanConfig.from_env({**env, "LOOKBACK_DAYS": "", "MAX_CONCURRENCY": " ", "REQUEST_BUDGET": "",
                                  "RETENTION_DAYS": "", "RUN_ID": ""})
     assert (blank.lookback_days, blank.max_concurrency, blank.request_budget, blank.retention_days, blank.run_id) == (
-        200, 4, 500, None, None)
+        400, 4, 500, None, None)
 
 
 def test_readme_optional_parameter_defaults_match_the_scanner():
@@ -574,3 +574,39 @@ def test_dry_run_with_template_copies_writes_one_row_per_object(tmp_path):
     assert types == {301: "custom_script", 302: "custom_script", 304: "custom_script", 306: "custom_script",
                      208: "container_script"}
     assert count(conn, "checklist_status") == count(conn, "(SELECT DISTINCT object_id, rule_id FROM checklist_status)")
+
+
+# --- LOOKBACK_DAYS in inventory (docs/PLAN.md 17.6, Part B) -----------------------------------------
+
+
+def test_coverage_counts_scripts_outside_the_window_and_template_copies(tmp_path):
+    dry_run(tmp_path, now=NOW)
+    conn = db(tmp_path)
+    rows = {(kind, t): n for kind, t, n in conn.execute(
+        "SELECT row_kind, object_type, found_count FROM coverage WHERE row_kind IN ('outside_window', 'template_copies')")}
+    assert rows == {
+        ("outside_window", "python_script"): 1, ("outside_window", "container_script"): 1,
+        ("outside_window", "custom_script"): 1,
+        ("template_copies", "python_script"): 1, ("template_copies", "container_script"): 2,
+        ("template_copies", "dbt_script"): 1,
+    }
+    assert all(len(kind) <= 16 for kind, _ in rows)  # coverage.row_kind is VARCHAR(16).
+    assert not conn.execute("SELECT 1 FROM objects WHERE object_id IN (113, 207, 308)").fetchall()
+
+
+def test_the_window_uses_the_scans_start_and_a_resume_uses_its_first_start(tmp_path, monkeypatch):
+    import scanner.runner as runner
+
+    cutoffs = []
+    original = runner.build_inventory
+
+    def recording(*args, cutoff=None, **kwargs):
+        cutoffs.append(cutoff)
+        return original(*args, cutoff=cutoff, **kwargs)
+
+    monkeypatch.setattr(runner, "build_inventory", recording)
+    with pytest.raises(SimulatedStop):
+        dry_run(tmp_path, now=NOW, stop_after=10, checkpoint_objects=5)
+    run_id = db(tmp_path).execute("SELECT run_id FROM scan_runs LIMIT 1").fetchone()[0]
+    dry_run(tmp_path, now=NOW + timedelta(days=30), run_id=run_id, checkpoint_objects=5)
+    assert cutoffs == [NOW - timedelta(days=400), NOW - timedelta(days=400)]

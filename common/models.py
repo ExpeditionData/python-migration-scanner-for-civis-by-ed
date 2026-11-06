@@ -178,6 +178,8 @@ class CoverageCounts:
     # Rows in this type's list that are custom scripts made from a template (from_template_id set, and the
     # custom script list returned the same ID). They are inventoried once, as custom scripts.
     template_copies: int = 0
+    # Script rows that did not run or change within LOOKBACK_DAYS of the scan's start: no detail call.
+    outside_window: int = 0
 
     def add_not_python(self, language: str | None) -> None:
         key = (language or "unknown").strip().lower() or "unknown"

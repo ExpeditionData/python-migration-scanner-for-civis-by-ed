@@ -1,5 +1,5 @@
 {
-  "_about": "Synthetic Civis API responses for inventory tests. Field names follow civis-python's API spec. Every name, ID, and code line is made up. Nothing here comes from a Civis instance.",
+  "_about": "Synthetic Civis API responses for inventory tests. Field names follow civis-python's API spec. Every name, ID, and code line is made up. Nothing here comes from a Civis instance. Times are fixed: tests pass a fixed scan time, and rows meant to be inside the default LOOKBACK_DAYS window were updated or ran in 2026.",
   "me": {
     "id": 1,
     "username": "example_robot",
@@ -64,7 +64,8 @@
         "finished_at": "2026-09-30T06:41:00Z"
       },
       "docker_image_tag": "",
-      "source": "import civis\nclient = civis.APIClient()\nme = client.users.list_me()\n"
+      "source": "import civis\nclient = civis.APIClient()\nme = client.users.list_me()\n",
+      "updated_at": "2024-01-15T08:00:00Z"
     },
     {
       "id": 102,
@@ -82,7 +83,8 @@
       },
       "last_run": null,
       "docker_image_tag": "8.4.0",
-      "source": "print('pinned image')\n"
+      "source": "print('pinned image')\n",
+      "updated_at": "2026-06-15T12:00:00Z"
     },
     {
       "id": 103,
@@ -96,7 +98,8 @@
         "username": "example_robot"
       },
       "docker_image_tag": "",
-      "source": "print('hidden copy')\n"
+      "source": "print('hidden copy')\n",
+      "updated_at": "2026-06-15T12:00:00Z"
     },
     {
       "id": 104,
@@ -110,7 +113,8 @@
         "username": "example_analyst"
       },
       "docker_image_tag": "",
-      "source": "print('archived, unused')\n"
+      "source": "print('archived, unused')\n",
+      "updated_at": "2026-06-15T12:00:00Z"
     },
     {
       "id": 105,
@@ -129,7 +133,8 @@
         "finished_at": "2026-08-01T01:00:00Z"
       },
       "docker_image_tag": "latest",
-      "source": "print('archived but used')\n"
+      "source": "print('archived but used')\n",
+      "updated_at": "2026-06-15T12:00:00Z"
     },
     {
       "id": 106,
@@ -143,7 +148,8 @@
         "username": "example_analyst"
       },
       "docker_image_tag": "latest",
-      "source": ""
+      "source": "",
+      "updated_at": "2026-06-15T12:00:00Z"
     },
     {
       "id": 107,
@@ -151,7 +157,8 @@
       "type": "Python",
       "archived": false,
       "hidden": false,
-      "_error": 403
+      "_error": 403,
+      "updated_at": "2026-06-15T12:00:00Z"
     },
     {
       "id": 108,
@@ -184,7 +191,8 @@
       },
       "last_run": null,
       "docker_image_tag": "",
-      "source": "print('saved copy, may be out of date')\n"
+      "source": "print('saved copy, may be out of date')\n",
+      "updated_at": "2026-06-15T12:00:00Z"
     },
     {
       "id": 110,
@@ -206,7 +214,8 @@
         "finished_at": "2026-10-05T07:00:00Z"
       },
       "docker_image_tag": "",
-      "source": "print('saved copy, may be out of date')\n"
+      "source": "print('saved copy, may be out of date')\n",
+      "updated_at": "2026-06-15T12:00:00Z"
     },
     {
       "id": 111,
@@ -224,7 +233,8 @@
       },
       "last_run": null,
       "docker_image_tag": "",
-      "source": "print('saved copy, may be out of date')\n"
+      "source": "print('saved copy, may be out of date')\n",
+      "updated_at": "2026-06-15T12:00:00Z"
     },
     {
       "id": 112,
@@ -242,7 +252,8 @@
       },
       "last_run": null,
       "docker_image_tag": "",
-      "source": "print('saved copy, may be out of date')\n"
+      "source": "print('saved copy, may be out of date')\n",
+      "updated_at": "2026-06-15T12:00:00Z"
     },
     {
       "id": 304,
@@ -258,7 +269,28 @@
         "username": "example_analyst"
       },
       "docker_image_tag": "9.1.1",
-      "source": "print('template copy')\n"
+      "source": "print('template copy')\n",
+      "updated_at": "2026-06-15T12:00:00Z"
+    },
+    {
+      "id": 113,
+      "name": "Example script unused for years",
+      "type": "Python",
+      "archived": false,
+      "hidden": false,
+      "author": {
+        "id": 2,
+        "name": "Example Analyst",
+        "username": "example_analyst"
+      },
+      "updated_at": "2024-03-04T10:00:00Z",
+      "last_run": {
+        "id": 9013,
+        "state": "succeeded",
+        "finished_at": "2024-02-01T06:00:00Z"
+      },
+      "docker_image_tag": "",
+      "source": "print('old')\n"
     }
   ],
   "python3_git": {
@@ -334,7 +366,8 @@
       "docker_image_tag": "",
       "docker_command": "pip install civis && python /app/run.py",
       "repo_http_uri": null,
-      "repo_ref": null
+      "repo_ref": null,
+      "updated_at": "2026-07-01T09:00:00Z"
     },
     {
       "id": 202,
@@ -351,7 +384,8 @@
       "docker_image_tag": "1.2",
       "docker_command": "python -m etl",
       "repo_http_uri": "github.com/example-org/example-etl.git",
-      "repo_ref": "v1.2.0"
+      "repo_ref": "v1.2.0",
+      "updated_at": "2026-07-01T09:00:00Z"
     },
     {
       "id": 203,
@@ -366,7 +400,8 @@
       },
       "docker_image_name": "civisanalytics/datascience-python",
       "docker_image_tag": "9.1.1",
-      "docker_command": "python run.py"
+      "docker_command": "python run.py",
+      "updated_at": "2026-07-01T09:00:00Z"
     },
     {
       "id": 204,
@@ -381,7 +416,8 @@
       },
       "docker_image_name": "docker.io/CivisAnalytics/datascience-python",
       "docker_image_tag": "latest",
-      "docker_command": "python run.py"
+      "docker_command": "python run.py",
+      "updated_at": "2026-07-01T09:00:00Z"
     },
     {
       "id": 211,
@@ -414,7 +450,8 @@
       "docker_image_tag": "",
       "docker_command": "python main.py",
       "repo_http_uri": "gitlab.example.test/example-org/other.git",
-      "repo_ref": "main"
+      "repo_ref": "main",
+      "updated_at": "2026-07-01T09:00:00Z"
     },
     {
       "id": 206,
@@ -431,7 +468,8 @@
       "docker_image_tag": "",
       "docker_command": "python main.py",
       "repo_http_uri": "https://github.com/example-org/private-repo.git",
-      "repo_ref": "main"
+      "repo_ref": "main",
+      "updated_at": "2026-07-01T09:00:00Z"
     },
     {
       "id": 301,
@@ -448,7 +486,8 @@
       },
       "docker_image_name": "civisanalytics/datascience-python",
       "docker_image_tag": "",
-      "docker_command": "python template.py"
+      "docker_command": "python template.py",
+      "updated_at": "2026-07-01T09:00:00Z"
     },
     {
       "id": 302,
@@ -465,7 +504,8 @@
       },
       "docker_image_name": "civisanalytics/datascience-python",
       "docker_image_tag": "",
-      "docker_command": "python template.py"
+      "docker_command": "python template.py",
+      "updated_at": "2026-07-01T09:00:00Z"
     },
     {
       "id": 208,
@@ -482,7 +522,23 @@
       },
       "docker_image_name": "civisanalytics/datascience-python",
       "docker_image_tag": "",
-      "docker_command": "python template.py --date 2026-10-01"
+      "docker_command": "python template.py --date 2026-10-01",
+      "updated_at": "2026-07-01T09:00:00Z"
+    },
+    {
+      "id": 207,
+      "name": "Example container with no run or change time",
+      "type": "Container",
+      "archived": false,
+      "hidden": false,
+      "author": {
+        "id": 2,
+        "name": "Example Analyst",
+        "username": "example_analyst"
+      },
+      "docker_image_name": "civisanalytics/datascience-python",
+      "docker_image_tag": "",
+      "docker_command": "python old.py"
     }
   ],
   "templates": {
@@ -576,7 +632,8 @@
       "dbt_project": {
         "project_dir": "warehouse",
         "dbt_command": "build"
-      }
+      },
+      "updated_at": "2026-05-04T10:00:00Z"
     },
     {
       "id": 232,
@@ -591,7 +648,8 @@
       },
       "docker_image_tag": "1.2.3",
       "repo_http_uri": "github.com/example-org/example-dbt.git",
-      "repo_ref": "main"
+      "repo_ref": "main",
+      "updated_at": "2026-05-04T10:00:00Z"
     },
     {
       "id": 306,
@@ -606,7 +664,8 @@
         "name": "Example Analyst",
         "username": "example_analyst"
       },
-      "docker_image_tag": ""
+      "docker_image_tag": "",
+      "updated_at": "2026-05-04T10:00:00Z"
     }
   ],
   "custom": [
@@ -623,7 +682,8 @@
         "name": "Example Analyst",
         "username": "example_analyst"
       },
-      "code_preview": "python template.py --date 2026-10-01"
+      "code_preview": "python template.py --date 2026-10-01",
+      "updated_at": "2026-08-20T16:30:00Z"
     },
     {
       "id": 302,
@@ -638,7 +698,8 @@
         "name": "Example Analyst",
         "username": "example_analyst"
       },
-      "code_preview": "import civis\nflags = civis.APIClient().feature_flags\n"
+      "code_preview": "import civis\nflags = civis.APIClient().feature_flags\n",
+      "updated_at": "2026-08-20T16:30:00Z"
     },
     {
       "id": 303,
@@ -653,7 +714,8 @@
         "name": "Example Analyst",
         "username": "example_analyst"
       },
-      "code_preview": "select 1"
+      "code_preview": "select 1",
+      "updated_at": "2026-08-20T16:30:00Z"
     },
     {
       "id": 304,
@@ -668,7 +730,8 @@
         "name": "Example Analyst",
         "username": "example_analyst"
       },
-      "code_preview": "print('preview')"
+      "code_preview": "print('preview')",
+      "updated_at": "2026-08-20T16:30:00Z"
     },
     {
       "id": 306,
@@ -683,7 +746,8 @@
         "name": "Example Analyst",
         "username": "example_analyst"
       },
-      "code_preview": "dbt build"
+      "code_preview": "dbt build",
+      "updated_at": "2026-08-20T16:30:00Z"
     },
     {
       "id": 307,
@@ -698,7 +762,29 @@
         "name": "Example Analyst",
         "username": "example_analyst"
       },
-      "code_preview": "dbt build"
+      "code_preview": "dbt build",
+      "updated_at": "2026-08-20T16:30:00Z"
+    },
+    {
+      "id": 308,
+      "name": "Example custom script unused for years",
+      "type": "Custom",
+      "backing_script_type": "container",
+      "archived": false,
+      "hidden": false,
+      "from_template_id": 31,
+      "author": {
+        "id": 2,
+        "name": "Example Analyst",
+        "username": "example_analyst"
+      },
+      "updated_at": "2024-05-01T12:00:00Z",
+      "last_run": {
+        "id": 9308,
+        "state": "failed",
+        "started_at": "2024-05-02T12:00:00Z"
+      },
+      "code_preview": "python template.py"
     }
   ],
   "notebooks": [

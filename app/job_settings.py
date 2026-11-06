@@ -24,6 +24,12 @@ as a label (never the values):
 | not_recognized | anything else |
 
 The live test confirms which shape Civis returns (docs/PLAN.md 17.2).
+
+LOOKBACK_DAYS (optional Integer): the window the next scan will use, shown
+next to Run scan. The job's saved value, or 400 days when the parameter is not
+set (``common/release.DEFAULT_LOOKBACK_DAYS``, the scanner's default). Civis's
+start-run call takes only the job ID, so Run scan cannot pass another window
+(docs/PLAN.md 17.6).
 """
 
 from __future__ import annotations
@@ -54,6 +60,9 @@ class JobSettings:
     problem: str | None = None
     error_type: str | None = None  # Set when the job could not be read: an exception class name, maybe with a status.
     job: dict | None = field(default=None, repr=False, compare=False)  # The job's settings, for the Setup page.
+    # The window the next scan will use: the saved LOOKBACK_DAYS, or the default when it is not set. None when the
+    # saved value is not a whole number from 1 to 3650 (the scan would stop with a configuration problem).
+    lookback_days: int | None = None
 
     @property
     def usable(self) -> bool:
@@ -140,6 +149,20 @@ def parameter_value(job: dict, name: str) -> Any:
     return None
 
 
+def lookback_days(job: dict) -> int | None:
+    """The scanner job's saved LOOKBACK_DAYS, or the default (400) when it is not set. None when the saved value is
+    not a whole number in the scanner's range, which stops a scan before it starts (scanner/config.py)."""
+    value = parameter_value(job, release.LOOKBACK_PARAMETER)
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return release.DEFAULT_LOOKBACK_DAYS
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, str) and value.strip().isdigit():
+        value = int(value.strip())
+    low, high = release.LOOKBACK_DAYS_RANGE
+    return value if isinstance(value, int) and low <= value <= high else None
+
+
 def parse_job(job: dict) -> JobSettings:
     """The results database, credential, and schema from the scanner job's settings."""
     database, credential, shape = database_value(parameter_value(job, DATABASE_PARAMETER))
@@ -162,4 +185,4 @@ def parse_job(job: dict) -> JobSettings:
     if not release.is_scanner_job(job):
         # SCANNER_JOB_ID names some other job. Its parameters are never used to read or create anything.
         problem = "not_scanner_job"
-    return JobSettings(database, credential, schema, shape, problem, None, job)
+    return JobSettings(database, credential, schema, shape, problem, None, job, lookback_days=lookback_days(job))
