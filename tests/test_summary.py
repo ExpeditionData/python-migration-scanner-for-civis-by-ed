@@ -71,6 +71,13 @@ def test_log_counts():
     assert counts.users is None
 
 
+def test_every_civis_git_error_type_is_counted_by_type():
+    """The summary has no list of CIVIS_GIT_FAILED types: any class name is counted as itself (docs/PLAN.md 17.7)."""
+    types = ("GitCommitNotFound", "GitFileEmpty", "GitFileTooLarge", "GitFileAmbiguous", "CivisAPIError status=404")
+    counts = summary.count_log([f"CIVIS_GIT_FAILED object_type=workflow object_id=3 error={t}" for t in types])
+    assert all(counts.errors[("CIVIS_GIT_FAILED", t)] == 1 for t in types) and counts.other_lines == 0
+
+
 @pytest.mark.parametrize("line, expected", [
     ("USERS source=all", "all"),
     ("USERS source=active status=404", "active status=404"),

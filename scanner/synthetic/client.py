@@ -12,7 +12,9 @@ Fixture conventions, per object:
 Git files served through Civis ("civis_git", keyed "python3/<id>" or
 "workflows/<id>"): "commits" is the list the commits endpoint returns, and
 "files" maps a full commit SHA to the file content (a shortened SHA finds it by
-prefix) or to {"content": ..., "size": ...} to set the reported size.
+prefix) or to {"content": ..., "size": ...} to set the reported size. The file
+call answers with a list holding one object, as Civis did in the first live
+test; "file_shape": "object" gives the one object the API spec describes.
 "commits_error" or "file_error" makes that call raise FakeAPIError.
 
 "users_list_errors" makes users.list refuse an account_status (see _users__list).
@@ -166,7 +168,10 @@ class FakeClient:
             raise FakeAPIError(entry["commits_error"])
         return [dict(c) for c in entry.get("commits", [])]  # An array, as civis-python treats this path.
 
-    def _git_file(self, key: str, commit_hash: str) -> dict:
+    def _git_file(self, key: str, commit_hash: str) -> list[dict] | dict:
+        """The live shape by default: a list with one object (docs/PLAN.md 17.7). civis 2.10 turns the JSON
+        array into a ListResponse and fileHash into file_hash. "file_shape": "object" answers with the one
+        object the API spec describes instead."""
         entry = self._git_entry(key)
         if entry.get("file_error"):
             raise FakeAPIError(entry["file_error"])
@@ -176,7 +181,8 @@ class FakeClient:
         file = found[0] if isinstance(found[0], dict) else {"content": found[0]}
         content = file.get("content", "")
         size = file.get("size", len(content.encode("utf-8")))
-        return {"content": content, "type": "file", "size": size, "file_hash": "0" * 40}
+        item = {"content": content, "file_hash": "0" * 40, "size": size, "type": "file"}
+        return item if entry.get("file_shape") == "object" else [item]
 
     # -- other endpoints ----------------------------------------------------
 

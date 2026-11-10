@@ -8,7 +8,11 @@ civis-python 2.10 API spec:
   spec describes one object, but civis-python lists these paths as returning an
   array, so both shapes are accepted and the newest commit is used.
 - ``GET .../git/commits/{commit_hash}``: the item's file at that commit
-  (``scripts.get_python3_git_commits``, ``workflows.get_git_commits``).
+  (``scripts.get_python3_git_commits``, ``workflows.get_git_commits``). The
+  spec describes one object, but in the first live test Civis returned a JSON
+  array with one object (``content`` as plain text, ``fileHash``, ``size``,
+  ``type`` "file"), which civis 2.10 turns into a ``ListResponse``. Both
+  shapes are accepted (docs/PLAN.md 17.7).
 
 Civis reads the file from the repository itself, so this needs no GitHub token
 and sends nothing to GitHub. Only the item's own file comes back, not the rest
@@ -74,6 +78,10 @@ class GitFileTooLarge(Exception):
     """The file is over MAX_FILE_BYTES."""
 
 
+class GitFileAmbiguous(Exception):
+    """Civis returned more than one item, and not exactly one of them is a file with content."""
+
+
 class CivisGitFiles:
     """Reads files through the Civis git endpoints and counts reads and failures. Thread-safe."""
 
@@ -134,7 +142,32 @@ def _is_tag(ref_type: str | None) -> bool:
     return (ref_type or "").strip().lower() == "tag"
 
 
+def _file_item(response: Any) -> Any:
+    """The one file in the file call's answer (docs/PLAN.md 17.7).
+
+    The API spec describes one object, but Civis returns a JSON array with one object, which civis 2.10 turns
+    into a civis.ListResponse. Both shapes are accepted: a list (or tuple) with no items is GitFileEmpty, one
+    item is that item, and with more than one, the one item whose type is "file" and whose content is not blank
+    is used; if there is not exactly one such item, GitFileAmbiguous."""
+    if not isinstance(response, (list, tuple)):
+        return response
+    items = list(response)
+    if not items:
+        raise GitFileEmpty()
+    if len(items) == 1:
+        return items[0]
+    files = [item for item in items if field_of(item, "type") == "file" and _has_text(field_of(item, "content"))]
+    if len(files) != 1:
+        raise GitFileAmbiguous()
+    return files[0]
+
+
+def _has_text(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
 def _file_text(response: Any) -> str:
+    response = _file_item(response)
     content = field_of(response, "content")
     if not isinstance(content, str) or not content.strip():
         raise GitFileEmpty()
@@ -176,6 +209,8 @@ def _reason(exc: Exception, item: str, ref_type: str | None) -> str:
         return f"{start}: Civis returned an empty file."
     if isinstance(exc, GitFileTooLarge):
         return f"{start}: the file is over 2 MB."
+    if isinstance(exc, GitFileAmbiguous):
+        return f"{start}: Civis returned more than one file."
     status = getattr(exc, "status_code", None)
     if isinstance(status, int) and not isinstance(status, bool):
         return f"{start} (HTTP {status})."

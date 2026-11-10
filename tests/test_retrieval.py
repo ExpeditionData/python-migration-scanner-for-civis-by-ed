@@ -759,6 +759,105 @@ def test_civis_git_decodes_base64_content_like_a_github_file():
     assert reader.read(ObjectType.PYTHON_SCRIPT, 5, SHA_B)[0] == "pass\n"  # Plain code is never decoded.
 
 
+# --- The file call's shape (docs/PLAN.md 17.7) ----------------------------------------------------
+# The API spec describes one object. In the first live test Civis returned a JSON array with one object
+# (content as plain text, fileHash, size, type "file"), which civis 2.10 turns into a ListResponse.
+
+GIT_ITEMS = {ObjectType.PYTHON_SCRIPT: ("python3/5", 5, "script"), ObjectType.WORKFLOW: ("workflows/9", 9, "workflow")}
+FILE_METHODS = {ObjectType.PYTHON_SCRIPT: "_scripts__get_python3_git_commits",
+                ObjectType.WORKFLOW: "_workflows__get_git_commits"}
+
+
+def _file(content: str, kind: str = "file") -> dict:
+    return {"content": content, "file_hash": "0" * 40, "size": len(content.encode("utf-8")), "type": kind}
+
+
+def _answering(object_type: ObjectType, answer) -> FakeClient:
+    """A client whose file call returns ``answer`` (a value, or a function of nothing) for the item at SHA_A."""
+    key, _, _ = GIT_ITEMS[object_type]
+    client = git_client({"files": {SHA_A: "unused"}}, key=key)
+    setattr(client, FILE_METHODS[object_type], lambda object_id, commit_hash: answer() if callable(answer) else answer)
+    return client
+
+
+def _read(object_type: ObjectType, client: FakeClient):
+    _, object_id, _ = GIT_ITEMS[object_type]
+    reader = civis_git.CivisGitFiles(client)
+    return reader.read(object_type, object_id, SHA_A), reader
+
+
+def _civis_list(items: list[dict]):
+    response = pytest.importorskip("civis.response")
+    return response.convert_response_data_type([{"fileHash" if k == "file_hash" else k: v for k, v in item.items()}
+                                                 for item in items])
+
+
+@pytest.mark.parametrize("object_type", list(GIT_ITEMS), ids=["python_script", "workflow"])
+def test_the_fake_file_call_answers_a_list_like_civis(object_type):
+    key, object_id, _ = GIT_ITEMS[object_type]
+    client = git_client({"files": {SHA_A: "x = 1\n"}}, key=key)
+    answer = getattr(client, FILE_METHODS[object_type])(object_id, SHA_A)
+    assert answer == [{"content": "x = 1\n", "file_hash": "0" * 40, "size": 6, "type": "file"}]
+    assert civis_git.CivisGitFiles(client).read(object_type, object_id, SHA_A) == ("x = 1\n", None)
+
+
+@pytest.mark.parametrize("object_type", list(GIT_ITEMS), ids=["python_script", "workflow"])
+def test_the_object_shape_the_spec_describes_still_works(object_type):
+    key, object_id, _ = GIT_ITEMS[object_type]
+    client = git_client({"files": {SHA_A: "x = 1\n"}, "file_shape": "object"}, key=key)
+    assert isinstance(getattr(client, FILE_METHODS[object_type])(object_id, SHA_A), dict)
+    assert civis_git.CivisGitFiles(client).read(object_type, object_id, SHA_A) == ("x = 1\n", None)
+
+
+@pytest.mark.parametrize("object_type", list(GIT_ITEMS), ids=["python_script", "workflow"])
+@pytest.mark.parametrize("shape", ["list", "tuple", "civis_list", "civis_object"])
+def test_every_container_civis_can_return_is_read(object_type, shape):
+    item = _file("import civis\n")
+    answer = {"list": lambda: [item], "tuple": lambda: (item,), "civis_list": lambda: _civis_list([item]),
+              "civis_object": lambda: _civis_list([item])[0]}[shape]
+    (text, note), reader = _read(object_type, _answering(object_type, answer))
+    assert (text, note) == ("import civis\n", None) and (reader.reads, reader.failures) == (1, 0)
+
+
+@pytest.mark.parametrize("object_type", list(GIT_ITEMS), ids=["python_script", "workflow"])
+@pytest.mark.parametrize("items, expected", [
+    ([_file("x = 1\n"), _file("", "file")], "x = 1\n"),
+    ([_file("x = 1\n"), _file("README text\n", "dir")], "x = 1\n"),
+    ([_file("   \n"), _file("y = 2\n")], "y = 2\n"),
+], ids=["one_with_content", "one_of_type_file", "blank_and_content"])
+def test_two_items_with_one_file_with_content_read_that_file(object_type, items, expected):
+    (text, note), _ = _read(object_type, _answering(object_type, items))
+    assert (text, note) == (expected, None)
+    (text, note), _ = _read(object_type, _answering(object_type, lambda: _civis_list(items)))
+    assert (text, note) == (expected, None)
+
+
+@pytest.mark.parametrize("object_type", list(GIT_ITEMS), ids=["python_script", "workflow"])
+@pytest.mark.parametrize("items, error, reason", [
+    ([], "GitFileEmpty", ": Civis returned an empty file."),
+    ([_file("   \n")], "GitFileEmpty", ": Civis returned an empty file."),
+    ([_file("")], "GitFileEmpty", ": Civis returned an empty file."),
+    ([_file("x = 1\n"), _file("y = 2\n")], "GitFileAmbiguous", ": Civis returned more than one file."),
+    ([_file(""), _file("  ")], "GitFileAmbiguous", ": Civis returned more than one file."),
+    ([_file("x = 1\n", "dir"), _file("y = 2\n", "symlink")], "GitFileAmbiguous", ": Civis returned more than one file."),
+], ids=["no_items", "blank_content", "empty_content", "two_files", "two_blank_files", "no_file_type"])
+def test_lists_that_hold_no_single_file_give_a_reason(git_log, object_type, items, error, reason):
+    _, object_id, item = GIT_ITEMS[object_type]
+    (text, why), reader = _read(object_type, _answering(object_type, items))
+    assert text is None and why == f"The {item}'s own file could not be read through Civis{reason}"
+    assert (reader.reads, reader.failures) == (0, 1)
+    assert git_log.getvalue() == f"CIVIS_GIT_FAILED object_type={object_type} object_id={object_id} error={error}\n"
+
+
+def test_a_list_item_gets_the_same_size_limit_and_base64_decoding():
+    big = {**_file("x = 1\n"), "size": gh.MAX_FILE_BYTES + 1}
+    (text, why), _ = _read(ObjectType.PYTHON_SCRIPT, _answering(ObjectType.PYTHON_SCRIPT, [big]))
+    assert text is None and why.endswith(": the file is over 2 MB.")
+    code = "import civis\nclient = civis.APIClient()\n"
+    (text, _), _ = _read(ObjectType.PYTHON_SCRIPT, _answering(ObjectType.PYTHON_SCRIPT, [_file(base64_lines(code))]))
+    assert text == code
+
+
 def test_civis_git_method_names_are_the_same_in_civis_2_10_and_v3():
     """civis-python names a GET "list_" when the response is an array. These paths are on its
     array list, which v3 keeps (only the legacy-name list is removed at v3)."""
