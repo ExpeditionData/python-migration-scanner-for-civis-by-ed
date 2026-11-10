@@ -215,6 +215,33 @@ h2 {
 .banner[hidden], .run-scan-note[hidden] { display: none; }
 .run-scan { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .run-scan form { margin: 0; }
+
+/* The Overview's page head (the only one with the live Run scan box): a grid, so the Run scan message gets its
+   own row under the buttons. The title and both buttons share row 1, bottom-aligned as before, and neither
+   button moves when the message appears or disappears; only the content below the head moves down. The
+   wrappers use display: contents so their children sit in the grid; the message keeps its status role. */
+.page-head:has(> .actions > .run-scan) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  column-gap: 10px;
+  row-gap: 0;
+  align-items: end;
+}
+.page-head:has(> .actions > .run-scan):not(:has(> .actions > .button)) { grid-template-columns: minmax(0, 1fr) auto; }
+.page-head:has(> .actions > .run-scan) > .actions,
+.page-head:has(> .actions > .run-scan) .run-scan { display: contents; }
+.page-head:has(> .actions > .run-scan) > :first-child { grid-column: 1; grid-row: 1; margin-right: 6px; }
+.page-head:has(> .actions > .run-scan) .run-scan > :not(.run-scan-note) { grid-column: 2; grid-row: 1; }
+.page-head:has(> .actions > .run-scan) > .actions > .button { grid-column: 3; grid-row: 1; }
+.page-head:has(> .actions > .run-scan) .run-scan-note {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  justify-self: end;
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 8px;
+  text-align: right;
+}
 .statement { margin: 8px 0; padding: 8px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-family: var(--mono); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .empty form { margin-top: 12px; }
 
@@ -409,6 +436,15 @@ select.status-select.changed { border-color: var(--primary); border-width: 2px; 
   .main-nav a { flex: 1 1 auto; text-align: center; }
   h1 { font-size: 24px; }
   .actions, .actions form, .actions .button { width: 100%; }
+  /* The Overview at phone width: one column, the message last, so Download CSV does not move either. */
+  .page-head:has(> .actions > .run-scan),
+  .page-head:has(> .actions > .run-scan):not(:has(> .actions > .button)) { grid-template-columns: minmax(0, 1fr); row-gap: 10px; }
+  .page-head:has(> .actions > .run-scan) > :first-child { grid-column: 1; grid-row: 1; margin: 0 0 6px; }
+  .page-head:has(> .actions > .run-scan) .run-scan > :not(.run-scan-note) { grid-column: 1; grid-row: 2; }
+  .page-head:has(> .actions > .run-scan) > .actions > .button { grid-column: 1; grid-row: 3; }
+  .page-head:has(> .actions > .run-scan) .run-scan-note {
+    grid-column: 1; grid-row: auto; justify-self: stretch; margin-top: 0; text-align: left;
+  }
   .field, .field-grow { flex: 1 1 100%; }
   .tile-value { font-size: 30px; }
 }

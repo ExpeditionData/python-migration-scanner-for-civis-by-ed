@@ -302,6 +302,27 @@ def test_only_the_overview_loads_run_scan_js_and_wraps_the_button(preview, monke
     assert "run-scan.js" not in scan and "data-run-scan" not in scan
 
 
+def test_the_run_scan_message_has_its_own_row_under_the_buttons(preview, monkeypatch):
+    """docs/PLAN.md 17.7, Part C. The message used to sit beside Run scan and push Download CSV sideways. The
+    Overview's page head is now a grid: the title and both buttons in row 1, the message in row 2 (last at phone
+    width), styled from app.css only. The markup and its status region are unchanged."""
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    body = make_app(preview).test_client().get("/").get_data(as_text=True)
+    head = body[body.index('<div class="page-head">'): body.index('<p class="note run-window">')]
+    # The selector's path: the page head > .actions > .run-scan > the message, with Download CSV in .actions.
+    assert re.search(r'<div class="actions">\s*<div class="run-scan" data-run-scan', head)
+    assert re.search(r'</p></div>\s*<a class="button button-secondary" href="/download/\d+">Download CSV</a>', head)
+    assert 'role="status" aria-live="polite" hidden></p>' in head and "style=" not in head
+    css = (Path(__file__).resolve().parent.parent / "app/static/css/app.css").read_text(encoding="utf-8")
+    grid = ".page-head:has(> .actions > .run-scan)"
+    assert f"{grid} {{\n  display: grid;" in css
+    assert f"{grid} > .actions,\n{grid} .run-scan {{ display: contents; }}" in css
+    note = css[css.index(f"{grid} .run-scan-note {{"):]
+    assert "grid-row: 2;" in note[:200]
+    phone = css[css.index("@media (max-width: 640px)"):]
+    assert f"{grid} .run-scan-note {{" in phone and f"{grid} > .actions > .button {{ grid-column: 1; grid-row: 3; }}" in phone
+
+
 def test_an_idle_overview_has_a_plain_run_scan_form(tmp_path, monkeypatch):
     monkeypatch.delenv("FLASK_DEBUG", raising=False)
     build_preview(tmp_path, now=datetime(2026, 10, 14, 15, 0, tzinfo=timezone.utc))
