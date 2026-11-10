@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import csv
 import io
+import numbers
 import re
 import sqlite3
 from datetime import datetime
@@ -74,6 +75,82 @@ def table_rows(table: Table, run_id: str, rows: list[dict]) -> list[tuple]:
         values = {**row, "run_id": run_id}
         out.append(tuple(fit(values.get(c.name), c.sql_type) for c in table.columns))
     return out
+
+
+WHOLE_NUMBER_TYPES = frozenset({"INTEGER", "BIGINT"})
+_DIGITS = re.compile(r"-?\d+")
+
+
+class ColumnValueError(ValueError):
+    """A value does not fit its column's type. Names the table, column, and type, never the value."""
+
+    def __init__(self, table: str, column: str, sql_type: str):
+        super().__init__(f"A value in {table}.{column} is not a valid {sql_type}.")
+        self.table = table
+        self.column = column
+
+
+def _is_bool(value: Any) -> bool:
+    """A Python or numpy boolean."""
+    return isinstance(value, bool) or type(value).__name__ in ("bool", "bool_")
+
+
+def whole_number(value: Any) -> int | None:
+    """An INTEGER or BIGINT cell: None, or a whole number as int. Raises ValueError for a bool (a bool is an int
+    in Python, but never a valid ID or count), a number that is not whole, NaN, or anything else."""
+    if value is None:
+        return None
+    if _is_bool(value):
+        raise ValueError("bool")
+    if isinstance(value, numbers.Integral):
+        return int(value)
+    if isinstance(value, float):
+        if value.is_integer():
+            return int(value)
+        raise ValueError("not whole")
+    if isinstance(value, str) and _DIGITS.fullmatch(value.strip()):
+        return int(value.strip())
+    raise ValueError("not a whole number")
+
+
+def boolean_text(value: Any) -> str | None:
+    """A BOOLEAN cell as the text Redshift's COPY reads: "true", "false", or None (an empty cell, NULL)."""
+    if value is None:
+        return None
+    if _is_bool(value):
+        return "true" if value else "false"
+    raise ValueError("not a bool")
+
+
+def table_frame(table: Table, run_id: str, rows: list[dict]) -> Any:
+    """The pandas DataFrame CivisSink writes for ``rows``, typed from the table's columns (docs/PLAN.md 17.7).
+
+    civis.io.dataframe_to_civis writes the frame with ``df.to_csv(index=False)`` and loads that CSV into the
+    table. Built naively, a whole-number column that mixes numbers and None becomes float64, which to_csv writes
+    as 12345.0, and the database load rejects it. So:
+
+    - INTEGER and BIGINT columns use pandas' nullable Int64 dtype (whole numbers as digits, None as an empty cell).
+    - BOOLEAN columns hold the text "true" or "false" (None as an empty cell), not Python's True and False.
+    - TIMESTAMP and VARCHAR columns are built as before.
+
+    A value that does not fit raises ColumnValueError before anything is written.
+    """
+    import pandas  # In the scanner image. Imported here so the module loads without it.
+
+    values = table_rows(table, run_id, rows)
+    data: dict[str, Any] = {}
+    for index, column in enumerate(table.columns):
+        cells = [row[index] for row in values]
+        try:
+            if column.sql_type in WHOLE_NUMBER_TYPES:
+                data[column.name] = pandas.array([whole_number(c) for c in cells], dtype="Int64")
+            elif column.sql_type == "BOOLEAN":
+                data[column.name] = pandas.Series([boolean_text(c) for c in cells], dtype=object)
+            else:
+                data[column.name] = cells
+        except (ValueError, TypeError, OverflowError) as exc:
+            raise ColumnValueError(table.name, column.name, column.sql_type) from exc
+    return pandas.DataFrame(data, columns=table.column_names)
 
 
 class ResultSink(Protocol):
@@ -240,9 +317,10 @@ class CivisSink:
     def append(self, table: Table, run_id: str, rows: list[dict]) -> None:
         if not rows:
             return
-        import pandas  # In the scanner image. Imported here so the module loads without it.
-
-        frame = pandas.DataFrame(table_rows(table, run_id, rows), columns=table.column_names)
+        try:
+            frame = table_frame(table, run_id, rows)
+        except ColumnValueError as exc:  # Nothing was sent; the scan ends tables_failed like a failed load.
+            raise TableWriteError(table.name) from exc
         try:
             self.io.dataframe_to_civis(
                 frame, self.database, sql.qualified_table(self.schema, table.name), client=self.client,

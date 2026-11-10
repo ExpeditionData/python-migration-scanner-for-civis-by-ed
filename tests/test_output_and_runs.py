@@ -36,7 +36,8 @@ from scanner.output import (
 from scanner.process import ObjectResult
 from scanner.runner import AlreadyFinished
 from common.models import CivisObject
-from tests.civis_fakes import civis_read_result
+from tests.civis_fakes import CivisJobFailure, civis_read_result, load_frame_like_civis
+from tests.civis_fakes import FakeFuture as SharedFakeFuture
 
 NOW = datetime(2026, 10, 13, 12, 0, tzinfo=timezone.utc)
 FAKE_LOG_VALUES = ("Synthetic-Log-Pw-7731", "synthetic.member@example.org")
@@ -146,6 +147,10 @@ class FakeCivisIO:
         self.calls.append(("load", table, kwargs, list(df.columns), len(df)))
         if self.fail_on and table.endswith(self.fail_on):
             raise RuntimeError("load failed")
+        try:
+            load_frame_like_civis(df, table)  # Renders the CSV like civis 2.10 and checks every typed cell.
+        except CivisJobFailure as exc:
+            return SharedFakeFuture(exc)
         return FakeFuture()
 
     def file_to_civis(self, buf, name=None, expires_at="DEFAULT", client=None):

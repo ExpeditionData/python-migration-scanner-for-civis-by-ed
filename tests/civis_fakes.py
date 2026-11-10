@@ -9,14 +9,60 @@ behave like civis 2.7.1's ``Response``: attribute and key access, and
 from __future__ import annotations
 
 import copy
+import csv
+import io
 import re
 from typing import Any
 
 try:
-    from civis.base import EmptyResultError
+    from civis.base import CivisJobFailure, EmptyResultError
 except ImportError:  # Both venvs and both test images have civis; this keeps the fakes usable without it.
     class EmptyResultError(Exception):
         """A made-up stand-in with the name of civis.base.EmptyResultError."""
+
+    class CivisJobFailure(Exception):
+        """A made-up stand-in with the name and first argument of civis.base.CivisJobFailure."""
+
+        def __init__(self, err_msg, response=None, job_id=None, run_id=None):
+            super().__init__(err_msg)
+            self.error_message = err_msg
+
+
+_WHOLE_NUMBER_CELL = re.compile(r"-?[0-9]+")
+_BOOLEAN_CELLS = frozenset({"true", "false"})
+
+
+def load_frame_like_civis(df, table: str) -> str:
+    """Render ``df`` the way civis 2.10's dataframe_to_civis does (``df.to_csv(index=False)``, then a load of that
+    CSV into the table), and check every cell against its column's type the way the database load would.
+
+    ``table`` is "schema.table"; its columns come from common/schema.py. INTEGER and BIGINT cells must be an
+    optional minus sign and digits, or empty. BOOLEAN cells must be true, false, or empty. Returns the CSV text.
+    A bad cell, or column names that do not match the table, raises civis.base.CivisJobFailure, as the import
+    job's future does when the load fails (the scan then ends tables_failed, as in the live test)."""
+    from common.schema import TABLES
+
+    name = table.rsplit(".", 1)[-1]
+    spec = next((t for t in TABLES if t.name == name), None)
+    if spec is None:
+        raise CivisJobFailure(f"Made-up load failure: {table} is not one of the tool's tables.")
+    text = df.to_csv(index=False)
+    reader = csv.reader(io.StringIO(text))
+    header = next(reader, [])
+    if header != spec.column_names:
+        raise CivisJobFailure(f"Made-up load failure: the columns do not match {name}.")
+    types = [c.sql_type for c in spec.columns]
+    for line, row in enumerate(reader, start=2):
+        for column, sql_type, cell in zip(header, types, row):
+            if cell == "":
+                continue  # NULL.
+            if sql_type in ("INTEGER", "BIGINT") and not _WHOLE_NUMBER_CELL.fullmatch(cell):
+                raise CivisJobFailure(f"Made-up load failure: {name}.{column} on CSV line {line} is not a whole "
+                                      f"number: {cell!r}.")
+            if sql_type == "BOOLEAN" and cell not in _BOOLEAN_CELLS:
+                raise CivisJobFailure(f"Made-up load failure: {name}.{column} on CSV line {line} is not a "
+                                      f"boolean: {cell!r}.")
+    return text
 
 
 def no_output() -> EmptyResultError:
@@ -205,6 +251,11 @@ class RecordingIO:
     read_civis_sql and ``small_reads`` the SELECTs sent with query_civis.
     ``empty_reads`` holds the reads that returned zero rows. ``queries`` holds
     only the statements query_civis sent that are not reads (the writes).
+
+    dataframe_to_civis renders the frame to CSV as civis 2.10 does and checks every typed cell
+    (``load_frame_like_civis``); a bad cell makes the returned future raise CivisJobFailure. ``frames`` holds
+    every table it was asked to write, ``loaded`` the (table, CSV text) of each load that passed, and
+    ``failed_loads`` the tables whose load failed.
     """
 
     def __init__(self, tables: dict[str, list[list]] | None = None, fail: dict[str, Exception] | None = None):
@@ -217,7 +268,9 @@ class RecordingIO:
         self.preview_rows: list[Any] = []
         self.empty_reads: list[str] = []  # Reads that returned zero rows.
         self.queries: list[str] = []
-        self.frames: list[str] = []
+        self.frames: list[str] = []  # Every table dataframe_to_civis was asked to write.
+        self.loaded: list[tuple[str, str]] = []  # (table, CSV text) for each load that passed the cell check.
+        self.failed_loads: list[str] = []  # Tables whose load failed the cell check.
         self.databases: list[Any] = []
         self.credentials: list[Any] = []
 
@@ -278,4 +331,9 @@ class RecordingIO:
         self.frames.append(table)
         self.databases.append(database)
         self.credentials.append(credential_id)
+        try:
+            self.loaded.append((table, load_frame_like_civis(df, table)))
+        except CivisJobFailure as exc:
+            self.failed_loads.append(table)
+            return FakeFuture(exc)  # Like civis: the import job's future raises when the load fails.
         return FakeFuture()
