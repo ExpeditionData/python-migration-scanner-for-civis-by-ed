@@ -60,7 +60,7 @@ be made public at any time.
   credential. Rob changes its visibility himself; never change it from a
   session.
 - Releases are git tags, protected by the "release tags" ruleset. The first
-  live test set up on `v0.1.0-rc5` and runs its scans on `v0.1.0-rc7`, with
+  live test set up on `v0.1.0-rc5` and runs its scans on `v0.1.0-rc8`, with
   `LOOKBACK_DAYS` 30. Create a tag or a GitHub Release only when Rob's prompt
   says to.
 - Commit after each completed step, with a clear message that says what changed
@@ -136,10 +136,11 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   job's settings, starts runs, and reads status and `PROGRESS` log lines
   through the Civis API, and reads results from the tables. Checklist status
   is append-only.
-- **Service settings.** `SCANNER_JOB_ID`, `CIVIS_SERVICE_HEALTH_PATH`
-  (`/healthz`), and `CIVIS_FRAME_ANCESTORS_REPORT_ONLY`, plus the optional
-  `CIVIS_PLATFORM_URL` and `CIVIS_FRAME_ANCESTORS`. There are no results
-  settings on the Service.
+- **Service settings.** `SCANNER_JOB_ID` and `CIVIS_SERVICE_HEALTH_PATH`
+  (`/healthz`), plus the optional `CIVIS_FRAME_ANCESTORS_REPORT_ONLY`
+  (default false; blank or unset is false; the frame rule is enforced by
+  default, and true is for troubleshooting only), `CIVIS_PLATFORM_URL`, and
+  `CIVIS_FRAME_ANCESTORS`. There are no results settings on the Service.
 - **Data storage.** Five tables in the user's schema: `scan_runs`, `objects`,
   `findings`, `coverage`, `checklist_status`. Every row carries a run ID.
 - **Rules.** YAML files in `common/rules/` (`civis_v3.yaml`, `python315.yaml`),
@@ -170,7 +171,13 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   template copies once, reads only scripts in the `LOOKBACK_DAYS` window,
   logs inventory counts and progress, reads small results with
   `query_civis`, adds progress messages and a live Run scan button, and shows
-  templates. The build under test is `v0.1.0-rc7`.
+  templates. Scan A on `v0.1.0-rc7` finished inventory in about 19 minutes
+  but ended `tables_failed` and read no git file through Civis, fixed for
+  `v0.1.0-rc8` (docs/PLAN.md 17.7): typed result frames (whole numbers as
+  `Int64`, booleans as `true`/`false`), the git file read from the list
+  Civis returns, the Run scan message under the button, "No completed scan
+  yet" after a cancelled scan, and the frame rule enforced by default. The
+  build under test is `v0.1.0-rc8`, with `LOOKBACK_DAYS` 30.
   Implementation choices not in the approved plan are in docs/PLAN.md
   sections 10 to 17.
 - **App flow.** `app/__init__.create_app` -> `app/services.py` (Civis or local
@@ -218,7 +225,14 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   reads an item's own git file through the Civis API: a git-backed workflow's
   definition during inventory (`workflows.get_git` is called for every active
   workflow), and a git-backed Python script's file in `process_item` when
-  there is no token or GitHub fails. An object whose code was not read but
+  there is no token or GitHub fails. The file call returns a JSON array with
+  one object (`content` as plain text, `fileHash`, `size`, `type` "file"),
+  which civis 2.10 turns into a `ListResponse`; `_file_text` accepts it and
+  the spec's one object (several items: the one file with content, else
+  `GitFileAmbiguous`; docs/PLAN.md 17.7). `CivisSink.append` writes the
+  frame from `output.table_frame`, typed from the table's columns, because
+  civis writes it with `df.to_csv(index=False)` and a float in a
+  whole-number column fails the load. An object whose code was not read but
   whose log was is partial. The final `RUN` log line adds `objects_total`,
   `objects_scanned`, `api_calls`, `github_tarball_requests`,
   `github_cache_peak_bytes`, `github_cache_evictions`, `civis_git_reads`, and
@@ -332,7 +346,7 @@ app on 127.0.0.1 only:
 .venv312\Scripts\python.exe -m app.local --results dry_run_output
 ```
 
-Open http://127.0.0.1:8050. Add `--state no-scan` (or `first-scan-running`,
+Open http://127.0.0.1:8050. Add `--state no-scan` (or `first-scan-running`, `first-scan-cancelled`,
 `failed`, `tables-failed`, `schema-missing`, `no-job-id`, `job-unreadable`,
 `database-unrecognized`, `schema-refused`, `tables-missing`,
 `setup-failures`, `not-scanner-job`, or `schema-shared`) to see the empty and
@@ -391,6 +405,18 @@ Run the full suite on both Python versions before every commit:
   Civis shares calls (`scripts.list_containers_shares`,
   `services.list_shares`) return one object with readers, writers, and
   owners, not a list, and the fake shares do the same.
+- The fakes also match two shapes confirmed in scan A on `v0.1.0-rc7`
+  (docs/PLAN.md 17.7). Every fake `dataframe_to_civis` renders the frame with
+  `df.to_csv(index=False)`, as civis 2.10 does, and checks every typed cell
+  (`tests/civis_fakes.load_frame_like_civis`: INTEGER and BIGINT digits or
+  empty, BOOLEAN `true`, `false`, or empty); a bad cell makes the load's
+  future raise `CivisJobFailure`, so the scan ends `tables_failed`.
+  `RecordingIO.loaded` holds each load's CSV text. The synthetic client's
+  git file call answers a list with one object by default (`"file_shape":
+  "object"` gives the spec's shape). `tests/test_typed_columns.py`,
+  `tests/test_left_behind_run.py`, and `tests/test_empty_states.py` cover
+  the typed frames, a run left by the old failure, and the Overview's empty
+  states.
 - `tests/test_app.py` covers every page and API, CSRF on every POST, escaping
   of hostile object names, security headers, the concurrent-run guard, the
   batched checklist save, the empty and error states, text contrast, and local

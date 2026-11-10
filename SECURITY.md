@@ -242,7 +242,8 @@ These are described in [app/security.py](app/security.py) and tested in
   `platform.civisanalytics.com`. The app is designed to allow framing only by
   itself and by that address, so other websites cannot embed it. You can change the list with
   the `CIVIS_FRAME_ANCESTORS` setting.
-  - **Setup aid.** While you set up the app, you can set
+  - **Troubleshooting aid.** By default, the app is designed to enforce the
+    rule. If the app does not show inside Civis, you can set
     `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` to `true`. The browser then reports a
     wrong framing rule as a console warning instead of showing a blank page.
     Every other protection on this list stays on, and no report is sent

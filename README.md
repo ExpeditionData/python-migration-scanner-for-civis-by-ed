@@ -76,10 +76,11 @@ for your review.
   by hand, use the SQL in [SECURITY.md](SECURITY.md#keeping-and-deleting-results).
 - **Downloads.** "Download CSV" in the web app saves the full report to the
   viewer's computer, outside Civis. Decide whether your admins should use it.
-- **Framing check during setup.** The Service setting
-  `CIVIS_FRAME_ANCESTORS_REPORT_ONLY=true` turns a wrong framing rule into a
-  browser console warning instead of a blank page. Turn it off once the app
-  shows correctly inside Civis.
+- **Framing rule.** The app is designed to allow framing only by itself and
+  Civis Platform, and to enforce this rule by default. For troubleshooting only,
+  the optional Service setting `CIVIS_FRAME_ANCESTORS_REPORT_ONLY=true` turns a
+  wrong framing rule into a browser console warning instead of a blank page.
+  Set it back to `false` once the app shows inside Civis.
 
 ## Setup
 
@@ -284,7 +285,7 @@ cancelled or hit the 5-day limit for container scripts):
    |---|---|
    | `SCANNER_JOB_ID` | The scanner job's ID from step 6 above. The app reads the results database, credential, and schema from the job's `RESULTS_DB` and `RESULTS_SCHEMA` parameters. |
    | `CIVIS_SERVICE_HEALTH_PATH` | `/healthz` |
-   | `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` | `true` for the first deployment only. Change it to `false` once the app shows correctly inside Civis (see below). |
+   | `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` | Optional (default `false`). Leave it out. For troubleshooting only: if the app does not show inside Civis, set it to `true`, then back to `false` (step 10). |
    | `CIVIS_PLATFORM_URL` | Optional. Leave it out unless your Civis web interface is not at `https://platform.civisanalytics.com`. |
    | `CIVIS_FRAME_ANCESTORS` | Optional. Leave it out unless Civis shows Services from a different address. |
 
@@ -303,16 +304,22 @@ cancelled or hit the 5-day limit for container scripts):
    with your default group automatically, so remove that group: open the
    Service report, leave full-screen mode, click the Sharing icon, and keep only
    Civis admins.
-10. Check the frame rule. Open the app in Chrome, Edge, or Firefox (Safari
-    ignores the report-only rule) and open the browser's developer console. If
-    the app shows and the console has no "frame-ancestors" warning from the app,
-    change `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` to `false` and click **Update
-    Deployment**. If there is a warning, note the address it names and set
-    `CIVIS_FRAME_ANCESTORS` to include it before you turn report-only off.
+10. Check the frame rule. With the browser's developer console open, reload
+    the Service's page in Civis. The app shows in the preview pane, and the
+    console has no Content Security Policy errors from the app. If the pane is
+    blank and the console names a `frame-ancestors` error with another parent
+    address, add that address to `CIVIS_FRAME_ANCESTORS` and click **Update
+    Deployment**. To troubleshoot further, set
+    `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` to `true` and click **Update
+    Deployment**: the browser then reports a wrong rule as a console warning
+    (Chrome, Edge, or Firefox; Safari ignores it) and shows the app. Set it
+    back to `false` (or remove it) and click **Update Deployment** once the app
+    shows, because while it is `true` other websites could embed the app.
 
 ### Set up results storage and check the setup
 
-1. Open the app (**View Report** on the Service). The Overview page says the
+1. Open the app: after **Start Deployment**, Civis shows it in the preview
+   pane on the Service's page. The Overview page says the
    results schema does not exist yet, and **Run scan** is off until it does.
 2. Click **Set up results storage**. The app creates the schema named in the
    scanner job's `RESULTS_SCHEMA` parameter and its five tables, with the
@@ -331,7 +338,8 @@ cancelled or hit the 5-day limit for container scripts):
    results storage, changes nothing, and shows each check as pass, warning,
    fail, or review, with the fix. Fix any line that is not a pass. The sharing
    line is always "review": confirm that only Civis admins have access. The
-   frame rule line is a warning until you finish step 10 above.
+   frame rule line passes while the rule is enforced, and is a warning while
+   `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` is `true`.
 5. If you need help, click **Build test summary** on the Setup page, copy the
    text, and send it to whoever supports your setup. It holds counts, fixed
    labels, and error types only. Do not send the Setup page itself, which can
@@ -339,7 +347,7 @@ cancelled or hit the 5-day limit for container scripts):
 
 ### Run the first scan
 
-1. Open the app (**View Report** on the Service).
+1. Open the app in the preview pane on the Service's page in Civis.
 2. On the Overview page, click **Run scan**. The button changes to "Scan
    running" and stays off until the scan ends, so only one scan runs at a
    time.
@@ -393,7 +401,9 @@ share it with whoever supports your setup.
 3. On the Service, change **Branch** to the same tag, save, and click
    **Update Deployment**.
 4. Open the app's **Setup** page and check that every line still passes. Line 7
-   compares the Service's tag with the scanner job's.
+   compares the Service's tag with the scanner job's. It is "review" instead
+   of a pass if Civis added the deploying user's GitHub token to the Service
+   as `REPO_HTTP_TOKEN` (step 6 of "Create the Service").
 5. Run a new scan. Earlier scans and checklist statuses are kept.
 
 Always change both parts to the same tag.

@@ -16,13 +16,19 @@ README setup and every fact that could not be confirmed from documentation
   `error=CivisAPIError status=403`) are fine to record; they hold no content.
 - If something you would need to record looks like client content, write
   "content withheld" and describe it in general terms instead.
-- **Release tag:** scans use `v0.1.0-rc7`, with `LOOKBACK_DAYS` set to `30`
+- **Release tag:** scans use `v0.1.0-rc8`, with `LOOKBACK_DAYS` set to `30`
   on the scanner job. Setup (section 1) was done on `v0.1.0-rc5` and passed,
   and it stays: before the next scan, move the scanner job and the Service to
-  `v0.1.0-rc7` by changing their tag only (README "Update to a new release",
-  steps 2 to 4), then add the optional `LOOKBACK_DAYS` parameter (Integer, not
-  required) to the scanner job, set its value to `30`, and save. The Overview
-  then says a scan checks scripts that ran or changed in the last 30 days.
+  `v0.1.0-rc8` by changing their tag only (README "Update to a new release",
+  steps 2 to 4). The scanner job keeps its `LOOKBACK_DAYS` parameter with the
+  value `30` (add it as an optional Integer parameter if it is missing). The
+  Overview then says a scan checks scripts that ran or changed in the last 30
+  days. `v0.1.0-rc8` follows `v0.1.0-rc7` because Scan A on `v0.1.0-rc7`
+  finished its inventory in about 19 minutes but ended `tables_failed`, and
+  read no git-backed file through Civis (docs/PLAN.md 17.7): whole numbers
+  are now written as whole numbers in the result tables, the git file is read
+  from the list Civis returns, the Run scan message shows under the button,
+  and the Overview says "No completed scan yet" after a cancelled scan.
   `v0.1.0-rc7` follows `v0.1.0-rc6` because Scan A on `v0.1.0-rc6` was still
   in Inventory after about 1.5 hours and was cancelled (docs/PLAN.md 17.6):
   template copies are inventoried once, only scripts that ran or changed in
@@ -38,20 +44,22 @@ README setup and every fact that could not be confirmed from documentation
   no rows, and the shape of the Civis sharing lists. `v0.1.0-rc4` followed
   `v0.1.0-rc3` because of two safety guards: Run scan starts only this tool's
   scanner job, and the tool refuses a results schema that holds anything
-  else. Use `v0.1.0-rc7` wherever the README says `<release tag>` from now on.
+  else. Use `v0.1.0-rc8` wherever the README says `<release tag>` from now on.
   Item 5.6 (update to a new release) waits for the first release tag after
-  `v0.1.0-rc7`.
+  `v0.1.0-rc8`.
 - **Browser:** Chrome, Edge, or Firefox. Safari ignores the report-only frame
-  rule (item 2.1).
+  rule (the optional items 2.2 and 2.3).
 
 ## Order
 
 1. Section 1 (setup) on `v0.1.0-rc5`, with no GitHub token attached to the
    scanner job. Done.
 2. Section 2 (frame rule), then the Setup page again (end of item 1.10).
-   Then move the scanner job and the Service to `v0.1.0-rc7` (tag only), add
-   `LOOKBACK_DAYS` with the value `30` to the scanner job, and check that the
-   Setup page's lines 2, 4, and 7 still pass.
+   Then move the scanner job and the Service to `v0.1.0-rc8` (tag only), check
+   that the scanner job's `LOOKBACK_DAYS` is `30`, and check that the Setup
+   page's lines 2 and 4 still pass. Line 7 passes too, or is "review" instead
+   of a pass when Civis added the deploying user's GitHub token to the Service
+   as `REPO_HTTP_TOKEN` (item 1.10).
 3. Section 3 (the first scan, with no GitHub token) and the first-scan part
    of item 4.8.
 4. Items 4.1 to 4.3, 4.6, 4.7, and 5.1.
@@ -62,7 +70,7 @@ README setup and every fact that could not be confirmed from documentation
    results.
 
 Item 5.6 is not part of this run. It waits for the first release tag after
-`v0.1.0-rc7`.
+`v0.1.0-rc8`.
 
 ## Prepare the test organization
 
@@ -140,10 +148,12 @@ finish the step the way the interface allows and record the difference.
 
 ### 1.5 Create the Service
 
-- **Steps:** Follow README "Create the Service", steps 1 to 9, with
-  `CIVIS_FRAME_ANCESTORS_REPORT_ONLY=true`. The environment variables are
-  `SCANNER_JOB_ID`, `CIVIS_SERVICE_HEALTH_PATH`, and
-  `CIVIS_FRAME_ANCESTORS_REPORT_ONLY`; leave out the two optional ones.
+- **Steps:** Follow README "Create the Service", steps 1 to 9. The
+  environment variables are `SCANNER_JOB_ID` and `CIVIS_SERVICE_HEALTH_PATH`;
+  leave out the three optional ones (`CIVIS_FRAME_ANCESTORS_REPORT_ONLY`,
+  `CIVIS_PLATFORM_URL`, and `CIVIS_FRAME_ANCESTORS`). Setup on `v0.1.0-rc5`
+  set `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` to `true` and then `false`, the
+  setup step at that release; `false` and unset mean the same.
 - **Expected:** The deployment starts and stays running. Civis's health check
   uses `/healthz`.
 - **Record:** pass or fail per step; minutes from **Start Deployment** to running.
@@ -203,16 +213,17 @@ finish the step the way the interface allows and record the difference.
 ### 1.10 Setup page
 
 - **Steps:** Open the **Setup** page. Do not copy or record the user and group
-  names that line 6 lists. After item 2.2, open the Setup page again.
+  names that line 6 lists. After item 2.1, open the Setup page again.
 - **Expected:** Lines 1 to 5, 7, and 9 pass; line 9 says the schema holds only
   this tool's five tables (it is dedicated), and the test summary shows
   `results_schema_dedicated: yes` (line 7 is "review" instead if
   Civis added the deploying user's GitHub token to the Service as
   `REPO_HTTP_TOKEN`); line 6 (sharing) is "review";
-  line 8 (frame rule) is a warning while report-only is on and a pass after
-  item 2.2; line 10 (latest scan) is "review" before the first scan.
+  line 8 (frame rule) is a pass (a warning only while
+  `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` is `true`, item 2.2); line 10 (latest
+  scan) is "review" before the first scan.
 - **Record:** the result of each line (1 to 10), first visit and after item
-  2.2; the `RESULTS_DB` value shape shown under line 4; the Service lookup
+  2.1; the `RESULTS_DB` value shape shown under line 4; the Service lookup
   method shown under line 7; the user and group counts in line 6; whether line
   7 reports the deploying user's GitHub token (yes or no; the summary's
   `repo_http_token_present`); whether line 9 shows the schema is dedicated
@@ -221,29 +232,35 @@ finish the step the way the interface allows and record the difference.
 
 ## 2. Frame rule (PLAN.md 11.3)
 
-### 2.1 Report-only first
+### 2.1 Enforced rule
 
-- **Steps:** With `CIVIS_FRAME_ANCESTORS_REPORT_ONLY=true`, open the app from
-  the Service (**View Report**) and open the browser's developer console.
-  Reload the page.
-- **Expected:** The app shows. The console has no "[Report Only]" warning
-  about `frame-ancestors` from the app.
-- **Record:** pass or fail; the number of such warnings. If there is one,
-  record the parent address it names. Civis host names are fine to record;
-  replace any part that names the organization with `<org>`.
-
-### 2.2 Then enforced
-
-- **Steps:** Set `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` to `false` (add
-  `CIVIS_FRAME_ANCESTORS` first if item 2.1 found another parent address),
-  click **Update Deployment**, and reload the app with the console open.
+- **Steps:** With `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` unset or `false` (the
+  default), open the Service's page in Civis, where the app shows in the
+  preview pane, open the browser's developer console, and reload the page.
 - **Expected:** The app shows, and the console has no Content Security Policy
-  errors. The Setup page's line 8 is a pass.
-- **Record:** pass or fail.
+  errors from the app. The Setup page's line 8 is a pass. This follows README
+  "Create the Service", step 10.
+- **Record:** pass or fail; the number of Content Security Policy errors from
+  the app. If there is a `frame-ancestors` error, record the parent address it
+  names. Civis host names are fine to record; replace any part that names the
+  organization with `<org>`.
+
+### 2.2 Report-only (optional)
+
+Only for troubleshooting, or if item 2.1 failed.
+
+- **Steps:** Set `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` to `true`, click **Update
+  Deployment**, and reload the Service's page with the console open. Then set
+  it back to `false`, click **Update Deployment**, and open the Setup page.
+- **Expected:** While it is `true`, the app shows, the console has no "[Report
+  Only]" warning about `frame-ancestors` from the app, and the Setup page's
+  line 8 is a warning. After it is `false` again, line 8 is a pass.
+- **Record:** done or skipped; the number of such warnings, and the parent
+  address if there is one.
 
 ### 2.3 Safari (optional)
 
-- **Steps:** Repeat 2.1 in Safari.
+- **Steps:** Repeat 2.2 in Safari.
 - **Expected:** Safari logs that `frame-ancestors` "is ignored when delivered
   in a report-only policy." This is a known Safari limit, not a failure.
 - **Record:** seen or not seen.
@@ -465,7 +482,11 @@ finish the step the way the interface allows and record the difference.
      GitHub is `git_backed` minus `read_through_civis` minus
      `civis_read_failed`.
 - **Expected:** Without the token, git-backed Python scripts and workflows are
-  read through Civis, with few or no failures. With the token, most
+  read through Civis, with few or no failures. From `v0.1.0-rc8`, an item on a
+  branch is read through the list Civis returns for its file. A workflow whose
+  saved git reference is a commit Civis cannot find, or whose branch has no
+  commits, still falls back to its saved definition with a note
+  (docs/PLAN.md 17.7). With the token, most
   git-backed Python scripts are read from GitHub, and only those GitHub cannot
   read are read through Civis. Workflows are read through Civis in both scans.
   The manual query matches the summary. If every read fails with the same
@@ -545,17 +566,18 @@ finish the step the way the interface allows and record the difference.
 
 ### 5.6 Update to a new release, and removal
 
-This item waits for the first release tag after `v0.1.0-rc7`. It is not part
+This item waits for the first release tag after `v0.1.0-rc8`. It is not part
 of this run.
 
 - **Steps:**
   1. Follow README "Update to a new release" to move both objects from
-     `v0.1.0-rc7` to the new tag. Its last step ("Run a new scan") is a new
+     `v0.1.0-rc8` to the new tag. Its last step ("Run a new scan") is a new
      scan from the app.
   2. Optional, at the end of that test: follow README "Remove the tool".
 - **Expected:** Each step works as written. After the update, the Service
   starts again, both objects show the new tag, and the Setup page's lines 2
-  and 7 pass.
+  and 7 pass (line 7 is "review" instead when the Service has
+  `REPO_HTTP_TOKEN`, as in item 1.10).
 - **Record:** pass or fail per step.
 
 ### 5.7 Test summary
@@ -581,7 +603,7 @@ item 5.7 pasted below it. Counts and redacted error types only.
 
 ```
 Python Migration Scanner: first live test results
-Release tag: v0.1.0-rc5 (setup), v0.1.0-rc7 (scans, LOOKBACK_DAYS 30)
+Release tag: v0.1.0-rc5 (setup), v0.1.0-rc8 (scans, LOOKBACK_DAYS 30)
 Date (MM/DD/YYYY):
 Browser:
 
@@ -601,11 +623,11 @@ Item  Result (pass/fail/skipped)  Counts or note
 1.9   first click said the schema already existed: yes/no   outcome (a/b/c):   b or c: error type=  user name shown: yes/no  admin statement:  second click:
       table step failed (step, error type):
 1.10  first visit: 1=  2=  3=  4=  5=  6=  7=  8=  9=  10=
-      after 2.2:   1=  2=  3=  4=  5=  6=  7=  8=  9=  10=
+      after 2.1:   1=  2=  3=  4=  5=  6=  7=  8=  9=  10=
       RESULTS_DB shape:   Service lookup:   line 6 job users=  groups=  Service users=  groups=
       repo_http_token_present: yes/no   line 9 dedicated: yes/no
-2.1   report-only warnings:   parent address (if any):
-2.2
+2.1   CSP errors from the app:   parent address (if any):
+2.2   done/skipped   report-only warnings:   parent address (if any):
 2.3   seen/not seen
 3.1   guard:
 3.2   Scan history shows Robot user: yes/no   job run started by Robot user: yes/no
@@ -639,7 +661,7 @@ Item  Result (pass/fail/skipped)  Counts or note
       step 3 edit by Robot user: yes/no   resumed run shows Robot user: yes/no
       step 4 edit by Robot user: yes/no   next run shows Robot user: yes/no
 5.5   minutes to wake=
-5.6   waits for the first tag after v0.1.0-rc7
+5.6   waits for the first tag after v0.1.0-rc8
 5.7   built:  copied (button/by hand):  sent:  looked like a name: yes/no
 
 Error types seen (from the scanner's log only), with counts:
