@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +31,8 @@ from app.job_settings import JobSettings, parse_job, unreadable
 LOCAL_SCHEMA = "dry_run_results"
 TABLE_NAMES = {t.name for t in TABLES}
 STATES = (
-    "normal", "no-scan", "first-scan-running", "failed", "tables-failed", "schema-missing", "no-job-id",
+    "normal", "no-scan", "first-scan-running", "first-scan-cancelled", "failed", "tables-failed", "schema-missing",
+    "no-job-id",
     "job-unreadable", "database-unrecognized", "schema-refused", "tables-missing", "setup-failures",
     "not-scanner-job", "schema-shared",
 )
@@ -206,8 +207,9 @@ class LocalResults:
             params = (run_id,)
         with self._lock, self._connect() as conn:
             rows = [normalize_row(table, dict(r)) for r in conn.execute(statement, params).fetchall()]
-            if self.state == "first-scan-running":
-                # Only the scan that is running exists yet: the newest run with no final status row.
+            if self.state in ("first-scan-running", "first-scan-cancelled"):
+                # Only the newest scan exists yet: the newest run with no final status row (running, or cancelled
+                # before it wrote one).
                 first = self._running_run_id(conn)
                 rows = [r for r in rows if r.get("run_id") == first]
             return rows
@@ -245,6 +247,14 @@ def _later(stamp: str | None) -> str:
     return (moment.replace(second=min(moment.second + 1, 59))).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _minutes_later(stamp: str | None, minutes: int) -> str | None:
+    try:
+        moment = datetime.fromisoformat((stamp or "").replace("Z", "+00:00"))
+    except ValueError:
+        return stamp
+    return (moment + timedelta(minutes=minutes)).isoformat().replace("+00:00", "Z")
+
+
 class PreviewUnreadable(Exception):
     """Made-up: what civis raises when the scanner job cannot be read (job-unreadable state)."""
 
@@ -274,6 +284,10 @@ class LocalJobs:
             self._runs = []
         elif self.state == "first-scan-running":
             self._runs = [r for r in self._runs if r.state == "running"]
+        elif self.state == "first-scan-cancelled":
+            # The first scan was cancelled: Civis lists its run as cancelled, and it wrote no final status row.
+            self._runs = [JobRun(r.id, "cancelled", r.created_at, r.started_at, _minutes_later(r.started_at, 12))
+                          for r in self._runs if r.state == "running"]
         elif self.state in ("failed", "tables-failed"):
             # Drop the running scan, and show the newest finished run as failed. With
             # tables-failed, that run's scan also has status tables_failed (exit code 3).

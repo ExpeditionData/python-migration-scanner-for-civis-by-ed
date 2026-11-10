@@ -14,9 +14,10 @@ Safety rules (SECURITY.md, "How we build and test it"):
 - Flask debug mode stays off.
 
 ``--state`` shows the app's empty and error states with the same data:
-normal, no-scan, first-scan-running, failed, tables-failed, schema-missing,
-no-job-id, job-unreadable, database-unrecognized, schema-refused,
-tables-missing, setup-failures, not-scanner-job, and schema-shared.
+normal, no-scan, first-scan-running, first-scan-cancelled, failed,
+tables-failed, schema-missing, no-job-id, job-unreadable,
+database-unrecognized, schema-refused, tables-missing, setup-failures,
+not-scanner-job, and schema-shared.
 """
 
 from __future__ import annotations

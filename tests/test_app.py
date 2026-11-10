@@ -327,6 +327,7 @@ def test_checklist_save_rejects_values_that_are_not_allowed(app, monkeypatch):
 @pytest.mark.parametrize("state, expected", [
     ("no-scan", "No scan yet"),
     ("first-scan-running", "The first scan is running"),
+    ("first-scan-cancelled", "No completed scan yet The last scan was cancelled before it finished. Run the scan again."),
     ("schema-missing", "The results schema does not exist yet"),
     ("failed", "The last scan failed before it finished."),
     ("tables-failed", "could not save its results tables"),
