@@ -46,7 +46,7 @@ def test_inventoried_ids_by_type(built):
     assert ids == {
         ObjectType.PYTHON_SCRIPT: {101, 102, 105, 106, 107, 108, 109, 110, 111, 112, 114},
         ObjectType.CONTAINER_SCRIPT: {201, 202, 203, 204, 205, 206, 208, 209},
-        ObjectType.CUSTOM_SCRIPT: {301, 302, 304, 306, 309},
+        ObjectType.CUSTOM_SCRIPT: {301, 302, 304, 306, 309, 311},  # 311 is archived, run by 601.
         ObjectType.DBT_SCRIPT: {231, 233},  # 233 is saved on the current default tag (docs/PLAN.md 17.8).
         ObjectType.NOTEBOOK: {401, 403, 404, 405},
         ObjectType.SERVICE: {501, 502, 503},
@@ -690,3 +690,103 @@ def test_the_inventory_line_takes_counts_only():
                            not_python=0)
     with pytest.raises(ValueError):
         scan_log.inventory("Example name", listed=1, kept=1, outside_window=0, template_copies=0, not_python=0)
+
+
+# --- Archived custom scripts run by workflows (docs/PLAN.md 17.8, Part D) -----------------------------------
+
+
+ANALYST = {"id": 2, "name": "Example Analyst", "username": "example_analyst"}
+
+
+def _with_archived_jobs(jobs: list[tuple[str, dict, dict]]) -> dict:
+    """The synthetic instance plus archived jobs (list key, script row, jobs.get response) that a new active
+    workflow, 609, runs."""
+    data = copy.deepcopy(FakeClient.from_fixture("synthetic_instance.json").data)
+    tasks = ""
+    for key, row, job in jobs:
+        data[key].append(row)
+        data["jobs"][str(row["id"])] = job
+        tasks += f"    run_{row['id']}:\n      action: civis.run_job\n      input:\n        job_id: {row['id']}\n"
+    data["workflows"].append({"id": 609, "name": "Example archive runner", "archived": False, "hidden": False,
+                              "valid": True, "user": ANALYST, "definition": f"version: '2.0'\nold:\n  tasks:\n{tasks}"})
+    return data
+
+
+def test_an_archived_custom_script_run_by_a_workflow_is_a_custom_script(built):
+    """Synthetic 311: archived, run by workflow 601, its jobs.get type contains "python", and fromTemplateId is set.
+    The old order read the type first and built it as a Python script, so its template's code was never read."""
+    client, inventory = built
+    archived = item(built, 311)
+    assert archived.obj.object_type is ObjectType.CUSTOM_SCRIPT
+    assert archived.obj.archived is True and archived.obj.workflow_ids == [601]
+    assert (archived.obj.template_id, archived.obj.backing_script_id) == (36, 116)
+    assert "list_me" in archived.code["backing_source"]  # The template's backing script, read the same way.
+    assert (archived.obj.impact, archived.obj.uses_default_image) == (Impact.AFFECTED, True)  # Backing on 9.1.
+    custom = inventory.counts[ObjectType.CUSTOM_SCRIPT]
+    assert custom.archived_included == 1 and inventory.counts[ObjectType.PYTHON_SCRIPT].archived_included == 1
+    customs = [i for i in inventory.items if i.obj.object_type is ObjectType.CUSTOM_SCRIPT]
+    assert custom.found == len(customs) == 6  # Five listed custom scripts read, plus 311.
+    # One TemplateCache for the scan: template 36 is read once, for listed 309 and archived 311.
+    assert [a for a, _ in client.called("templates.get_scripts")].count((36,)) == 1
+    assert [a for a, _ in client.called("scripts.get_python3")].count((116,)) == 1
+    assert client.called("scripts.get_custom").count(((311,), {})) == 1
+
+
+def test_an_archived_custom_script_on_a_container_template_works_the_same_way():
+    data = _with_archived_jobs([(
+        "custom",
+        {"id": 312, "name": "Example archived custom on a container template", "type": "Custom",
+         "backing_script_type": "container", "archived": True, "hidden": False, "from_template_id": 31,
+         "author": ANALYST, "code_preview": "print('preview')"},
+        {"id": 312, "name": "Example archived custom on a container template", "type": "JobTypes::ContainerDocker",
+         "from_template_id": 31, "archived": True, "hidden": False},
+    )])
+    inventory = build_inventory(FakeClient(data))
+    archived = inventory.by_id()[312]
+    assert archived.obj.object_type is ObjectType.CUSTOM_SCRIPT and archived.obj.archived is True
+    assert archived.obj.workflow_ids == [609] and archived.obj.backing_script_id == 211
+    assert archived.code["backing_docker_command"] == "python template.py"
+    assert inventory.counts[ObjectType.CUSTOM_SCRIPT].archived_included == 2  # 311 and 312.
+    assert inventory.counts[ObjectType.CONTAINER_SCRIPT].archived_included == 0
+
+
+def test_archived_python_container_and_dbt_jobs_are_unchanged():
+    data = _with_archived_jobs([
+        ("containers",
+         {"id": 210, "name": "Example archived container", "type": "Container", "archived": True, "hidden": False,
+          "author": ANALYST, "docker_image_name": "civisanalytics/datascience-python", "docker_image_tag": "",
+          "docker_command": "python run.py"},
+         {"id": 210, "name": "Example archived container", "type": "JobTypes::ContainerDocker", "archived": True,
+          "hidden": False}),
+        ("dbt",
+         {"id": 234, "name": "Example archived dbt project", "type": "Dbt", "archived": True, "hidden": False,
+          "author": ANALYST, "docker_image_tag": "latest"},
+         {"id": 234, "name": "Example archived dbt project", "type": "JobTypes::Dbt", "archived": True,
+          "hidden": False}),
+    ])
+    inventory = build_inventory(FakeClient(data))
+    by_id = inventory.by_id()
+    kinds = {i: by_id[i].obj.object_type for i in (105, 210, 234)}
+    assert kinds == {105: ObjectType.PYTHON_SCRIPT, 210: ObjectType.CONTAINER_SCRIPT, 234: ObjectType.DBT_SCRIPT}
+    assert all(by_id[i].obj.archived for i in kinds)
+    counts = inventory.counts
+    assert [counts[t].archived_included for t in (ObjectType.PYTHON_SCRIPT, ObjectType.CONTAINER_SCRIPT,
+                                                  ObjectType.DBT_SCRIPT)] == [1, 1, 1]
+
+
+@pytest.mark.parametrize("job, kind", [
+    ({"type": "JobTypes::PythonDocker", "from_template_id": 36}, ObjectType.CUSTOM_SCRIPT),
+    ({"type": "JobTypes::ContainerDocker", "from_template_id": 31}, ObjectType.CUSTOM_SCRIPT),
+    ({"type": "JobTypes::Dbt", "from_template_id": 34}, ObjectType.CUSTOM_SCRIPT),
+    ({"type": "JobTypes::CustomScript"}, ObjectType.CUSTOM_SCRIPT),
+    ({"type": "JobTypes::PythonDocker"}, ObjectType.PYTHON_SCRIPT),
+    ({"type": "JobTypes::PythonDocker", "from_template_id": None}, ObjectType.PYTHON_SCRIPT),
+    ({"type": "JobTypes::ContainerDocker"}, ObjectType.CONTAINER_SCRIPT),
+    ({"type": "JobTypes::Dbt"}, ObjectType.DBT_SCRIPT),
+    ({"type": "JobTypes::Query"}, None),
+    ({}, None),
+])
+def test_job_kind_checks_the_template_id_first(job, kind):
+    from scanner.inventory import _job_kind
+
+    assert _job_kind(job) is kind

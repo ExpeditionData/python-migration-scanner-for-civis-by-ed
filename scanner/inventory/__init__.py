@@ -240,8 +240,15 @@ def _detail(ctx: InventoryContext, object_type: ObjectType, row: Any, templates:
 
 
 def _job_kind(job: Any) -> ObjectType | None:
-    """Map a jobs.get response to an object type. Job type strings are not documented,
-    so this matches on words in the type and falls back to the template ID."""
+    """Map a jobs.get response to an object type.
+
+    A job with ``from_template_id`` set is a custom script, whatever its type says: the type of a custom script
+    can name its template's backing script (in the live test, an archived custom script run by a workflow was
+    read as a Python script, so its template's code was never read; docs/PLAN.md 17.8). The civis 2.10 API spec
+    lists ``fromTemplateId`` on the GET /jobs/{id} response. Job type strings are not documented, so the other
+    kinds are matched on words in the type."""
+    if field_of(job, "from_template_id") is not None:
+        return ObjectType.CUSTOM_SCRIPT
     job_type = (field_of(job, "type") or "").lower()
     if "dbt" in job_type:
         return ObjectType.DBT_SCRIPT
@@ -249,7 +256,7 @@ def _job_kind(job: Any) -> ObjectType | None:
         return ObjectType.PYTHON_SCRIPT
     if "container" in job_type:
         return ObjectType.CONTAINER_SCRIPT
-    if "custom" in job_type or field_of(job, "from_template_id") is not None:
+    if "custom" in job_type:
         return ObjectType.CUSTOM_SCRIPT
     return None
 

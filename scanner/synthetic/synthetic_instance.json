@@ -880,6 +880,22 @@
       },
       "code_preview": "print('preview')",
       "updated_at": "2026-08-20T16:30:00Z"
+    },
+    {
+      "id": 311,
+      "name": "Example archived custom script still in a workflow",
+      "type": "Custom",
+      "backing_script_type": "python3",
+      "archived": true,
+      "hidden": false,
+      "from_template_id": 36,
+      "author": {
+        "id": 2,
+        "name": "Example Analyst",
+        "username": "example_analyst"
+      },
+      "code_preview": "print('preview')",
+      "updated_at": "2026-08-20T16:30:00Z"
     }
   ],
   "notebooks": [
@@ -1083,7 +1099,7 @@
         ]
       },
       "last_execution_id": 8801,
-      "definition": "version: '2.0'\ndaily:\n  tasks:\n    extract:\n      action: civis.run_job\n      input:\n        job_id: 105\n      on-success:\n        - transform\n    transform:\n      action: civis.run_job\n      input:\n        job_id: '201'\n    inline_step:\n      action: civis.scripts.python3\n      input:\n        name: inline step\n        source: |\n          import civis\n          import civis.parallel\n    sql_step:\n      action: civis.run_job\n      input:\n        job_id: 777\n    dynamic_step:\n      action: civis.run_job\n      input:\n        job_id: <% $.job_to_run %>\n    unreadable_step:\n      action: civis.run_job\n      input:\n        job_id: 888\n"
+      "definition": "version: '2.0'\ndaily:\n  tasks:\n    extract:\n      action: civis.run_job\n      input:\n        job_id: 105\n      on-success:\n        - transform\n    transform:\n      action: civis.run_job\n      input:\n        job_id: '201'\n    inline_step:\n      action: civis.scripts.python3\n      input:\n        name: inline step\n        source: |\n          import civis\n          import civis.parallel\n    archived_custom_step:\n      action: civis.run_job\n      input:\n        job_id: 311\n    sql_step:\n      action: civis.run_job\n      input:\n        job_id: 777\n    dynamic_step:\n      action: civis.run_job\n      input:\n        job_id: <% $.job_to_run %>\n    unreadable_step:\n      action: civis.run_job\n      input:\n        job_id: 888\n"
     },
     {
       "id": 602,
@@ -1175,6 +1191,14 @@
     "888": {
       "id": 888,
       "_error": 403
+    },
+    "311": {
+      "id": 311,
+      "name": "Example archived custom script still in a workflow",
+      "type": "JobTypes::PythonDocker",
+      "from_template_id": 36,
+      "archived": true,
+      "hidden": false
     }
   },
   "run_logs": {

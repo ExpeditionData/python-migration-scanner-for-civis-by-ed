@@ -41,7 +41,7 @@ from tests.civis_fakes import FakeFuture as SharedFakeFuture
 
 NOW = datetime(2026, 10, 13, 12, 0, tzinfo=timezone.utc)
 # Objects in a dry run of the synthetic instance (scanner/synthetic/synthetic_instance.json).
-DRY_RUN_OBJECTS = 37
+DRY_RUN_OBJECTS = 38
 FAKE_LOG_VALUES = ("Synthetic-Log-Pw-7731", "synthetic.member@example.org")
 FAKE_CODE = ("make_backend_factory", "select 1", "import civis")
 
@@ -336,6 +336,18 @@ def test_dry_run_downloads_a_notebook_from_an_s3_fips_host(tmp_path, monkeypatch
     assert status == "scanned" and note is None
     rules = {r[0] for r in conn.execute("SELECT rule_id FROM findings WHERE object_id = 404")}
     assert rules and all(rule.startswith("CV3-") for rule in rules)
+
+
+def test_dry_run_reads_an_archived_custom_scripts_template(tmp_path):
+    """docs/PLAN.md 17.8, Part D: synthetic 311 is an archived custom script that workflow 601 runs. It is a custom
+    script with its template's finding, archived, and the workflow is listed."""
+    dry_run(tmp_path, now=NOW)
+    conn = db(tmp_path)
+    row = conn.execute("SELECT object_type, archived, workflows, template_id, backing_script_id FROM objects "
+                       "WHERE object_id = 311").fetchone()
+    assert row[0] == "custom_script" and row[1] in (1, True) and "601" in row[2] and row[3:] == (36, 116)
+    rules = {r[0] for r in conn.execute("SELECT rule_id FROM findings WHERE object_id = 311")}
+    assert "CV3-RENAME-USERS-LIST-ME" in rules
 
 
 def test_hidden_objects_are_not_counted(tmp_path):
