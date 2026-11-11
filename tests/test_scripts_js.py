@@ -1,8 +1,10 @@
-"""The "Working" message (app/static/js/busy.js) and the Overview's Run scan button (app/static/js/run-scan.js).
+"""The "Working" message (app/static/js/busy.js), the Overview's Run scan button (app/static/js/run-scan.js),
+Scan history's progress card (app/static/js/scan-status.js), and the reload when Civis's proxy turns a status
+request away (app/static/js/proxy-refresh.js, shared by the two).
 
-docs/PLAN.md 17.6, Part E. The scripts run under Node with a small stand-in page (skipped if Node is not
-installed), and the pages are checked for the markup the scripts use and for working without JavaScript.
-Made-up data only. No Civis calls.
+docs/PLAN.md 17.6, Part E, and 17.8, Part B. The scripts run under Node with a small stand-in page (skipped if
+Node is not installed), and the pages are checked for the markup the scripts use and for working without
+JavaScript. Made-up data only. No Civis calls.
 """
 
 from __future__ import annotations
@@ -31,7 +33,15 @@ WORKING = "Working. This can take up to a minute."
 
 # A stand-in page. The scenario (JSON) lists the page's elements and the steps to run; the output lists what the
 # page showed after each step (for a submit or click, right after the event and again once its fetches were
-# answered), every fetch the script sent, and how many timers were waiting.
+# answered), every fetch the script sent, how many timers were waiting, how many times the page reloaded itself,
+# and what sessionStorage held.
+#
+# Each answer in "responses" is "network-error" (the fetch rejects), or an object with "ok" (default true),
+# "contentType" (default application/json), "body" (sent as JSON) or "text" (sent as is), and "hold" (the answer
+# waits for a "release" step). "storage" is "ok" (default; "session" seeds it), "throws" (every use throws), or
+# "none" (window.sessionStorage is missing). "now" sets Date.now; the "advance" step moves it by "ms". The
+# "visibility" step sets document.hidden and fires visibilitychange. A "tick" runs the first waiting timer (an
+# interval stays waiting).
 HARNESS = r"""
 const fs = require("fs");
 const scenario = JSON.parse(process.argv[1]);
@@ -49,8 +59,9 @@ function element(spec) {
       if (selector === "form") return this.tag === "form";
       if (selector === "button") return this.tag === "button";
       if (selector === "a[data-busy]") return this.tag === "a" && this.hasAttribute("data-busy");
-      const m = selector.match(/^\[([\w-]+)\]$/);
-      return m ? this.hasAttribute(m[1]) : false;
+      const m = selector.match(/^\[([\w-]+)(?:="([^"]*)")?\]$/);
+      if (!m) return false;
+      return m[2] === undefined ? this.hasAttribute(m[1]) : this.getAttribute(m[1]) === m[2];
     },
   };
   return el;
@@ -63,10 +74,35 @@ for (const [name, spec] of Object.entries(scenario.elements)) {
 const docListeners = {};
 const winListeners = {};
 const timers = [];
+let timerIds = 0;
 const fetches = [];
+const held = [];
+let reloads = 0;
+let clock = scenario.now || 1800000000000;
+Date.now = () => clock;
 const responses = scenario.responses.slice();
+const stored = Object.assign({}, scenario.session || {});
+const storageMode = scenario.storage || "ok";
+const storage = {
+  getItem(key) {
+    if (storageMode === "throws") throw new Error("SecurityError");
+    return Object.prototype.hasOwnProperty.call(stored, key) ? stored[key] : null;
+  },
+  setItem(key, value) {
+    if (storageMode === "throws") throw new Error("QuotaExceededError");
+    stored[key] = String(value);
+  },
+};
+function answer(next) {
+  const type = next.contentType === undefined ? "application/json" : next.contentType;
+  const text = next.text !== undefined ? next.text : JSON.stringify(next.body === undefined ? null : next.body);
+  return { ok: next.ok !== false, headers: { get: (name) => (name.toLowerCase() === "content-type" ? type : null) },
+           text: () => Promise.resolve(text), json: () => Promise.resolve(JSON.parse(text)) };
+}
 global.window = {
-  setTimeout(fn, ms) { timers.push({ fn, ms }); return timers.length; },
+  setTimeout(fn, ms) { timers.push({ fn, ms, id: ++timerIds }); return timerIds; },
+  setInterval(fn, ms) { timers.push({ fn, ms, id: ++timerIds, repeat: true }); return timerIds; },
+  clearInterval(id) { const i = timers.findIndex((t) => t.id === id); if (i >= 0) timers.splice(i, 1); },
   addEventListener(type, fn) { (winListeners[type] = winListeners[type] || []).push(fn); },
   fetch(url, options) {
     options = options || {};
@@ -74,11 +110,19 @@ global.window = {
                    body: options.body ? options.body.from : null });
     const next = responses.shift();
     if (next === undefined || next === "network-error") return Promise.reject(new Error("offline"));
-    return Promise.resolve({ ok: next.ok !== false, json: () => Promise.resolve(next.body) });
+    if (next.hold) return new Promise((resolve) => held.push(() => resolve(answer(next))));
+    return Promise.resolve(answer(next));
   },
   FormData: function (form) { this.from = form.getAttribute("action"); },
+  location: { pathname: scenario.path || "/", reload() { reloads += 1; } },
 };
+if (storageMode === "throws") {
+  Object.defineProperty(global.window, "sessionStorage", { get() { throw new Error("SecurityError"); } });
+} else if (storageMode !== "none") {
+  global.window.sessionStorage = storage;
+}
 global.document = {
+  hidden: !!scenario.hidden,
   querySelector(selector) { return Object.values(els).find((e) => e.matches(selector)) || null; },
   addEventListener(type, fn) { (docListeners[type] = docListeners[type] || []).push(fn); },
 };
@@ -89,10 +133,11 @@ function snapshot() {
     out[name] = { text: el.textContent, hidden: el.hidden, disabled: el.disabled, className: el.className,
                   busy: el.getAttribute("aria-busy") };
   }
-  return { els: out, timers: timers.length, fetches: fetches.length };
+  return { els: out, timers: timers.length, fetches: fetches.length, reloads,
+           storage: Object.assign({}, stored) };
 }
 (async () => {
-  eval(fs.readFileSync(scenario.script, "utf8"));
+  for (const script of scenario.scripts) eval(fs.readFileSync(script, "utf8"));
   const shots = [snapshot()];
   for (const step of scenario.steps) {
     if (step.do === "submit" || step.do === "click") {
@@ -104,8 +149,17 @@ function snapshot() {
     } else if (step.do === "pageshow") {
       for (const fn of winListeners.pageshow || []) fn({ persisted: true });
     } else if (step.do === "tick") {
-      const timer = timers.shift();
+      const timer = timers[0];
+      if (timer && !timer.repeat) timers.shift();
       if (timer) timer.fn();
+    } else if (step.do === "advance") {
+      clock += step.ms;
+    } else if (step.do === "visibility") {
+      document.hidden = !!step.hidden;
+      for (const fn of docListeners.visibilitychange || []) fn({});
+    } else if (step.do === "release") {
+      const next = held.shift();
+      if (next) next();
     }
     for (let i = 0; i < 5; i++) await flush();
     shots.push(snapshot());  // After any answers the step's fetches got.
@@ -115,11 +169,18 @@ function snapshot() {
 """
 
 
-def run(script: str, elements: dict, steps: list, responses: list | None = None) -> dict:
+# The page scripts that proxy-refresh.js is loaded before, as the templates do.
+NEEDS_REFRESH = ("run-scan.js", "scan-status.js")
+
+
+def run(script: str, elements: dict, steps: list, responses: list | None = None, **page) -> dict:
+    """``page`` sets the stand-in page's other parts: path, storage, session, hidden, and now (see HARNESS)."""
     node = shutil.which("node")
     if node is None:
         pytest.skip("Node.js is not installed")
-    scenario = {"script": str(JS / script), "elements": elements, "steps": steps, "responses": responses or []}
+    scripts = (["proxy-refresh.js"] if script in NEEDS_REFRESH else []) + [script]
+    scenario = {"scripts": [str(JS / name) for name in scripts], "elements": elements, "steps": steps,
+                "responses": responses or [], **page}
     result = subprocess.run([node, "-e", HARNESS, json.dumps(scenario)], capture_output=True, text=True, check=True,
                             timeout=30)
     return json.loads(result.stdout)
@@ -247,6 +308,192 @@ def test_a_busy_or_failed_start_says_why():
     assert els["button"]["text"] == "Run scan" and "did not start" in els["note"]["text"]
 
 
+# --- proxy-refresh.js: Civis's proxy turns a status request away (docs/PLAN.md 17.8, Part B) -------------------
+
+STOP_LINE = ("Progress stopped updating because Civis asked for the page to be reloaded. "
+             "Reload this page to see the latest progress.")
+NOW_MS = 1_800_000_000_000
+SCAN_KEY = "pmsc-refresh:/scan"
+OVERVIEW_KEY = "pmsc-refresh:/"
+# What Civis's proxy can answer instead of the app's JSON: the fetch rejects (how Chrome showed it), a response
+# that is not ok, an ok response that is not JSON (Civis's own "Cookie expired." page), and a body that does not
+# parse even though the type says JSON.
+TURNED_AWAY = {
+    "network-error": "network-error",
+    "not-ok": {"ok": False, "contentType": "text/html", "text": "<html><body>Cookie expired.</body></html>"},
+    "html": {"contentType": "text/html; charset=utf-8", "text": "<html><body>Cookie expired.</body></html>"},
+    "bad-json": {"contentType": "application/json", "text": "Cookie expired."},
+}
+RUNNING = {"body": {"state": "running", "headline": "Inventory: 20 of 36 objects read", "eta": "", "percent": 20,
+                    "civis_run_id": 7, "can_start": False}}
+
+
+def scan_page(state: str = "running") -> dict:
+    """Scan history's progress card, as scan.html renders it (no steps list: the stand-in has no createElement)."""
+    return {
+        "card": {"tag": "section", "attrs": {"data-scan-status": "", "data-endpoint": "/api/scan-status",
+                                             "data-state": state}, "children": ["headline", "eta"]},
+        "headline": {"tag": "div", "attrs": {"data-field": "headline"}, "text": "Inventory: 10 of 36 objects read"},
+        "eta": {"tag": "div", "attrs": {"data-field": "eta"}, "className": "note"},
+    }
+
+
+def saved(out: dict, key: str, shot: int = -1) -> dict | None:
+    value = out["shots"][shot]["storage"].get(key)
+    return json.loads(value) if value is not None else None
+
+
+def scan_history(steps: list, responses: list, **page) -> dict:
+    return run("scan-status.js", scan_page(), steps, responses, path="/scan", now=NOW_MS, **page)
+
+
+def active_overview(steps: list, responses: list, **page) -> dict:
+    return run("run-scan.js", overview("active", "7", running=True), steps, responses, path="/", now=NOW_MS, **page)
+
+
+@pytest.mark.parametrize("kind", sorted(TURNED_AWAY))
+def test_each_kind_of_turned_away_poll_reloads_scan_history_once(kind):
+    out = scan_history([{"do": "tick"}], [TURNED_AWAY[kind]])
+    assert [shot["reloads"] for shot in out["shots"]] == [0, 1]
+    assert saved(out, SCAN_KEY) == {"count": 1, "last": NOW_MS}  # Kept for the next page load.
+    assert out["shots"][-1]["els"]["eta"]["text"] == ""  # No stop line yet.
+
+
+@pytest.mark.parametrize("kind", sorted(TURNED_AWAY))
+def test_each_kind_of_turned_away_poll_reloads_the_overview_once(kind):
+    out = active_overview([{"do": "tick"}], [TURNED_AWAY[kind]])
+    assert [shot["reloads"] for shot in out["shots"]] == [0, 1]
+    assert saved(out, OVERVIEW_KEY) == {"count": 1, "last": NOW_MS}
+    assert [(f["url"], f["method"]) for f in out["fetches"]] == [("/api/scan-status", "GET")]
+
+
+def test_no_second_reload_within_a_minute():
+    away = TURNED_AWAY["html"]
+    out = scan_history([{"do": "tick"}, {"do": "advance", "ms": 59_000}, {"do": "tick"},
+                        {"do": "advance", "ms": 1_000}, {"do": "tick"}], [away, away, away])
+    assert [shot["reloads"] for shot in out["shots"]] == [0, 1, 1, 1, 1, 2]
+    assert saved(out, SCAN_KEY) == {"count": 2, "last": NOW_MS + 60_000}
+
+
+def test_the_minute_counts_across_page_loads():
+    """The page that reloaded 30 seconds ago is a new page load: the time comes from sessionStorage."""
+    session = {SCAN_KEY: json.dumps({"count": 1, "last": NOW_MS - 30_000})}
+    away = TURNED_AWAY["network-error"]
+    out = scan_history([{"do": "tick"}, {"do": "advance", "ms": 30_000}, {"do": "tick"}], [away, away],
+                       session=session)
+    assert [shot["reloads"] for shot in out["shots"]] == [0, 0, 0, 1]
+    assert saved(out, SCAN_KEY) == {"count": 2, "last": NOW_MS + 30_000}
+
+
+def test_the_stop_line_after_three_reloads_with_no_success():
+    away = TURNED_AWAY["not-ok"]
+    steps = []
+    for _ in range(3):
+        steps += [{"do": "tick"}, {"do": "advance", "ms": 61_000}]
+    steps += [{"do": "tick"}, {"do": "tick"}]  # The fourth is turned away and stops polling; the fifth sends nothing.
+    out = scan_history(steps, [away] * 5)
+    last = out["shots"][-1]
+    assert last["reloads"] == 3 and last["fetches"] == 4 and last["timers"] == 0
+    assert last["els"]["eta"]["text"] == STOP_LINE
+    assert saved(out, SCAN_KEY)["count"] == 3
+
+
+def test_the_stop_line_on_the_overview_after_three_reloads():
+    session = {OVERVIEW_KEY: json.dumps({"count": 3, "last": NOW_MS - 120_000})}
+    out = active_overview([{"do": "tick"}, {"do": "tick"}], [TURNED_AWAY["html"]], session=session)
+    last = out["shots"][-1]
+    assert (last["reloads"], last["fetches"], last["timers"]) == (0, 1, 0)
+    assert (last["els"]["note"]["text"], last["els"]["note"]["hidden"]) == (STOP_LINE, False)
+
+
+def test_a_successful_poll_resets_the_count():
+    session = {SCAN_KEY: json.dumps({"count": 2, "last": NOW_MS - 120_000})}
+    out = scan_history([{"do": "tick"}, {"do": "tick"}], [RUNNING, TURNED_AWAY["html"]], session=session)
+    assert saved(out, SCAN_KEY, shot=1) == {"count": 0, "last": NOW_MS - 120_000}
+    assert out["shots"][1]["els"]["headline"]["text"] == "Inventory: 20 of 36 objects read"
+    assert out["shots"][2]["reloads"] == 1 and saved(out, SCAN_KEY) == {"count": 1, "last": NOW_MS}
+
+
+@pytest.mark.parametrize("storage", ["throws", "none"])
+def test_without_session_storage_the_line_shows_and_the_page_never_reloads(storage):
+    away = TURNED_AWAY["network-error"]
+    out = scan_history([{"do": "tick"}, {"do": "advance", "ms": 120_000}, {"do": "tick"}], [away, away],
+                       storage=storage)
+    last = out["shots"][-1]
+    assert [shot["reloads"] for shot in out["shots"]] == [0, 0, 0, 0]
+    assert last["els"]["eta"]["text"] == STOP_LINE and last["fetches"] == 1 and last["timers"] == 0
+
+    out = active_overview([{"do": "tick"}], [away], storage=storage)
+    last = out["shots"][-1]
+    assert last["reloads"] == 0 and last["els"]["note"]["text"] == STOP_LINE and last["timers"] == 0
+
+
+def test_a_hidden_page_reloads_only_when_it_is_visible_again():
+    out = scan_history([{"do": "visibility", "hidden": True}, {"do": "tick"}, {"do": "advance", "ms": 300_000},
+                        {"do": "visibility", "hidden": False}], [TURNED_AWAY["html"]], hidden=True)
+    assert [shot["reloads"] for shot in out["shots"]] == [0, 0, 0, 0, 1]
+    assert saved(out, SCAN_KEY, shot=3) is None  # Nothing counted while hidden.
+    assert saved(out, SCAN_KEY) == {"count": 1, "last": NOW_MS + 300_000}
+
+
+def test_becoming_visible_with_no_turned_away_poll_does_not_reload():
+    out = scan_history([{"do": "tick"}, {"do": "visibility", "hidden": True}, {"do": "visibility", "hidden": False}],
+                       [RUNNING])
+    assert out["shots"][-1]["reloads"] == 0
+
+
+def test_no_reload_while_the_run_scan_post_waits_and_the_post_is_sent_once():
+    # An Overview polling a run, with Run scan still on (the stand-in allows it), so a poll can be turned away
+    # while the POST waits for its answer.
+    page = overview("active", "7", running=False)
+    started = {"hold": True, "body": {"notice": "started", "civis_run_id": 8, "message": "The scan has started."}}
+    out = run("run-scan.js", page, [{"do": "submit", "target": "form"}, {"do": "tick"}, {"do": "release"}],
+              [started, TURNED_AWAY["html"]], path="/", now=NOW_MS)
+    reloads = [shot["reloads"] for shot in out["shots"]]
+    assert reloads == [0, 0, 0, 0, 1]  # Start, submit (two shots), the turned-away poll, then the POST's answer.
+    assert [f["method"] for f in out["fetches"]] == ["POST", "GET"]
+
+
+@pytest.mark.parametrize("kind", sorted(TURNED_AWAY))
+def test_a_turned_away_run_scan_post_keeps_its_message_and_never_reloads(kind):
+    out = run("run-scan.js", overview(), [{"do": "submit", "target": "form"}, {"do": "tick"}], [TURNED_AWAY[kind]],
+              path="/", now=NOW_MS)
+    last = out["shots"][-1]
+    assert last["els"]["note"]["text"] == "Civis did not start the scan. Reload the page and try again."
+    assert last["els"]["button"]["text"] == "Run scan" and last["reloads"] == 0 and last["storage"] == {}
+    assert [f["method"] for f in out["fetches"]] == ["POST"]  # Sent once, never again.
+
+
+def test_a_json_answer_never_reloads():
+    out = scan_history([{"do": "tick"}, {"do": "advance", "ms": 120_000}, {"do": "tick"}, {"do": "tick"}],
+                       [RUNNING, RUNNING, RUNNING])
+    assert out["shots"][-1]["reloads"] == 0 and out["shots"][-1]["storage"] == {}
+    assert out["shots"][-1]["fetches"] == 3 and out["shots"][-1]["timers"] == 1
+
+    out = active_overview([{"do": "tick"}, {"do": "tick"}], [status("running", 7), status("running", 7)])
+    assert out["shots"][-1]["reloads"] == 0 and out["shots"][-1]["storage"] == {}
+
+
+def test_scan_history_still_reloads_once_when_the_scan_ends():
+    out = scan_history([{"do": "tick"}], [{"body": {"state": "succeeded", "civis_run_id": 7}}])
+    assert out["shots"][-1]["reloads"] == 1 and out["shots"][-1]["storage"] == {}  # Not an automatic reload.
+
+
+def test_the_stop_line_follows_the_writing_style_and_shows_in_a_checked_color():
+    script = (JS / "proxy-refresh.js").read_text(encoding="utf-8")
+    assert '"Progress stopped updating because Civis asked for the page to be reloaded. " +\n' in script
+    assert '"Reload this page to see the latest progress."' in script
+    assert "—" not in STOP_LINE and "–" not in STOP_LINE and "!" not in STOP_LINE
+    # The line shows in Scan history's ETA note and the Overview's Run scan note, both class "note", whose color
+    # (--muted on --bg and --surface) is in test_app.test_text_contrast_is_at_least_4_5_to_1.
+    css = (ROOT / "app/static/css/app.css").read_text(encoding="utf-8")
+    assert ".note { font-size: 13px; color: var(--muted); margin: 0; }" in css
+    from tests.test_app import test_text_contrast_is_at_least_4_5_to_1 as contrast
+
+    contrast()
+    assert not re.search(r"innerHTML|insertAdjacentHTML|document\.write", script)
+
+
 # --- The pages ------------------------------------------------------------------------------------------
 
 
@@ -274,8 +521,24 @@ def test_every_page_has_the_working_region_and_loads_busy_js(preview, monkeypatc
     assert 'href="/setup/summary" data-busy>Build test summary</a>' in setup
     summary = client.get("/setup/summary").get_data(as_text=True)
     assert 'class="filters" data-busy>' in summary and 'data-busy>Back to Setup</a>' in summary
-    for path in ("js/busy.js", "js/run-scan.js"):
+    for path in ("js/busy.js", "js/run-scan.js", "js/proxy-refresh.js", "js/scan-status.js"):
         assert client.get(f"/static/{path}").status_code == 200
+
+
+def test_the_shared_refresh_loads_before_the_page_scripts(preview, monkeypatch):
+    """docs/PLAN.md 17.8, Part B: one shared file, loaded (deferred, so in order) before scan-status.js and
+    run-scan.js, and only on those two pages."""
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    client = make_app(preview).test_client()
+    shared = '<script src="/static/js/proxy-refresh.js" defer></script>'
+    for url, script in (("/", "run-scan.js"), ("/scan", "scan-status.js")):
+        body = client.get(url).get_data(as_text=True)
+        page = f'<script src="/static/js/{script}" defer></script>'
+        assert body.count(shared) == 1 and body.index(shared) < body.index(page), url
+    scan = client.get("/scan").get_data(as_text=True)
+    assert 'data-scan-status data-endpoint="/api/scan-status"' in scan and '<div class="note" data-field="eta">' in scan
+    for url in ("/inventory", "/findings", "/setup"):
+        assert "proxy-refresh.js" not in client.get(url).get_data(as_text=True), url
 
 
 def test_the_storage_button_is_a_plain_post_form_that_shows_the_message(tmp_path, monkeypatch):

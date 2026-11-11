@@ -3,13 +3,16 @@
 // /api/scan-status every 15 seconds; it asks nothing at any other time.
 // Plain JavaScript, loaded from the app itself (no inline scripts; see the CSP). Text is set with textContent
 // only. Without JavaScript, the form posts as before and the browser opens Scan history.
+// proxy-refresh.js (loaded first) sends each request and reloads the page when Civis's proxy turns a status
+// request away. The Run scan POST is sent once and never makes the page reload.
 (function () {
   "use strict";
 
   var POLL_MS = 15000;
   var START_POLLS = 8; // About 2 minutes for Civis to list a new run as queued or running.
   var box = document.querySelector("[data-run-scan]");
-  if (!box || typeof window.fetch !== "function" || typeof window.FormData !== "function") {
+  if (!box || typeof window.fetch !== "function" || typeof window.FormData !== "function" ||
+      !window.pmscProxyRefresh) {
     return;
   }
   var form = box.querySelector("form");
@@ -27,6 +30,8 @@
     }
   }
 
+  var refresh = window.pmscProxyRefresh.create({ show: say });
+
   function showRunning(running) {
     if (!button) {
       return;
@@ -37,7 +42,7 @@
   }
 
   function schedule() {
-    if (timer === null) {
+    if (timer === null && !refresh.isStopped()) {
       timer = window.setTimeout(poll, POLL_MS);
     }
   }
@@ -55,7 +60,7 @@
 
   function update(data) {
     if (!data) {
-      schedule();
+      schedule(); // Turned away: proxy-refresh.js reloads the page or stops, and otherwise the next poll tries again.
       return;
     }
     var active = data.state === "queued" || data.state === "running";
@@ -79,14 +84,7 @@
 
   function poll() {
     timer = null;
-    window.fetch(statusUrl, { headers: { Accept: "application/json" }, credentials: "same-origin" })
-      .then(function (response) {
-        return response.ok ? response.json() : null;
-      })
-      .then(update)
-      .catch(function () {
-        schedule(); // Try again at the next interval.
-      });
+    refresh.poll(statusUrl).then(update);
   }
 
   function started(data) {
@@ -113,19 +111,7 @@
         return;
       }
       showRunning(true);
-      window.fetch(form.getAttribute("action"), {
-        method: "POST",
-        body: new window.FormData(form),
-        headers: { Accept: "application/json" },
-        credentials: "same-origin"
-      })
-        .then(function (response) {
-          return response.ok ? response.json() : null;
-        })
-        .then(started)
-        .catch(function () {
-          started(null);
-        });
+      refresh.post(form.getAttribute("action"), new window.FormData(form)).then(started);
     });
   }
 

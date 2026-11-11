@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% from "macros.html" import run_scan_button, empty_block, local_time, storage_result %}
 {% block title %}Overview{% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='js/run-scan.js') }}" defer></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/proxy-refresh.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/run-scan.js') }}" defer></script>{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>

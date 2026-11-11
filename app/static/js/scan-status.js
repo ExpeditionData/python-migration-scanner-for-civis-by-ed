@@ -1,16 +1,29 @@
 // Scan progress: asks /api/scan-status every 15 seconds and updates the page.
 // Plain JavaScript, loaded from the app itself (no inline scripts; see the CSP).
 // Values are written with textContent only, never as HTML.
+// proxy-refresh.js (loaded first) sends each request and reloads the page when Civis's proxy turns one away.
 (function () {
   "use strict";
 
   var POLL_MS = 15000;
   var card = document.querySelector("[data-scan-status]");
-  if (!card) {
+  if (!card || !window.pmscProxyRefresh || typeof window.fetch !== "function") {
     return;
   }
   var endpoint = card.getAttribute("data-endpoint");
   var startState = card.getAttribute("data-state");
+  var timer = null;
+  var refresh = window.pmscProxyRefresh.create({
+    show: function (text) {
+      setText("eta", text); // The note under the headline.
+    },
+    stopped: function () {
+      if (timer !== null) {
+        window.clearInterval(timer);
+        timer = null;
+      }
+    }
+  });
 
   function field(name) {
     return card.querySelector('[data-field="' + name + '"]');
@@ -71,15 +84,10 @@
   }
 
   function poll() {
-    fetch(endpoint, { headers: { Accept: "application/json" }, credentials: "same-origin" })
-      .then(function (response) {
-        return response.ok ? response.json() : null;
-      })
-      .then(update)
-      .catch(function () {
-        // Try again at the next interval.
-      });
+    // A turned-away request resolves to null: proxy-refresh.js reloads the page or stops polling, and otherwise
+    // the next interval tries again.
+    refresh.poll(endpoint).then(update);
   }
 
-  window.setInterval(poll, POLL_MS);
+  timer = window.setInterval(poll, POLL_MS);
 })();
