@@ -376,8 +376,20 @@ how many templates, used by how many custom scripts, have findings. Civis
 also lists each custom script under its backing script's type; the scan
 counts it once, as a custom script.
 
-**"Cookie expired" in Civis.** If the Service's page in Civis shows "Cookie
-expired", the message is Civis's own, not the app's. Reload the Civis page.
+**Affected and Advisory.** A finding is "Affected in February" when its
+object runs on a Civis default image with a blank tag, `latest`, the current
+default tag, or that tag's major part (`datascience-python` `9.1` or `9`,
+`civis-jupyter-python3` `5.1` or `5`). The current tag counts because Civis
+saves it on new objects that do not choose one. A patch tag such as `9.1.1`
+names a fixed image, so its findings are Advisory. The Findings page's "How
+to read this page" explains impact, confidence, and status.
+
+**If progress stops updating.** Civis has asked for the page to be reloaded:
+Civis's proxy in front of the Service uses a cookie that expires after some
+minutes, and only a page load renews it. When that happens, the app reloads
+the page itself, about once a minute at most, and after a few tries it asks
+you to reload the page. Civis's "Cookie expired." message on the Service's
+page is the same thing: reload the page.
 
 ### The CSV report
 

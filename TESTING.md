@@ -16,14 +16,22 @@ README setup and every fact that could not be confirmed from documentation
   `error=CivisAPIError status=403`) are fine to record; they hold no content.
 - If something you would need to record looks like client content, write
   "content withheld" and describe it in general terms instead.
-- **Release tag:** scans use `v0.1.0-rc8`, with `LOOKBACK_DAYS` set to `30`
+- **Release tag:** scans use `v0.1.0-rc9`, with `LOOKBACK_DAYS` set to `30`
   on the scanner job. Setup (section 1) was done on `v0.1.0-rc5` and passed,
   and it stays: before the next scan, move the scanner job and the Service to
-  `v0.1.0-rc8` by changing their tag only (README "Update to a new release",
+  `v0.1.0-rc9` by changing their tag only (README "Update to a new release",
   steps 2 to 4). The scanner job keeps its `LOOKBACK_DAYS` parameter with the
   value `30` (add it as an optional Integer parameter if it is missing). The
   Overview then says a scan checks scripts that ran or changed in the last 30
-  days. `v0.1.0-rc8` follows `v0.1.0-rc7` because Scan A on `v0.1.0-rc7`
+  days. `v0.1.0-rc9` follows `v0.1.0-rc8` because scans A and B on
+  `v0.1.0-rc8` succeeded but found four problems and two small requests
+  (docs/PLAN.md 17.8): notebook files on Amazon S3 FIPS hosts are now
+  downloaded, the progress pages reload themselves when Civis's proxy turns a
+  status request away, objects saved on the current default image tag or its
+  major tag count as on the default image, an archived custom script that a
+  workflow runs is read as a custom script, the Scan history link shows the
+  "Working" message, and Findings explains how to read the page.
+  `v0.1.0-rc8` followed `v0.1.0-rc7` because Scan A on `v0.1.0-rc7`
   finished its inventory in about 19 minutes but ended `tables_failed`, and
   read no git-backed file through Civis (docs/PLAN.md 17.7): whole numbers
   are now written as whole numbers in the result tables, the git file is read
@@ -44,9 +52,9 @@ README setup and every fact that could not be confirmed from documentation
   no rows, and the shape of the Civis sharing lists. `v0.1.0-rc4` followed
   `v0.1.0-rc3` because of two safety guards: Run scan starts only this tool's
   scanner job, and the tool refuses a results schema that holds anything
-  else. Use `v0.1.0-rc8` wherever the README says `<release tag>` from now on.
+  else. Use `v0.1.0-rc9` wherever the README says `<release tag>` from now on.
   Item 5.6 (update to a new release) waits for the first release tag after
-  `v0.1.0-rc8`.
+  `v0.1.0-rc9`.
 - **Browser:** Chrome, Edge, or Firefox. Safari ignores the report-only frame
   rule (the optional items 2.2 and 2.3).
 
@@ -55,7 +63,7 @@ README setup and every fact that could not be confirmed from documentation
 1. Section 1 (setup) on `v0.1.0-rc5`, with no GitHub token attached to the
    scanner job. Done.
 2. Section 2 (frame rule), then the Setup page again (end of item 1.10).
-   Then move the scanner job and the Service to `v0.1.0-rc8` (tag only), check
+   Then move the scanner job and the Service to `v0.1.0-rc9` (tag only), check
    that the scanner job's `LOOKBACK_DAYS` is `30`, and check that the Setup
    page's lines 2 and 4 still pass. Line 7 passes too, or is "review" instead
    of a pass when Civis added the deploying user's GitHub token to the Service
@@ -70,7 +78,7 @@ README setup and every fact that could not be confirmed from documentation
    results.
 
 Item 5.6 is not part of this run. It waits for the first release tag after
-`v0.1.0-rc8`.
+`v0.1.0-rc9`.
 
 ## Prepare the test organization
 
@@ -293,10 +301,16 @@ Only for troubleshooting, or if item 2.1 failed.
 - **Expected:** Inventory with a moving count ("1. Inventory" shows "N of M
   objects" while it reads the scripts in the window, after a few minutes of
   listing), then Code and log scan with a moving count, then Save results.
-  The page updates without reloading. On the Overview, the Run scan button
-  comes back when the scan ends.
+  The card updates without a manual reload. When Civis's proxy turns a status
+  request away (its cookie expired), the page may reload itself, about once a
+  minute at most (docs/PLAN.md 17.8). After 3 reloads in a row with no update
+  in between, it stops and shows "Progress stopped updating because Civis
+  asked for the page to be reloaded. Reload this page to see the latest
+  progress." On the Overview, the Run scan button comes back when the scan
+  ends.
 - **Record:** pass or fail for each: the inventory count moved, the code scan
-  count moved, the Overview button came back.
+  count moved, the Overview button came back. Also yes or no: the page
+  reloaded itself; the stop line appeared.
 
 ### 3.4 Scan results
 
@@ -380,7 +394,9 @@ Only for troubleshooting, or if item 2.1 failed.
 - **Record:** both counts. If any were refused, open one notebook in Civis with
   the browser's Network tab open, find the request that downloads the `.ipynb`
   file, and record only the shape of its host with the account parts replaced
-  (for example `<bucket>.s3.<region>.amazonaws.com`).
+  (for example `<bucket>.s3.<region>.amazonaws.com` or
+  `<bucket>.s3-fips.<region>.amazonaws.com`). On `v0.1.0-rc8`, all 58
+  notebooks were refused for the FIPS form, which `v0.1.0-rc9` accepts.
 
 ### 4.3 Missing schema after setup (PLAN.md 14.11 and 17.2)
 
@@ -428,7 +444,9 @@ Only for troubleshooting, or if item 2.1 failed.
 - **Steps:** Use the workflow prepared above, which runs three archived scripts
   (Python, container, custom). Find those scripts on the Inventory page.
 - **Expected:** Each appears as archived, lists the workflow, and has its
-  finding. This confirms the job type keyword matching.
+  finding. The archived custom script appears as a custom script (not as a
+  Python script) with its template's finding (docs/PLAN.md 17.8). This
+  confirms the job type matching.
 - **Record:** pass or fail per script type.
 
 ### 4.7 dbt default image (PLAN.md 13.4)
@@ -566,12 +584,12 @@ Only for troubleshooting, or if item 2.1 failed.
 
 ### 5.6 Update to a new release, and removal
 
-This item waits for the first release tag after `v0.1.0-rc8`. It is not part
+This item waits for the first release tag after `v0.1.0-rc9`. It is not part
 of this run.
 
 - **Steps:**
   1. Follow README "Update to a new release" to move both objects from
-     `v0.1.0-rc8` to the new tag. Its last step ("Run a new scan") is a new
+     `v0.1.0-rc9` to the new tag. Its last step ("Run a new scan") is a new
      scan from the app.
   2. Optional, at the end of that test: follow README "Remove the tool".
 - **Expected:** Each step works as written. After the update, the Service
@@ -603,7 +621,7 @@ item 5.7 pasted below it. Counts and redacted error types only.
 
 ```
 Python Migration Scanner: first live test results
-Release tag: v0.1.0-rc5 (setup), v0.1.0-rc8 (scans, LOOKBACK_DAYS 30)
+Release tag: v0.1.0-rc5 (setup), v0.1.0-rc9 (scans, LOOKBACK_DAYS 30)
 Date (MM/DD/YYYY):
 Browser:
 
@@ -632,10 +650,12 @@ Item  Result (pass/fail/skipped)  Counts or note
 3.1   guard:
 3.2   Scan history shows Robot user: yes/no   job run started by Robot user: yes/no
 3.3   inventory count moved:  code scan count moved:  Overview button came back:
+      page reloaded itself: yes/no   stop line appeared: yes/no
 3.4   status=  minutes=  lookback_days=  objects_total=  objects_scanned=  api_calls=
       civis_git_reads=  civis_git_failures=
       inventory (from the summary, per type): listed=  kept=  outside_window=  template_copies=  not_python=
       scanned=  partly scanned=  not scanned=  affected=  advisory=  findings=
+      objects saved on the current default tag or its major tag counted as Affected: yes/no
       templates with findings=  custom scripts using them=
 3.5   calls per object=  minutes per 100 objects=  github_tarball_requests=  github_cache_evictions=
 3.6   other lines=   kind (general terms):   error types: (line type, error type, and count)
@@ -661,7 +681,7 @@ Item  Result (pass/fail/skipped)  Counts or note
       step 3 edit by Robot user: yes/no   resumed run shows Robot user: yes/no
       step 4 edit by Robot user: yes/no   next run shows Robot user: yes/no
 5.5   minutes to wake=
-5.6   waits for the first tag after v0.1.0-rc8
+5.6   waits for the first tag after v0.1.0-rc9
 5.7   built:  copied (button/by hand):  sent:  looked like a name: yes/no
 
 Error types seen (from the scanner's log only), with counts:

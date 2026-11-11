@@ -60,7 +60,7 @@ be made public at any time.
   credential. Rob changes its visibility himself; never change it from a
   session.
 - Releases are git tags, protected by the "release tags" ruleset. The first
-  live test set up on `v0.1.0-rc5` and runs its scans on `v0.1.0-rc8`, with
+  live test set up on `v0.1.0-rc5` and runs its scans on `v0.1.0-rc9`, with
   `LOOKBACK_DAYS` 30. Create a tag or a GitHub Release only when Rob's prompt
   says to.
 - Commit after each completed step, with a clear message that says what changed
@@ -176,8 +176,15 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   `v0.1.0-rc8` (docs/PLAN.md 17.7): typed result frames (whole numbers as
   `Int64`, booleans as `true`/`false`), the git file read from the list
   Civis returns, the Run scan message under the button, "No completed scan
-  yet" after a cancelled scan, and the frame rule enforced by default. The
-  build under test is `v0.1.0-rc8`, with `LOOKBACK_DAYS` 30.
+  yet" after a cancelled scan, and the frame rule enforced by default.
+  Scans A and B on `v0.1.0-rc8` succeeded with identical counts, and found
+  four problems and two small requests, fixed for `v0.1.0-rc9` (docs/PLAN.md
+  17.8): notebook files on S3 FIPS hosts, the progress pages reloading
+  themselves when Civis's proxy turns a status request away, the current
+  default image tag and its major tag counted as the default image, an
+  archived custom script run by a workflow read as a custom script, the
+  Scan history link's working message, and Findings' "How to read this
+  page". The build under test is `v0.1.0-rc9`, with `LOOKBACK_DAYS` 30.
   Implementation choices not in the approved plan are in docs/PLAN.md
   sections 10 to 17.
 - **App flow.** `app/__init__.create_app` -> `app/services.py` (Civis or local
@@ -197,12 +204,23 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   link; no URL pattern is guessed), and filter by template ID; the Overview
   shows the next scan's window, the scripts left out, and the templates with
   findings. `app/static/js/busy.js` shows "Working. This can take up to a
-  minute." for slow actions, and `app/static/js/run-scan.js` starts a scan
+  minute." for slow actions (the Setup and Scan history links among them),
+  and `app/static/js/run-scan.js` starts a scan
   from the Overview without a reload (`POST /scan/start` answers JSON when
-  asked) and polls the status API only while a run is starting or active. `app/job_settings.py` parses the
+  asked) and polls the status API only while a run is starting or active.
+  `app/static/js/proxy-refresh.js`, loaded before `run-scan.js` and
+  `scan-status.js`, sends their requests and reloads the page when Civis's
+  proxy turns a status request away (its cookie expired; a rejected fetch, a
+  response that is not ok, not JSON, or not a JSON object): at most once a
+  minute per page, no reload while hidden or while a POST waits, and after 3
+  reloads with no success it stops and shows one line; the count is in
+  `sessionStorage` by path, and without it nothing reloads (docs/PLAN.md
+  17.8). Findings has a closed "How to read this page" section whose tag
+  values come from `common/release.py` (`views.default_tag_help`). `app/job_settings.py` parses the
   job's parameters, `app/setup.py` gathers and evaluates the Setup checks,
   `app/summary.py` builds the test summary, and `common/release.py` holds
-  what the README sets (pinned images read from the requirements files).
+  what the README sets (pinned images read from the requirements files) and
+  the current default image tags (`CURRENT_DEFAULT_TAGS`).
   Styles in `app/static/css/app.css`, scripts in `app/static/js/`, fonts in
   `app/static/fonts/`, the logo in `app/static/img/`.
 - **Look.** Expedition Data's style: navy `--primary` (#26304F) for headings,
@@ -276,6 +294,21 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   phase=inventory` every 50 objects or 30 seconds during the detail calls;
   the FATAL step for detail calls is `inventory_details`. Every script ID
   listed is known to workflow references, so no `jobs.get` for it.
+- **Default-image rule (docs/PLAN.md 1.4 and 17.8).** `classify_image` in
+  `scanner/inventory/base.py` (every object type goes through it) counts a
+  known Civis default image as the default when its tag is blank, "latest",
+  the image's current default tag, or that tag's major part
+  (`is_default_tag(image, tag)`). The current tags are in
+  `common/release.CURRENT_DEFAULT_TAGS` (`datascience-python` `9.1` and
+  `civis-jupyter-python3` `5.1`, the tags Civis saved on new objects made
+  with no tag in the live test); update them there when Civis changes its
+  default images. The major tag is derived, never stored. A patch tag
+  (`9.1.1`) or an older minor tag is pinned. Streamlit has no known current
+  tag, so Services keep blank or "latest". dbt scripts are checked as
+  datascience-python tags. An archived job that an active workflow runs is
+  a custom script when its `jobs.get` response has `from_template_id`
+  (checked before the type words), and is built with `custom_item` and the
+  scan's one `TemplateCache`.
 - **Live test.** TESTING.md is the checklist for the first live test. Records
   are pass or fail and aggregate counts only.
 
@@ -427,9 +460,21 @@ Run the full suite on both Python versions before every commit:
   SELECT like civis 2.7.1 (`result_columns` and text `result_rows`, zero rows
   normal); its `reads` holds every read, `full_reads` and `small_reads` split
   them, and `queries` holds writes only.
-- `tests/test_scripts_js.py` runs `busy.js` and `run-scan.js` under Node with
-  a stand-in page (skipped if Node is not installed) and checks the markup
-  and the JSON start.
+- `tests/test_scripts_js.py` runs `busy.js`, `run-scan.js`, and
+  `scan-status.js` (the last two after `proxy-refresh.js`) under Node with a
+  stand-in page (skipped if Node is not installed) and checks the markup and
+  the JSON start. The stand-in page has `sessionStorage` (working, throwing,
+  or missing), a clock (`now`, the `advance` step), `document.hidden` (the
+  `visibility` step), intervals, answers held until a `release` step, and a
+  reload counter, for the proxy-refresh tests: each kind of turned-away
+  answer, the one-a-minute limit, the stop line after 3 reloads, the reset
+  on success, no storage, a hidden page, and a waiting POST (docs/PLAN.md
+  17.8).
+- `tests/test_default_tags.py` covers the default-image rule for every
+  object type (current tag, major tag, patch and older tags, tags on the
+  wrong image, spaces, a tag inside the image name), the
+  `default_image_only` rule, the synthetic objects saved on the current
+  tags, the preview, and that the README states the same tags.
 - `tests/test_deploy.py` checks `start_service.sh` (executable bit, LF endings,
   no installs), the Dockerfiles, `.dockerignore`, and `docker/check_image.py`.
   Two of its tests run only inside the test images.

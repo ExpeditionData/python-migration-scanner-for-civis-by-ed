@@ -283,3 +283,14 @@ def test_the_preview_shows_the_objects_on_the_current_default_tags(tmp_path):
     pinned_install = {r[0] for r in conn.execute(
         "SELECT object_id FROM findings WHERE rule_id = 'PY315-PINNED-PACKAGE-INSTALL'")}
     assert {209, 405} <= pinned_install  # A default-image-only rule, now applied on the current default tags.
+
+
+def test_the_readme_states_the_current_default_tags():
+    """README "Affected and Advisory" names the tags in common/release.py, so they change together."""
+    from pathlib import Path
+
+    readme = " ".join((Path(__file__).resolve().parent.parent / "README.md").read_text(encoding="utf-8").split())
+    for image, tag in release.CURRENT_DEFAULT_TAGS.items():
+        assert f"`{image.rsplit('/', 1)[-1]}` `{tag}` or `{release.major_tag(tag)}`" in readme, image
+    first = next(iter(release.CURRENT_DEFAULT_TAGS.values()))
+    assert f"A patch tag such as `{first}.1` names a fixed image" in readme
