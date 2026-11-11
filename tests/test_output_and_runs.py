@@ -41,7 +41,7 @@ from tests.civis_fakes import FakeFuture as SharedFakeFuture
 
 NOW = datetime(2026, 10, 13, 12, 0, tzinfo=timezone.utc)
 # Objects in a dry run of the synthetic instance (scanner/synthetic/synthetic_instance.json).
-DRY_RUN_OBJECTS = 32
+DRY_RUN_OBJECTS = 37
 FAKE_LOG_VALUES = ("Synthetic-Log-Pw-7731", "synthetic.member@example.org")
 FAKE_CODE = ("make_backend_factory", "select 1", "import civis")
 

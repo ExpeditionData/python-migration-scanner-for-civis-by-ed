@@ -6,6 +6,8 @@ reads only the current deployment (decision 6 of the build brief), so its ID is
 kept for later.
 
 Only Streamlit Services on a blank or "latest" tag are "affected" (decision 12).
+No current Streamlit default tag is known, so that rule is unchanged by the
+current-tag rule for the other default images (docs/PLAN.md 17.8).
 Services on Civis's R Shiny image, which is also the default when no image is
 set, cannot run Python and are left out.
 """

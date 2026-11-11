@@ -292,6 +292,41 @@
       },
       "docker_image_tag": "",
       "source": "print('old')\n"
+    },
+    {
+      "id": 114,
+      "name": "Example script saved on the current default tag",
+      "type": "Python",
+      "archived": false,
+      "hidden": false,
+      "author": {
+        "id": 2,
+        "name": "Example Analyst",
+        "username": "example_analyst"
+      },
+      "schedule": {
+        "scheduled": false
+      },
+      "last_run": null,
+      "docker_image_tag": "9.1",
+      "source": "import civis\nclient = civis.APIClient()\nme = client.users.list_me()\n",
+      "updated_at": "2026-06-15T12:00:00Z"
+    },
+    {
+      "id": 116,
+      "name": "Example template backing script saved on the current default tag",
+      "type": "Python",
+      "archived": false,
+      "hidden": false,
+      "author": {
+        "id": 1,
+        "name": "Example Robot",
+        "username": "example_robot"
+      },
+      "docker_image_tag": "9.1",
+      "source": "import civis\nclient = civis.APIClient()\nflags = client.users.list_me()['feature_flags']\n",
+      "is_template": true,
+      "_listed": false
     }
   ],
   "python3_git": {
@@ -540,6 +575,22 @@
       "docker_image_name": "civisanalytics/datascience-python",
       "docker_image_tag": "",
       "docker_command": "python old.py"
+    },
+    {
+      "id": 209,
+      "name": "Example container saved on the major default tag",
+      "type": "Container",
+      "archived": false,
+      "hidden": false,
+      "author": {
+        "id": 2,
+        "name": "Example Analyst",
+        "username": "example_analyst"
+      },
+      "docker_image_name": "civisanalytics/datascience-python",
+      "docker_image_tag": "9",
+      "docker_command": "pip install pandas==2.2.3 && python run.py",
+      "updated_at": "2026-07-01T09:00:00Z"
     }
   ],
   "templates": {
@@ -572,6 +623,12 @@
       "name": "Example dbt template on pinned image",
       "script_id": 222,
       "script_type": "dbt"
+    },
+    "36": {
+      "id": 36,
+      "name": "Example template on the current default tag",
+      "script_id": 116,
+      "script_type": "python3"
     }
   },
   "dbt": [
@@ -666,6 +723,27 @@
         "username": "example_analyst"
       },
       "docker_image_tag": "",
+      "updated_at": "2026-05-04T10:00:00Z"
+    },
+    {
+      "id": 233,
+      "name": "Example dbt project saved on the current default tag",
+      "type": "Dbt",
+      "archived": false,
+      "hidden": false,
+      "author": {
+        "id": 2,
+        "name": "Example Analyst",
+        "username": "example_analyst"
+      },
+      "docker_image_tag": "9.1",
+      "last_run": null,
+      "repo_http_uri": "github.com/example-org/example-dbt.git",
+      "repo_ref": "main",
+      "dbt_project": {
+        "project_dir": "warehouse",
+        "dbt_command": "build"
+      },
       "updated_at": "2026-05-04T10:00:00Z"
     }
   ],
@@ -786,6 +864,22 @@
         "started_at": "2024-05-02T12:00:00Z"
       },
       "code_preview": "python template.py"
+    },
+    {
+      "id": 309,
+      "name": "Example custom script on a template saved on the current default tag",
+      "type": "Custom",
+      "backing_script_type": "python3",
+      "archived": false,
+      "hidden": false,
+      "from_template_id": 36,
+      "author": {
+        "id": 2,
+        "name": "Example Analyst",
+        "username": "example_analyst"
+      },
+      "code_preview": "print('preview')",
+      "updated_at": "2026-08-20T16:30:00Z"
     }
   ],
   "notebooks": [
@@ -851,6 +945,22 @@
       "docker_image_name": "civisanalytics/civis-jupyter-python3",
       "docker_image_tag": "5.1",
       "notebook_url": "https://example-notebooks.s3-fips.us-east-1.amazonaws.com/notebook-404.ipynb?X-Amz-Signature=synthetic",
+      "git_repo_url": null
+    },
+    {
+      "id": 405,
+      "name": "Example notebook saved on the major default tag",
+      "language": "python3",
+      "archived": false,
+      "hidden": false,
+      "user": {
+        "id": 2,
+        "name": "Example Analyst",
+        "username": "example_analyst"
+      },
+      "docker_image_name": "civisanalytics/civis-jupyter-python3",
+      "docker_image_tag": "5",
+      "notebook_url": "https://example-notebooks.s3.amazonaws.com/notebook-405.ipynb?X-Amz-Signature=synthetic",
       "git_repo_url": null
     }
   ],
@@ -1183,6 +1293,24 @@
             "import civis\n",
             "client = civis.APIClient()\n",
             "me = client.users.list_me()\n"
+          ],
+          "outputs": []
+        }
+      ]
+    },
+    "https://example-notebooks.s3.amazonaws.com/notebook-405.ipynb?X-Amz-Signature=synthetic": {
+      "nbformat": 4,
+      "nbformat_minor": 5,
+      "metadata": {},
+      "cells": [
+        {
+          "cell_type": "code",
+          "metadata": {},
+          "execution_count": 1,
+          "source": [
+            "!pip install requests==2.31.0\n",
+            "import civis\n",
+            "me = civis.APIClient().users.list_me()\n"
           ],
           "outputs": []
         }

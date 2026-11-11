@@ -447,7 +447,7 @@ def test_the_summary_reports_the_dry_runs_inventory(tmp_path):
         logger.removeHandler(handler)
     counts = summary.count_log(stream.getvalue().splitlines())
     assert counts.inventory["python_script"] == {
-        "listed": 11, "kept": 9, "outside_window": 1, "template_copies": 1, "not_python": 0}
+        "listed": 12, "kept": 10, "outside_window": 1, "template_copies": 1, "not_python": 0}
     assert counts.inventory["workflow"]["kept"] == counts.inventory["workflow"]["listed"] == 5
     for c in counts.inventory.values():
         assert c["listed"] == c["kept"] + c["outside_window"] + c["template_copies"] + c["not_python"]

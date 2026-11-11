@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from common.models import CivisObject, CoverageCounts, CoverageItem, Impact, ObjectType, ScanStatus
+from common.release import default_tag_forms
 from common.urls import object_url
 
 DATASCIENCE_IMAGE = "civisanalytics/datascience-python"
@@ -64,8 +65,16 @@ def normalize_image(name: str | None, tag: str | None) -> tuple[str | None, str 
     return name, tag
 
 
-def is_default_tag(tag: str | None) -> bool:
-    return tag is None or tag.strip() in ("", "latest")
+def is_default_tag(image: str | None, tag: str | None) -> bool:
+    """True when ``tag`` follows Civis's default for ``image``: blank, "latest", the image's current default tag,
+    or that tag's major part (common/release.CURRENT_DEFAULT_TAGS; docs/PLAN.md 17.8).
+
+    Civis writes the current minor tag itself on an object made with no tag, and a major tag follows Civis's
+    newest image in that family, so both can move with Civis's default. A patch tag (9.1.1) or an older minor
+    tag (9.0) names a fixed image, so it counts as pinned. The tag is checked for its own image only."""
+    if tag is None or tag.strip() in ("", "latest"):
+        return True
+    return tag.strip() in default_tag_forms(image)
 
 
 @dataclass(frozen=True)
@@ -79,8 +88,11 @@ class ImageClass:
 def classify_image(object_type: ObjectType, name: str | None, tag: str | None) -> ImageClass:
     """Apply the approved default-image rule.
 
-    A blank or "latest" tag on a known Civis default image counts as the default
-    image. For Services, only the Streamlit image counts (decision 12).
+    A known Civis default image with a blank tag, "latest", that image's current
+    default tag, or that tag's major part counts as the default image
+    (is_default_tag; decision 1.4, changed in docs/PLAN.md 17.8). For Services,
+    only the Streamlit image counts (decision 12), and it has no known current
+    tag, so only blank or "latest".
     """
     name, tag = normalize_image(name, tag)
     effective = name or IMPLIED_IMAGE.get(object_type)
@@ -89,9 +101,9 @@ def classify_image(object_type: ObjectType, name: str | None, tag: str | None) -
     if effective is None:
         return ImageClass(None, tag, None, Impact.UNKNOWN)
     if object_type is ObjectType.SERVICE:
-        uses_default = effective == STREAMLIT_IMAGE and is_default_tag(tag)
+        uses_default = effective == STREAMLIT_IMAGE and is_default_tag(effective, tag)
     else:
-        uses_default = effective in DEFAULT_IMAGES and is_default_tag(tag)
+        uses_default = effective in DEFAULT_IMAGES and is_default_tag(effective, tag)
     return ImageClass(effective, tag or None, uses_default, Impact.AFFECTED if uses_default else Impact.ADVISORY)
 
 

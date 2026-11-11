@@ -32,6 +32,30 @@ LOOKBACK_PARAMETER = "LOOKBACK_DAYS"
 DEFAULT_LOOKBACK_DAYS = 400
 LOOKBACK_DAYS_RANGE = (1, 3650)
 
+# The current tag of each Civis default image, by image name. Civis saves the then-current default tag on an
+# object made with no tag: in the live test (November 5, 2026), every test Python, container, and custom script
+# created through the API with no tag showed datascience-python tag 9.1, and the test notebook showed
+# civis-jupyter-python3 tag 5.1. Update these when Civis changes its default images. No current tag is known for
+# civisanalytics/civis-services-streamlit, so Services keep the blank or "latest" rule (docs/PLAN.md 17.8).
+# The scanner's default-image rule (scanner/inventory/base.py) and the Findings page's "How to read this page"
+# read them from here.
+CURRENT_DEFAULT_TAGS = {
+    "civisanalytics/datascience-python": "9.1",
+    "civisanalytics/civis-jupyter-python3": "5.1",
+}
+
+
+def major_tag(tag: str) -> str:
+    """The major part of a tag: the text before the first dot ("9" for "9.1"). Derived, never stored."""
+    return tag.strip().split(".", 1)[0]
+
+
+def default_tag_forms(image: str | None) -> tuple[str, ...]:
+    """The tags, besides blank and "latest", that count as an image's default: its current default tag and that
+    tag's major part. Empty for an image with no known current tag."""
+    current = CURRENT_DEFAULT_TAGS.get(image or "")
+    return (current, major_tag(current)) if current else ()
+
 
 @lru_cache(maxsize=None)
 def pinned_image(part: str) -> tuple[str, str] | None:
