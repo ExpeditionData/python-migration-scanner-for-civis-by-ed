@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
+from common import release
 from common.models import ObjectType
 from common.rule_loader import RuleSet
 from app.backends.base import JobRun, Progress
@@ -669,6 +670,15 @@ def findings_rows(objects: list[dict], findings: list[dict], checklist: list[dic
         })
     rows.sort(key=lambda r: (r["object_name"].lower(), r["object_id"], r["rule_id"]))
     return rows
+
+
+def default_tag_help() -> dict:
+    """The current default tags for Findings' "How to read this page", from common/release.CURRENT_DEFAULT_TAGS
+    (docs/PLAN.md 17.8), so the page says what the scanner counts. Image names are shown without the
+    "civisanalytics/" part. The patch example is the first image's current tag plus ".1" (9.1.1 for 9.1)."""
+    images = [{"image": image.rsplit("/", 1)[-1], "tag": tag, "major": release.major_tag(tag)}
+              for image, tag in release.CURRENT_DEFAULT_TAGS.items()]
+    return {"images": images, "patch_example": f"{images[0]['tag']}.1" if images else None}
 
 
 def _location(finding: dict) -> str:

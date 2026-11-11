@@ -392,6 +392,15 @@ progress.scan-progress::-moz-progress-bar { background: var(--primary); border-r
 .step-detail { font-size: 13px; color: var(--muted); }
 .callout { font-size: 14px; color: var(--muted); background: var(--stripe); border-radius: 6px; padding: 12px 14px; margin: 0; }
 
+/* Findings: "How to read this page" (a details element, closed by default) */
+
+.page-help { font-size: 14px; color: var(--text); padding: 12px 18px; }
+.page-help > summary { cursor: pointer; font-weight: 700; color: var(--primary); }
+.page-help[open] > summary { margin-bottom: 12px; }
+.page-help h2 { margin: 16px 0 6px; padding-bottom: 4px; font-size: 16px; }
+.page-help p, .page-help ul { margin: 0 0 8px; max-width: 75ch; }
+.page-help ul { padding-left: 20px; }
+
 /* Filters and forms */
 
 .filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }

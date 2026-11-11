@@ -31,6 +31,32 @@
 {% if empty %}
 {{ empty_block(empty) }}
 {% else %}
+{% if has_findings %}
+<details class="card page-help">
+  <summary>How to read this page</summary>
+  <h2>Impact</h2>
+  <ul>
+    <li><strong>Affected in February:</strong> the object runs on a Civis default image, so the February 2027 update (Python 3.15 and civis-python v3) is expected to reach it.</li>
+    <li><strong>Advisory:</strong> the object runs on a pinned or custom image. The finding matters when that image or its packages are updated, not in February.</li>
+    <li><strong>Image unknown:</strong> the scan could not tell which image the object runs on, for example when it could not read a custom script's template. Check these by hand.</li>
+  </ul>
+  <p>An object counts as on a Civis default image when its image tag is blank, "latest", the current default tag, or that tag's major part:{% for item in tag_help.images %} {{ item.image }} {{ item.tag }} or {{ item.major }}{% if not loop.last %},{% endif %}{% endfor %}. Civis saves the current tag on new objects that do not choose one, so those objects count as Affected. Civis has not said whether objects saved on that tag move to the new image in February.{% if tag_help.patch_example %} A patch tag such as {{ tag_help.patch_example }} names a fixed image, so it counts as Advisory.{% endif %} A Streamlit Service counts only with a blank or "latest" tag.</p>
+  <p>Two checks set their own impact. Installing civis without a version limit is Affected on any image. Installing a package with an exact version or an upper limit is Advisory, and it is checked only on objects on a Civis default image.</p>
+  <h2>What to fix first</h2>
+  <p>Start with Affected findings with high confidence. For a custom script, fix its template's backing script. Custom scripts run their template's code, so one fix there fixes every custom script made from that template. The Template ID filter shows them together.</p>
+  <h2>Confidence</h2>
+  <ul>
+    <li><strong>High:</strong> the code uses something that is removed or changed, or the last run log shows a civis-python warning about it.</li>
+    <li><strong>Medium:</strong> the match depends on things the scan cannot check, such as a common method name, a changed default, or a Python 3.15 warning in a log.</li>
+    <li><strong>Low:</strong> something to confirm, such as a pinned package that may not support Python 3.15.</li>
+  </ul>
+  <p>A file that does not parse as Python is checked by text patterns instead, and its matches get one level lower confidence.</p>
+  <h2>Location</h2>
+  <p>Location gives the file and line number of each match. A match in a log shows the log and its line, for example "run log (run 123), line 4" or a Service's deployment log. Code and log text are not shown, since they can contain passwords.</p>
+  <h2>Status</h2>
+  <p>Open, Fixed, and Ignored are saved for each object and rule, with the user name and time, and they stay the same across scans. The Status filter shows Open findings by default. Set it to All to see rows marked Fixed or Ignored.</p>
+</details>
+{% endif %}
 <form class="filters" method="get" action="{{ url_for('pages.findings') }}" aria-label="Filter the findings">
   <label class="field">Impact
     <select name="impact">

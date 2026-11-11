@@ -85,7 +85,7 @@ def test_pages_render_with_navigation_banner_and_footer(app, url, heading, nav):
     body = response.get_data(as_text=True)
     assert response.status_code == 200
     assert f"<h1>{heading}</h1>" in body
-    assert f'class="active" aria-current="page">{nav}</a>' in body
+    assert re.search(rf'class="active" aria-current="page"( data-busy)?>{nav}</a>', body)
     assert "It is not a complete audit." in body and "For Civis admins only." in body
     assert "Designed to run inside your Civis environment." in body
     assert "No data leaves Civis" not in body
@@ -1030,3 +1030,93 @@ def test_the_csv_report_has_no_template_columns():
     from scanner.output import REPORT_COLUMNS
 
     assert "template_id" not in REPORT_COLUMNS and "backing_script_id" not in REPORT_COLUMNS
+
+
+# --- Scan history's working message and Findings' "How to read this page" (docs/PLAN.md 17.8, Part E) -------
+
+
+def test_only_the_scan_history_and_setup_links_show_the_working_message(app):
+    body = app.test_client().get("/inventory").get_data(as_text=True)
+    nav = body[body.index('<nav aria-label="Main"'): body.index("</nav>")]
+    links = dict(re.findall(r'<a href="([^"]+)"[^>]*?(\sdata-busy)?>', nav))
+    assert links == {"/": "", "/inventory": "", "/findings": "", "/scan": " data-busy", "/setup": " data-busy"}
+    assert 'href="/scan" data-busy>Scan history</a>' in nav
+
+
+def _help(body: str) -> str:
+    return body[body.index('<details class="card page-help">'): body.index("</details>") + len("</details>")]
+
+
+def test_findings_explains_how_to_read_the_page(app):
+    body = app.test_client().get("/findings").get_data(as_text=True)
+    section = _help(body)
+    assert body.index(section) < body.index('<form class="filters"')  # Near the top, above the filters.
+    assert "<summary>How to read this page</summary>" in section and " open" not in section.split(">")[0]
+    text = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", section)))
+    for heading in ("Impact", "What to fix first", "Confidence", "Location", "Status"):
+        assert f"<h2>{heading}</h2>" in section
+    for words in ("Affected in February:", "Advisory:", "Image unknown:", "High:", "Medium:", "Low:"):
+        assert words in text
+    # The tag values come from common/release.CURRENT_DEFAULT_TAGS.
+    assert "datascience-python 9.1 or 9, civis-jupyter-python3 5.1 or 5." in text
+    assert "A patch tag such as 9.1.1 names a fixed image, so it counts as Advisory." in text
+    assert "Civis has not said whether objects saved on that tag move to the new image in February." in text
+    assert "Set it to All to see rows marked Fixed or Ignored." in text
+    # Writing style: no em or en dashes, no inline styles or scripts.
+    assert "—" not in section and "–" not in section and "style=" not in section and "<script" not in section
+
+
+def test_the_help_reads_the_tags_from_common_release(preview, monkeypatch):
+    from common import release
+
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    monkeypatch.setattr(release, "CURRENT_DEFAULT_TAGS",
+                        {"civisanalytics/datascience-python": "10.2", "civisanalytics/civis-jupyter-python3": "6.0"})
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", _help(make_app(preview).test_client().get("/findings")
+                                                             .get_data(as_text=True))))
+    assert "datascience-python 10.2 or 10, civis-jupyter-python3 6.0 or 6." in text
+    assert "A patch tag such as 10.2.1 names a fixed image" in text and "9.1" not in text
+
+
+def test_the_help_holds_no_civis_values(app):
+    """The section is fixed text plus the tags from common/release.py: no object, user, or rule value from Civis
+    or the results, so nothing in it is escaped."""
+    body = app.test_client().get("/findings?status=all").get_data(as_text=True)
+    section = _help(body)
+    assert "&lt;" not in section and "&amp;" not in section and "&#" not in section
+    assert HOSTILE_NAME not in section and html.escape(HOSTILE_NAME) not in section
+    assert "Example" not in section and "CV3-" not in section and "PY315-" not in section
+
+
+@pytest.mark.parametrize("state", ["no-scan", "first-scan-running", "first-scan-cancelled", "schema-missing",
+                                   "tables-missing", "no-job-id", "job-unreadable", "database-unrecognized",
+                                   "not-scanner-job"])
+def test_the_help_is_absent_from_the_empty_states(preview, monkeypatch, state):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    body = make_app(preview, state).test_client().get("/findings").get_data(as_text=True)
+    assert "page-help" not in body and "How to read this page" not in body
+
+
+def test_the_help_needs_findings_to_show(preview, monkeypatch):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    app = make_app(preview)
+    filtered = app.test_client().get("/findings?impact=unknown&ruleset=python315&confidence=low").get_data(as_text=True)
+    assert "How to read this page" in filtered  # The scan has findings; the filters only hide them.
+    from app import pages
+
+    real = pages.current_tables
+
+    def no_findings(*args, **kwargs):
+        objects, _, coverage, checklist = real(*args, **kwargs)
+        return objects, [], coverage, checklist
+
+    monkeypatch.setattr(pages, "current_tables", no_findings)  # A completed scan with no findings.
+    body = app.test_client().get("/findings").get_data(as_text=True)
+    assert "No findings match these filters." in body and "How to read this page" not in body
+
+
+def test_the_help_styles_live_in_app_css():
+    css = (Path(__file__).resolve().parent.parent / "app/static/css/app.css").read_text(encoding="utf-8")
+    assert ".page-help > summary { cursor: pointer; font-weight: 700; color: var(--primary); }" in css
+    assert ".page-help { font-size: 14px; color: var(--text); padding: 12px 18px; }" in css
+    test_text_contrast_is_at_least_4_5_to_1()  # --text and --primary on --surface are in the checked pairs.

@@ -435,6 +435,7 @@ def findings():
         "findings.html", **base_context("findings", situation), page=page, filters=filters,
         owners=views.owners(objects, finding_rows), empty=empty_state(situation), current=situation.current,
         template_sentence=views.TEMPLATE_SENTENCE if any(r["custom"] for r in page.rows) else None,
+        tag_help=views.default_tag_help(), has_findings=bool(finding_rows),
         saved=int(saved) if saved.isdigit() else None,
         error={"viewer": "Saving needs a signed-in Civis user. Open the app through Civis Platform and try again.",
                "invalid": "The form contained a value that is not allowed. Reload the page and try again.",

@@ -21,7 +21,7 @@
         </div>
         <nav aria-label="Main" class="main-nav">
           {% for key, label, endpoint in [("overview", "Overview", "pages.overview"), ("inventory", "Inventory", "pages.inventory"), ("findings", "Findings", "pages.findings"), ("scan", "Scan history", "pages.scan"), ("setup", "Setup", "pages.setup_page")] %}
-          <a href="{{ url_for(endpoint) }}"{% if active == key %} class="active" aria-current="page"{% endif %}{% if key == "setup" %} data-busy{% endif %}>{{ label }}</a>
+          <a href="{{ url_for(endpoint) }}"{% if active == key %} class="active" aria-current="page"{% endif %}{% if key in ("scan", "setup") %} data-busy{% endif %}>{{ label }}</a>
           {% endfor %}
         </nav>
         <div class="signed-in">
