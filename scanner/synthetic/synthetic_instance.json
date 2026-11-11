@@ -836,6 +836,22 @@
       "git_repo_url": "https://github.com/example-org/notebooks.git",
       "git_ref": "main",
       "git_path": "analysis.ipynb"
+    },
+    {
+      "id": 404,
+      "name": "Example notebook with a FIPS file link",
+      "language": "python3",
+      "archived": false,
+      "hidden": false,
+      "user": {
+        "id": 2,
+        "name": "Example Analyst",
+        "username": "example_analyst"
+      },
+      "docker_image_name": "civisanalytics/civis-jupyter-python3",
+      "docker_image_tag": "5.1",
+      "notebook_url": "https://example-notebooks.s3-fips.us-east-1.amazonaws.com/notebook-404.ipynb?X-Amz-Signature=synthetic",
+      "git_repo_url": null
     }
   ],
   "services": [
@@ -1151,6 +1167,24 @@
               ]
             }
           ]
+        }
+      ]
+    },
+    "https://example-notebooks.s3-fips.us-east-1.amazonaws.com/notebook-404.ipynb?X-Amz-Signature=synthetic": {
+      "nbformat": 4,
+      "nbformat_minor": 5,
+      "metadata": {},
+      "cells": [
+        {
+          "cell_type": "code",
+          "metadata": {},
+          "execution_count": 1,
+          "source": [
+            "import civis\n",
+            "client = civis.APIClient()\n",
+            "me = client.users.list_me()\n"
+          ],
+          "outputs": []
         }
       ]
     }

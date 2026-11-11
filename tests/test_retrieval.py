@@ -143,6 +143,11 @@ def test_github_host_allow_list(host, allowed):
         "s3.us-gov-west-1.amazonaws.com",
         "example-bucket.s3.amazonaws.com",
         "example.bucket.s3.eu-west-2.amazonaws.com",
+        # S3 FIPS endpoints (docs/PLAN.md 17.8): the region is required.
+        "s3-fips.us-east-1.amazonaws.com",
+        "s3-fips.us-gov-west-1.amazonaws.com",
+        "example-bucket.s3-fips.us-east-2.amazonaws.com",
+        "example-bucket.s3-fips.us-gov-east-1.amazonaws.com",
         "files.civisanalytics.com",
         "example.civis.io",
     ],
@@ -160,12 +165,33 @@ def test_civis_file_hosts_allowed(host):
         "bucket.s3-website-us-east-1.amazonaws.com",
         "x.s3.evil.amazonaws.com",
         "s3.amazonaws.com.evil.test",
+        "bucket.s3.dualstack.us-east-1.amazonaws.com",
+        "bucket.s3-accelerate.amazonaws.com",
+        "bucket.s3-website.us-east-1.amazonaws.com",
+        # S3 FIPS look-alikes (docs/PLAN.md 17.8).
+        "s3-fips.amazonaws.com",
+        "example-bucket.s3-fips.amazonaws.com",
+        "s3-fips.us-east-1.amazonaws.com.evil.example",
+        "s3-fips-us-east-1.amazonaws.com",
+        "example-bucket.s3-fips.dualstack.us-east-1.amazonaws.com",
+        "s3-fips.evil.amazonaws.com",
         "civisanalytics.com.evil.test",
         "example.test",
     ],
 )
 def test_civis_file_hosts_refused(host):
     assert not host_allowed(host, CIVIS_FILE_HOSTS)
+
+
+def test_a_fips_link_is_fetched_over_https_only():
+    """docs/PLAN.md 17.8: the FIPS host form is allowed, but only over https, like every other file host."""
+    url = "example-bucket.s3-fips.us-east-1.amazonaws.com/notebook.ipynb?X-Amz-Signature=synthetic"
+    session = RecordingSession([SyntheticResponse(200, b"{}")])
+    assert SafeHttp(session).get(f"https://{url}", allowed_hosts=CIVIS_FILE_HOSTS, max_bytes=10) == b"{}"
+    refused = RecordingSession([])
+    with pytest.raises(FetchError):
+        SafeHttp(refused).get(f"http://{url}", allowed_hosts=CIVIS_FILE_HOSTS, max_bytes=10)
+    assert refused.calls == []
 
 
 @pytest.mark.parametrize("url", ["http://api.github.com/x", "https://example.test/x", "ftp://api.github.com/x"])

@@ -21,10 +21,16 @@ from urllib.parse import urljoin, urlsplit
 GITHUB_HOSTS = ("api.github.com", "codeload.github.com")
 # Amazon S3 hostnames only: s3.amazonaws.com, s3.<region>.amazonaws.com, and the
 # virtual-host forms <bucket>.s3.amazonaws.com and <bucket>.s3.<region>.amazonaws.com.
-# Other amazonaws.com hosts (EC2, API Gateway, and so on) are refused.
+# Also the S3 FIPS endpoints, which Amazon publishes per region, so the region is
+# required: s3-fips.<region>.amazonaws.com and <bucket>.s3-fips.<region>.amazonaws.com
+# (the Civis notebook page loaded its file from that form in the first live test,
+# docs/PLAN.md 17.8). Other amazonaws.com hosts (EC2, API Gateway, dualstack,
+# s3-accelerate, s3-website, and so on) are refused.
 _S3_REGION = r"[a-z]{2}(?:-gov)?-[a-z]+-\d"
 _S3_BUCKET = r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]"
-_S3_HOST = re.compile(rf"^(?:{_S3_BUCKET}\.)?s3(?:\.{_S3_REGION})?\.amazonaws\.com$")
+_S3_HOST = re.compile(
+    rf"^(?:{_S3_BUCKET}\.)?(?:s3(?:\.{_S3_REGION})?|s3-fips\.{_S3_REGION})\.amazonaws\.com$"
+)
 
 
 def is_s3_host(host: str) -> bool:

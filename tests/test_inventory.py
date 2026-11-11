@@ -48,7 +48,7 @@ def test_inventoried_ids_by_type(built):
         ObjectType.CONTAINER_SCRIPT: {201, 202, 203, 204, 205, 206, 208},
         ObjectType.CUSTOM_SCRIPT: {301, 302, 304, 306},
         ObjectType.DBT_SCRIPT: {231},
-        ObjectType.NOTEBOOK: {401, 403},
+        ObjectType.NOTEBOOK: {401, 403, 404},
         ObjectType.SERVICE: {501, 502, 503},
         ObjectType.WORKFLOW: {601, 603, 605, 606},
     }
@@ -645,7 +645,7 @@ def test_one_inventory_line_per_listed_type_before_any_detail_call(scanner_log):
         "INVENTORY type=container_script listed=10 kept=7 outside_window=1 template_copies=2 not_python=0",
         "INVENTORY type=custom_script listed=7 kept=5 outside_window=1 template_copies=0 not_python=1",
         "INVENTORY type=dbt_script listed=3 kept=2 outside_window=0 template_copies=1 not_python=0",
-        "INVENTORY type=notebook listed=3 kept=2 outside_window=0 template_copies=0 not_python=1",
+        "INVENTORY type=notebook listed=4 kept=3 outside_window=0 template_copies=0 not_python=1",
         "INVENTORY type=service listed=5 kept=5 outside_window=0 template_copies=0 not_python=0",
         "INVENTORY type=workflow listed=5 kept=5 outside_window=0 template_copies=0 not_python=0",
     ]
@@ -655,7 +655,7 @@ def test_one_inventory_line_per_listed_type_before_any_detail_call(scanner_log):
     last_list = max(i for i, n in enumerate(names) if n in lists)
     first_detail = min(i for i, n in enumerate(names) if n not in lists)
     assert last_list < first_detail and names.count("workflows.list") == 1
-    assert lines.index(inventory_lines[-1]) < lines.index("PROGRESS phase=inventory objects_done=0 objects_total=35")
+    assert lines.index(inventory_lines[-1]) < lines.index("PROGRESS phase=inventory objects_done=0 objects_total=36")
 
 
 def test_inventory_progress_every_50_objects_or_30_seconds(scanner_log):
@@ -667,14 +667,14 @@ def test_inventory_progress_every_50_objects_or_30_seconds(scanner_log):
         })
     build_inventory(FakeClient(data), cutoff=CUTOFF, clock=lambda: 0.0)
     progress = [line for line in scanner_log.getvalue().splitlines() if line.startswith("PROGRESS phase=inventory")]
-    assert progress == [f"PROGRESS phase=inventory objects_done={n} objects_total=155" for n in (0, 50, 100, 150, 155)]
+    assert progress == [f"PROGRESS phase=inventory objects_done={n} objects_total=156" for n in (0, 50, 100, 150, 156)]
 
     scanner_log.truncate(0)
     scanner_log.seek(0)
     ticks = iter(range(0, 100_000, 31))  # Each check of the clock is 31 seconds after the last.
     build_inventory(FakeClient.from_fixture("synthetic_instance.json"), cutoff=CUTOFF, clock=lambda: next(ticks))
     progress = [line for line in scanner_log.getvalue().splitlines() if line.startswith("PROGRESS phase=inventory")]
-    assert len(progress) == 1 + 35 + 1 and progress[-1] == "PROGRESS phase=inventory objects_done=35 objects_total=35"
+    assert len(progress) == 1 + 36 + 1 and progress[-1] == "PROGRESS phase=inventory objects_done=36 objects_total=36"
 
 
 def test_the_inventory_line_takes_counts_only():

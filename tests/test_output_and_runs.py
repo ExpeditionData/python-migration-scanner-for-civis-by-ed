@@ -40,6 +40,8 @@ from tests.civis_fakes import CivisJobFailure, civis_read_result, load_frame_lik
 from tests.civis_fakes import FakeFuture as SharedFakeFuture
 
 NOW = datetime(2026, 10, 13, 12, 0, tzinfo=timezone.utc)
+# Objects in a dry run of the synthetic instance (scanner/synthetic/synthetic_instance.json).
+DRY_RUN_OBJECTS = 32
 FAKE_LOG_VALUES = ("Synthetic-Log-Pw-7731", "synthetic.member@example.org")
 FAKE_CODE = ("make_backend_factory", "select 1", "import civis")
 
@@ -287,11 +289,11 @@ def test_checkpoints_every_n_objects_or_n_seconds():
 
 def test_dry_run_end_to_end(tmp_path, log_stream):
     result = dry_run(tmp_path, now=NOW)
-    assert result.status == "succeeded" and result.report_saved and result.objects == 31
+    assert result.status == "succeeded" and result.report_saved and result.objects == DRY_RUN_OBJECTS
     conn = db(tmp_path)
     assert count(conn, "scan_runs") == 2
     assert [r[0] for r in conn.execute("SELECT status FROM scan_runs ORDER BY rowid")] == ["running", "succeeded"]
-    assert count(conn, "objects") == 31
+    assert count(conn, "objects") == DRY_RUN_OBJECTS
     assert count(conn, "findings") == result.findings > 0
     assert count(conn, "coverage", "row_kind = 'summary'") == len(ObjectType)
     assert count(conn, "coverage", "row_kind = 'not_python'") == 5
@@ -301,9 +303,9 @@ def test_dry_run_end_to_end(tmp_path, log_stream):
     assert "synthetic-github-token" not in params
 
     logged = log_stream.getvalue()
-    assert "PROGRESS phase=code objects_done=31 objects_total=31" in logged
+    assert f"PROGRESS phase=code objects_done={DRY_RUN_OBJECTS} objects_total={DRY_RUN_OBJECTS}" in logged
     assert re.search(r"RUN run_id=run-\d{8}T\d{6}Z-[0-9a-f]{6} status=succeeded", logged)
-    assert f" objects_total=31 objects_scanned=31 api_calls={result.api_calls} " in logged.splitlines()[-1]
+    assert f" objects_total={DRY_RUN_OBJECTS} objects_scanned={DRY_RUN_OBJECTS} api_calls={result.api_calls} " in logged.splitlines()[-1]
 
     report = next(tmp_path.glob("*.csv")).read_bytes()
     database = (tmp_path / "results.sqlite").read_bytes()
@@ -311,6 +313,29 @@ def test_dry_run_end_to_end(tmp_path, log_stream):
         assert secret.encode() not in report
         assert secret.encode() not in database
         assert secret not in logged
+
+
+def test_dry_run_downloads_a_notebook_from_an_s3_fips_host(tmp_path, monkeypatch):
+    """docs/PLAN.md 17.8, Part A: the live test's notebook page loaded its file from
+    <bucket>.s3-fips.<region>.amazonaws.com. Synthetic notebook 404's link is on that form, and the dry run
+    downloads and scans it."""
+    from scanner import synthetic
+
+    requested = []
+
+    class RecordingSyntheticSession(synthetic.SyntheticSession):
+        def get(self, url, *args, **kwargs):
+            requested.append(url.split("?")[0])
+            return super().get(url, *args, **kwargs)
+
+    monkeypatch.setattr(synthetic, "SyntheticSession", RecordingSyntheticSession)
+    dry_run(tmp_path, now=NOW)
+    assert "https://example-notebooks.s3-fips.us-east-1.amazonaws.com/notebook-404.ipynb" in requested
+    conn = db(tmp_path)
+    status, note = conn.execute("SELECT scan_status, scan_note FROM objects WHERE object_id = 404").fetchone()
+    assert status == "scanned" and note is None
+    rules = {r[0] for r in conn.execute("SELECT rule_id FROM findings WHERE object_id = 404")}
+    assert rules and all(rule.startswith("CV3-") for rule in rules)
 
 
 def test_hidden_objects_are_not_counted(tmp_path):
@@ -393,7 +418,7 @@ def test_final_log_line_counts_every_civis_api_call(tmp_path, log_stream, monkey
     assert (reads, failures) == (2, 4)  # Read: 109 and 605. Failed: 110, 111, 112, and 606.
     final = logged.splitlines()[-1]
     counts = re.fullmatch(
-        rf"RUN run_id={result.run_id} status=succeeded objects_total=31 objects_scanned=31 api_calls={sent} "
+        rf"RUN run_id={result.run_id} status=succeeded objects_total={DRY_RUN_OBJECTS} objects_scanned={DRY_RUN_OBJECTS} api_calls={sent} "
         rf"github_tarball_requests={tarballs} github_cache_peak_bytes=(\d+) github_cache_evictions=0 "
         rf"civis_git_reads={reads} civis_git_failures={failures}",
         final,
@@ -443,8 +468,8 @@ def test_resumed_run_counts_only_its_own_calls_and_objects(tmp_path, log_stream)
     result = dry_run(tmp_path, now=NOW, run_id=run_id)
     final = log_stream.getvalue().splitlines()[-1]
     scanned = int(re.search(r"objects_scanned=(\d+)", final).group(1))
-    assert final.startswith(f"RUN run_id={run_id} status=succeeded objects_total=31 ")
-    assert 0 < scanned < 31 and f" api_calls={result.api_calls} " in final
+    assert final.startswith(f"RUN run_id={run_id} status=succeeded objects_total={DRY_RUN_OBJECTS} ")
+    assert 0 < scanned < DRY_RUN_OBJECTS and f" api_calls={result.api_calls} " in final
 
 
 def test_rescan_adds_only_new_open_checklist_rows(tmp_path):
@@ -473,8 +498,8 @@ def test_stop_partway_then_resume(tmp_path):
     resumed = dry_run(tmp_path, now=NOW, run_id=run_id, checkpoint_objects=5)
     assert resumed.status == "succeeded" and resumed.skipped_as_done == 10
     conn = db(tmp_path)
-    assert count(conn, "objects") == 31
-    assert count(conn, "(SELECT DISTINCT object_id FROM objects)") == 31  # No object written twice.
+    assert count(conn, "objects") == DRY_RUN_OBJECTS
+    assert count(conn, "(SELECT DISTINCT object_id FROM objects)") == DRY_RUN_OBJECTS  # No object written twice.
 
     full = tmp_path / "full"
     complete = dry_run(full, now=NOW)
@@ -483,7 +508,7 @@ def test_stop_partway_then_resume(tmp_path):
     assert conn.execute(finding_set).fetchall() == reference.execute(finding_set).fetchall()
     assert resumed.findings == complete.findings
     report = next(tmp_path.glob("*.csv")).read_text(encoding="utf-8-sig")
-    assert len({row["object_id"] for row in report_rows(report)}) == 31
+    assert len({row["object_id"] for row in report_rows(report)}) == DRY_RUN_OBJECTS
 
     with pytest.raises(AlreadyFinished):
         dry_run(tmp_path, now=NOW, run_id=run_id)
@@ -501,7 +526,7 @@ def test_table_failure_still_saves_the_csv(tmp_path, monkeypatch, log_stream):
     assert result.status == "tables_failed" and result.report_saved and not result.tables_ok
     assert "TABLE_WRITE_FAILED table=findings" in log_stream.getvalue()
     report = next(tmp_path.glob("*.csv")).read_text(encoding="utf-8-sig")
-    assert len({row["object_id"] for row in report_rows(report)}) == 31
+    assert len({row["object_id"] for row in report_rows(report)}) == DRY_RUN_OBJECTS
 
 
 def test_retention_deletes_old_runs_but_not_the_current_one(tmp_path):
