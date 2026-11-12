@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "macros.html" import run_scan_button, empty_block, local_time %}
 {% block title %}{{ "Scan in progress" if running else "Scan history" }}{% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='js/proxy-refresh.js') }}" defer></script>
+{% block scripts %}<script src="{{ url_for('static', filename='js/status-requests.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/scan-status.js') }}" defer></script>{% endblock %}
 {% block content %}
 <div class="page-head">

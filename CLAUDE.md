@@ -208,14 +208,17 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   and `app/static/js/run-scan.js` starts a scan
   from the Overview without a reload (`POST /scan/start` answers JSON when
   asked) and polls the status API only while a run is starting or active.
-  `app/static/js/proxy-refresh.js`, loaded before `run-scan.js` and
-  `scan-status.js`, sends their requests and reloads the page when Civis's
-  proxy turns a status request away (its cookie expired; a rejected fetch, a
-  response that is not ok, not JSON, or not a JSON object): at most once a
-  minute per page, no reload while hidden or while a POST waits, and after 3
-  reloads with no success it stops and shows one line; the count is in
-  `sessionStorage` by path, and without it nothing reloads (docs/PLAN.md
-  17.8). Findings has a closed "How to read this page" section whose tag
+  `app/static/js/status-requests.js`, loaded before `run-scan.js` and
+  `scan-status.js`, sends their requests. A request is turned away when
+  Civis's proxy refuses it (its cookie, which only a reload of the whole
+  Civis page renews, expired; a rejected fetch, a response that is not ok,
+  not JSON, or not a JSON object). The page never reloads itself because a
+  request was turned away: after 2 turned-away polls in a row it stops
+  polling and shows the stop line (reload the whole Civis page, F5; reloading
+  only the frame does not help), a success resets the count, a hidden page
+  behaves the same, and nothing uses `sessionStorage` (docs/PLAN.md 17.9;
+  17.8's frame reload is gone). Scan history still reloads once when a scan
+  finishes, right after a successful poll. Findings has a closed "How to read this page" section whose tag
   values come from `common/release.py` (`views.default_tag_help`). `app/job_settings.py` parses the
   job's parameters, `app/setup.py` gathers and evaluates the Setup checks,
   `app/summary.py` builds the test summary, and `common/release.py` holds
@@ -461,15 +464,17 @@ Run the full suite on both Python versions before every commit:
   normal); its `reads` holds every read, `full_reads` and `small_reads` split
   them, and `queries` holds writes only.
 - `tests/test_scripts_js.py` runs `busy.js`, `run-scan.js`, and
-  `scan-status.js` (the last two after `proxy-refresh.js`) under Node with a
-  stand-in page (skipped if Node is not installed) and checks the markup and
-  the JSON start. The stand-in page has `sessionStorage` (working, throwing,
-  or missing), a clock (`now`, the `advance` step), `document.hidden` (the
-  `visibility` step), intervals, answers held until a `release` step, and a
-  reload counter, for the proxy-refresh tests: each kind of turned-away
-  answer, the one-a-minute limit, the stop line after 3 reloads, the reset
-  on success, no storage, a hidden page, and a waiting POST (docs/PLAN.md
-  17.8).
+  `scan-status.js` (the last two after `status-requests.js`) under Node with
+  a stand-in page (skipped if Node is not installed) and checks the markup
+  and the JSON start. The stand-in page has `sessionStorage` (working,
+  throwing, or missing, with a count of every use), a clock (`now`, the
+  `advance` step), `document.hidden` (the `visibility` step), intervals,
+  answers held until a `release` step, and a reload counter, for the
+  status-requests tests: each kind of turned-away answer counts, one keeps
+  polling and two in a row stop with the stop line, a success resets the
+  count, no reload and no `sessionStorage` use on either page (hidden or
+  visible, every storage mode), a turned-away POST shows its message and is
+  sent once, and the reload when a scan finishes (docs/PLAN.md 17.9).
 - `tests/test_default_tags.py` covers the default-image rule for every
   object type (current tag, major tag, patch and older tags, tags on the
   wrong image, spaces, a tag inside the image name), the

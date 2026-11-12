@@ -3,8 +3,9 @@
 // /api/scan-status every 15 seconds; it asks nothing at any other time.
 // Plain JavaScript, loaded from the app itself (no inline scripts; see the CSP). Text is set with textContent
 // only. Without JavaScript, the form posts as before and the browser opens Scan history.
-// proxy-refresh.js (loaded first) sends each request and reloads the page when Civis's proxy turns a status
-// request away. The Run scan POST is sent once and never makes the page reload.
+// status-requests.js (loaded first) sends each request. When Civis's proxy turns 2 status polls in a row away
+// (its session for the page expired), polling stops and the line under the button says to reload the whole Civis
+// page. The page never reloads itself. The Run scan POST is sent once and never repeated.
 (function () {
   "use strict";
 
@@ -12,7 +13,7 @@
   var START_POLLS = 8; // About 2 minutes for Civis to list a new run as queued or running.
   var box = document.querySelector("[data-run-scan]");
   if (!box || typeof window.fetch !== "function" || typeof window.FormData !== "function" ||
-      !window.pmscProxyRefresh) {
+      !window.pmscStatusRequests) {
     return;
   }
   var form = box.querySelector("form");
@@ -30,7 +31,7 @@
     }
   }
 
-  var refresh = window.pmscProxyRefresh.create({ show: say });
+  var requests = window.pmscStatusRequests.create({ show: say });
 
   function showRunning(running) {
     if (!button) {
@@ -42,7 +43,7 @@
   }
 
   function schedule() {
-    if (timer === null && !refresh.isStopped()) {
+    if (timer === null && !requests.isStopped()) {
       timer = window.setTimeout(poll, POLL_MS);
     }
   }
@@ -55,12 +56,12 @@
       button.disabled = true; // Run scan is off for another reason; the page says why after a reload.
       button.className = "button";
     }
-    say("The scan has ended. Reload this page to see its results.");
+    say("The scan has ended. Reload the whole Civis page to see its results.");
   }
 
   function update(data) {
     if (!data) {
-      schedule(); // Turned away: proxy-refresh.js reloads the page or stops, and otherwise the next poll tries again.
+      schedule(); // Turned away: the next poll tries again, unless status-requests.js stopped polling.
       return;
     }
     var active = data.state === "queued" || data.state === "running";
@@ -84,13 +85,13 @@
 
   function poll() {
     timer = null;
-    refresh.poll(statusUrl).then(update);
+    requests.poll(statusUrl).then(update);
   }
 
   function started(data) {
     if (!data) {
       showRunning(false);
-      say("Civis did not start the scan. Reload the page and try again.");
+      say("Civis did not start the scan. Reload the whole Civis page with the browser's reload button, then try again.");
       return;
     }
     say(data.message);
@@ -111,7 +112,7 @@
         return;
       }
       showRunning(true);
-      refresh.post(form.getAttribute("action"), new window.FormData(form)).then(started);
+      requests.post(form.getAttribute("action"), new window.FormData(form)).then(started);
     });
   }
 

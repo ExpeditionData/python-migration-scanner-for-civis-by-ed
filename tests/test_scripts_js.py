@@ -1,8 +1,8 @@
 """The "Working" message (app/static/js/busy.js), the Overview's Run scan button (app/static/js/run-scan.js),
-Scan history's progress card (app/static/js/scan-status.js), and the reload when Civis's proxy turns a status
-request away (app/static/js/proxy-refresh.js, shared by the two).
+Scan history's progress card (app/static/js/scan-status.js), and what happens when Civis's proxy turns a status
+request away (app/static/js/status-requests.js, shared by the two).
 
-docs/PLAN.md 17.6, Part E, and 17.8, Part B. The scripts run under Node with a small stand-in page (skipped if
+docs/PLAN.md 17.6, Part E, 17.8, Part B, and 17.9, Part B. The scripts run under Node with a small stand-in page (skipped if
 Node is not installed), and the pages are checked for the markup the scripts use and for working without
 JavaScript. Made-up data only. No Civis calls.
 """
@@ -34,7 +34,7 @@ WORKING = "Working. This can take up to a minute."
 # A stand-in page. The scenario (JSON) lists the page's elements and the steps to run; the output lists what the
 # page showed after each step (for a submit or click, right after the event and again once its fetches were
 # answered), every fetch the script sent, how many timers were waiting, how many times the page reloaded itself,
-# and what sessionStorage held.
+# what sessionStorage held, and how many times the scripts touched sessionStorage (storageUses).
 #
 # Each answer in "responses" is "network-error" (the fetch rejects), or an object with "ok" (default true),
 # "contentType" (default application/json), "body" (sent as JSON) or "text" (sent as is), and "hold" (the answer
@@ -78,6 +78,7 @@ let timerIds = 0;
 const fetches = [];
 const held = [];
 let reloads = 0;
+let storageUses = 0;
 let clock = scenario.now || 1800000000000;
 Date.now = () => clock;
 const responses = scenario.responses.slice();
@@ -85,13 +86,16 @@ const stored = Object.assign({}, scenario.session || {});
 const storageMode = scenario.storage || "ok";
 const storage = {
   getItem(key) {
+    storageUses += 1;
     if (storageMode === "throws") throw new Error("SecurityError");
     return Object.prototype.hasOwnProperty.call(stored, key) ? stored[key] : null;
   },
   setItem(key, value) {
+    storageUses += 1;
     if (storageMode === "throws") throw new Error("QuotaExceededError");
     stored[key] = String(value);
   },
+  removeItem(key) { storageUses += 1; delete stored[key]; },
 };
 function answer(next) {
   const type = next.contentType === undefined ? "application/json" : next.contentType;
@@ -116,11 +120,12 @@ global.window = {
   FormData: function (form) { this.from = form.getAttribute("action"); },
   location: { pathname: scenario.path || "/", reload() { reloads += 1; } },
 };
-if (storageMode === "throws") {
-  Object.defineProperty(global.window, "sessionStorage", { get() { throw new Error("SecurityError"); } });
-} else if (storageMode !== "none") {
-  global.window.sessionStorage = storage;
-}
+// Every mode counts each time a script reaches for window.sessionStorage, so a test can show it is never used.
+Object.defineProperty(global.window, "sessionStorage", { get() {
+  storageUses += 1;
+  if (storageMode === "throws") throw new Error("SecurityError");
+  return storageMode === "none" ? undefined : storage;
+} });
 global.document = {
   hidden: !!scenario.hidden,
   querySelector(selector) { return Object.values(els).find((e) => e.matches(selector)) || null; },
@@ -134,7 +139,7 @@ function snapshot() {
                   busy: el.getAttribute("aria-busy") };
   }
   return { els: out, timers: timers.length, fetches: fetches.length, reloads,
-           storage: Object.assign({}, stored) };
+           storage: Object.assign({}, stored), storageUses };
 }
 (async () => {
   for (const script of scenario.scripts) eval(fs.readFileSync(script, "utf8"));
@@ -169,8 +174,8 @@ function snapshot() {
 """
 
 
-# The page scripts that proxy-refresh.js is loaded before, as the templates do.
-NEEDS_REFRESH = ("run-scan.js", "scan-status.js")
+# The page scripts that status-requests.js is loaded before, as the templates do.
+NEEDS_STATUS_REQUESTS = ("run-scan.js", "scan-status.js")
 
 
 def run(script: str, elements: dict, steps: list, responses: list | None = None, **page) -> dict:
@@ -178,7 +183,7 @@ def run(script: str, elements: dict, steps: list, responses: list | None = None,
     node = shutil.which("node")
     if node is None:
         pytest.skip("Node.js is not installed")
-    scripts = (["proxy-refresh.js"] if script in NEEDS_REFRESH else []) + [script]
+    scripts = (["status-requests.js"] if script in NEEDS_STATUS_REQUESTS else []) + [script]
     scenario = {"scripts": [str(JS / name) for name in scripts], "elements": elements, "steps": steps,
                 "responses": responses or [], **page}
     result = subprocess.run([node, "-e", HARNESS, json.dumps(scenario)], capture_output=True, text=True, check=True,
@@ -271,7 +276,7 @@ def test_run_scan_starts_without_a_reload_and_comes_back_when_the_run_ends():
     ended = shots[5]["els"]
     assert (ended["button"]["text"], ended["button"]["disabled"], ended["button"]["className"]) == (
         "Run scan", False, "button button-primary")
-    assert ended["note"]["text"] == "The scan has ended. Reload this page to see its results."
+    assert ended["note"]["text"] == ENDED
     assert shots[5]["timers"] == 0 and len(out["fetches"]) == 4  # Polling stopped when the run ended.
 
 
@@ -308,13 +313,20 @@ def test_a_busy_or_failed_start_says_why():
     assert els["button"]["text"] == "Run scan" and "did not start" in els["note"]["text"]
 
 
-# --- proxy-refresh.js: Civis's proxy turns a status request away (docs/PLAN.md 17.8, Part B) -------------------
+# --- status-requests.js: Civis's proxy turns a status request away (docs/PLAN.md 17.9, Part B) ---------------
+#
+# In the live test on rc9, the reload that 17.8 added reloaded only the app's frame, which does not renew Civis's
+# proxy cookie, so the frame landed on Civis's "Cookie expired." page. The page now never reloads itself because a
+# request was turned away: after 2 turned-away polls in a row it stops polling and says to reload the whole Civis
+# page.
 
-STOP_LINE = ("Progress stopped updating because Civis asked for the page to be reloaded. "
-             "Reload this page to see the latest progress.")
+STOP_LINE = ("Progress stopped updating because the Civis session for this page expired. To see the latest "
+             "progress, reload the whole Civis page with the browser's reload button (F5 on Windows). Reloading "
+             "only this frame does not help.")
+POST_TURNED_AWAY = ("Civis did not start the scan. Reload the whole Civis page with the browser's reload button, "
+                    "then try again.")
+ENDED = "The scan has ended. Reload the whole Civis page to see its results."
 NOW_MS = 1_800_000_000_000
-SCAN_KEY = "pmsc-refresh:/scan"
-OVERVIEW_KEY = "pmsc-refresh:/"
 # What Civis's proxy can answer instead of the app's JSON: the fetch rejects (how Chrome showed it), a response
 # that is not ok, an ok response that is not JSON (Civis's own "Cookie expired." page), and a body that does not
 # parse even though the type says JSON.
@@ -323,9 +335,11 @@ TURNED_AWAY = {
     "not-ok": {"ok": False, "contentType": "text/html", "text": "<html><body>Cookie expired.</body></html>"},
     "html": {"contentType": "text/html; charset=utf-8", "text": "<html><body>Cookie expired.</body></html>"},
     "bad-json": {"contentType": "application/json", "text": "Cookie expired."},
+    "json-not-object": {"contentType": "application/json", "text": "[1, 2]"},
 }
 RUNNING = {"body": {"state": "running", "headline": "Inventory: 20 of 36 objects read", "eta": "", "percent": 20,
                     "civis_run_id": 7, "can_start": False}}
+STORAGE_MODES = ("ok", "throws", "none")
 
 
 def scan_page(state: str = "running") -> dict:
@@ -338,11 +352,6 @@ def scan_page(state: str = "running") -> dict:
     }
 
 
-def saved(out: dict, key: str, shot: int = -1) -> dict | None:
-    value = out["shots"][shot]["storage"].get(key)
-    return json.loads(value) if value is not None else None
-
-
 def scan_history(steps: list, responses: list, **page) -> dict:
     return run("scan-status.js", scan_page(), steps, responses, path="/scan", now=NOW_MS, **page)
 
@@ -351,147 +360,140 @@ def active_overview(steps: list, responses: list, **page) -> dict:
     return run("run-scan.js", overview("active", "7", running=True), steps, responses, path="/", now=NOW_MS, **page)
 
 
+def stop_text(out: dict, shot: int = -1) -> str:
+    """The stop line's place: Scan history's note under the headline, or the Overview's note under Run scan."""
+    els = out["shots"][shot]["els"]
+    return els["eta"]["text"] if "eta" in els else els["note"]["text"]
+
+
+PAGES = {"scan history": scan_history, "overview": active_overview}
+
+
+@pytest.mark.parametrize("page", sorted(PAGES))
 @pytest.mark.parametrize("kind", sorted(TURNED_AWAY))
-def test_each_kind_of_turned_away_poll_reloads_scan_history_once(kind):
-    out = scan_history([{"do": "tick"}], [TURNED_AWAY[kind]])
-    assert [shot["reloads"] for shot in out["shots"]] == [0, 1]
-    assert saved(out, SCAN_KEY) == {"count": 1, "last": NOW_MS}  # Kept for the next page load.
-    assert out["shots"][-1]["els"]["eta"]["text"] == ""  # No stop line yet.
-
-
-@pytest.mark.parametrize("kind", sorted(TURNED_AWAY))
-def test_each_kind_of_turned_away_poll_reloads_the_overview_once(kind):
-    out = active_overview([{"do": "tick"}], [TURNED_AWAY[kind]])
-    assert [shot["reloads"] for shot in out["shots"]] == [0, 1]
-    assert saved(out, OVERVIEW_KEY) == {"count": 1, "last": NOW_MS}
-    assert [(f["url"], f["method"]) for f in out["fetches"]] == [("/api/scan-status", "GET")]
-
-
-def test_no_second_reload_within_a_minute():
-    away = TURNED_AWAY["html"]
-    out = scan_history([{"do": "tick"}, {"do": "advance", "ms": 59_000}, {"do": "tick"},
-                        {"do": "advance", "ms": 1_000}, {"do": "tick"}], [away, away, away])
-    assert [shot["reloads"] for shot in out["shots"]] == [0, 1, 1, 1, 1, 2]
-    assert saved(out, SCAN_KEY) == {"count": 2, "last": NOW_MS + 60_000}
-
-
-def test_the_minute_counts_across_page_loads():
-    """The page that reloaded 30 seconds ago is a new page load: the time comes from sessionStorage."""
-    session = {SCAN_KEY: json.dumps({"count": 1, "last": NOW_MS - 30_000})}
-    away = TURNED_AWAY["network-error"]
-    out = scan_history([{"do": "tick"}, {"do": "advance", "ms": 30_000}, {"do": "tick"}], [away, away],
-                       session=session)
-    assert [shot["reloads"] for shot in out["shots"]] == [0, 0, 0, 1]
-    assert saved(out, SCAN_KEY) == {"count": 2, "last": NOW_MS + 30_000}
-
-
-def test_the_stop_line_after_three_reloads_with_no_success():
-    away = TURNED_AWAY["not-ok"]
-    steps = []
-    for _ in range(3):
-        steps += [{"do": "tick"}, {"do": "advance", "ms": 61_000}]
-    steps += [{"do": "tick"}, {"do": "tick"}]  # The fourth is turned away and stops polling; the fifth sends nothing.
-    out = scan_history(steps, [away] * 5)
-    last = out["shots"][-1]
-    assert last["reloads"] == 3 and last["fetches"] == 4 and last["timers"] == 0
-    assert last["els"]["eta"]["text"] == STOP_LINE
-    assert saved(out, SCAN_KEY)["count"] == 3
-
-
-def test_the_stop_line_on_the_overview_after_three_reloads():
-    session = {OVERVIEW_KEY: json.dumps({"count": 3, "last": NOW_MS - 120_000})}
-    out = active_overview([{"do": "tick"}, {"do": "tick"}], [TURNED_AWAY["html"]], session=session)
-    last = out["shots"][-1]
-    assert (last["reloads"], last["fetches"], last["timers"]) == (0, 1, 0)
-    assert (last["els"]["note"]["text"], last["els"]["note"]["hidden"]) == (STOP_LINE, False)
-
-
-def test_a_successful_poll_resets_the_count():
-    session = {SCAN_KEY: json.dumps({"count": 2, "last": NOW_MS - 120_000})}
-    out = scan_history([{"do": "tick"}, {"do": "tick"}], [RUNNING, TURNED_AWAY["html"]], session=session)
-    assert saved(out, SCAN_KEY, shot=1) == {"count": 0, "last": NOW_MS - 120_000}
-    assert out["shots"][1]["els"]["headline"]["text"] == "Inventory: 20 of 36 objects read"
-    assert out["shots"][2]["reloads"] == 1 and saved(out, SCAN_KEY) == {"count": 1, "last": NOW_MS}
-
-
-@pytest.mark.parametrize("storage", ["throws", "none"])
-def test_without_session_storage_the_line_shows_and_the_page_never_reloads(storage):
-    away = TURNED_AWAY["network-error"]
-    out = scan_history([{"do": "tick"}, {"do": "advance", "ms": 120_000}, {"do": "tick"}], [away, away],
-                       storage=storage)
-    last = out["shots"][-1]
+def test_each_kind_of_turned_away_poll_counts(page, kind):
+    out = PAGES[page]([{"do": "tick"}, {"do": "tick"}, {"do": "tick"}], [TURNED_AWAY[kind]] * 3)
+    first, second, third = out["shots"][1], out["shots"][2], out["shots"][3]
+    assert stop_text(out, 1) == "" and first["timers"] == 1  # One turned-away poll: still polling.
+    assert stop_text(out, 2) == STOP_LINE and second["timers"] == 0  # Two in a row: stopped, with the line.
+    assert third["fetches"] == 2  # Nothing more is sent.
     assert [shot["reloads"] for shot in out["shots"]] == [0, 0, 0, 0]
-    assert last["els"]["eta"]["text"] == STOP_LINE and last["fetches"] == 1 and last["timers"] == 0
 
-    out = active_overview([{"do": "tick"}], [away], storage=storage)
+
+@pytest.mark.parametrize("page", sorted(PAGES))
+def test_a_success_between_turned_away_polls_resets_the_count(page):
+    away = TURNED_AWAY["html"]
+    ok = RUNNING if page == "scan history" else status("running", 7)
+    out = PAGES[page]([{"do": "tick"}] * 5, [away, ok, away, away, ok])
+    texts = [stop_text(out, i) for i in range(1, 6)]
+    assert texts[:3] == ["", "", ""]  # Turned away, success, turned away: still polling.
+    assert texts[3] == STOP_LINE and out["shots"][4]["timers"] == 0  # The second in a row stops it.
+    assert out["shots"][5]["fetches"] == 4 and out["shots"][-1]["reloads"] == 0
+
+
+def test_scan_history_shows_progress_from_a_success_after_one_turned_away_poll():
+    out = scan_history([{"do": "tick"}, {"do": "tick"}], [TURNED_AWAY["network-error"], RUNNING])
+    assert out["shots"][-1]["els"]["headline"]["text"] == "Inventory: 20 of 36 objects read"
+    assert out["shots"][-1]["els"]["eta"]["text"] == "" and out["shots"][-1]["timers"] == 1
+
+
+def test_the_overview_shows_the_stop_line_under_run_scan_and_keeps_the_button():
+    out = active_overview([{"do": "tick"}, {"do": "tick"}, {"do": "tick"}], [TURNED_AWAY["html"]] * 2)
     last = out["shots"][-1]
-    assert last["reloads"] == 0 and last["els"]["note"]["text"] == STOP_LINE and last["timers"] == 0
+    assert (last["els"]["note"]["text"], last["els"]["note"]["hidden"]) == (STOP_LINE, False)
+    assert (last["els"]["button"]["text"], last["els"]["button"]["disabled"]) == ("Scan running", True)
+    assert (last["fetches"], last["timers"], last["reloads"]) == (2, 0, 0)
 
 
-def test_a_hidden_page_reloads_only_when_it_is_visible_again():
-    out = scan_history([{"do": "visibility", "hidden": True}, {"do": "tick"}, {"do": "advance", "ms": 300_000},
-                        {"do": "visibility", "hidden": False}], [TURNED_AWAY["html"]], hidden=True)
-    assert [shot["reloads"] for shot in out["shots"]] == [0, 0, 0, 0, 1]
-    assert saved(out, SCAN_KEY, shot=3) is None  # Nothing counted while hidden.
-    assert saved(out, SCAN_KEY) == {"count": 1, "last": NOW_MS + 300_000}
+@pytest.mark.parametrize("storage", STORAGE_MODES)
+@pytest.mark.parametrize("hidden", [False, True])
+@pytest.mark.parametrize("page", sorted(PAGES))
+def test_a_turned_away_poll_never_reloads_or_touches_session_storage(page, hidden, storage):
+    away = TURNED_AWAY["not-ok"]
+    steps = [{"do": "tick"}, {"do": "advance", "ms": 120_000}, {"do": "visibility", "hidden": not hidden},
+             {"do": "tick"}, {"do": "visibility", "hidden": hidden}, {"do": "tick"}]
+    out = PAGES[page](steps, [away] * 3, hidden=hidden, storage=storage)
+    assert all(shot["reloads"] == 0 for shot in out["shots"])
+    assert all(shot["storageUses"] == 0 and shot["storage"] == {} for shot in out["shots"])
+    assert stop_text(out) == STOP_LINE and out["shots"][-1]["fetches"] == 2
 
 
-def test_becoming_visible_with_no_turned_away_poll_does_not_reload():
-    out = scan_history([{"do": "tick"}, {"do": "visibility", "hidden": True}, {"do": "visibility", "hidden": False}],
-                       [RUNNING])
-    assert out["shots"][-1]["reloads"] == 0
+@pytest.mark.parametrize("storage", STORAGE_MODES)
+def test_successful_polls_never_touch_session_storage(storage):
+    session = {"pmsc-refresh:/scan": json.dumps({"count": 2, "last": NOW_MS})}  # Left by rc9: ignored.
+    out = scan_history([{"do": "tick"}, {"do": "tick"}], [RUNNING, RUNNING], storage=storage, session=session)
+    assert out["shots"][-1]["storageUses"] == 0 and out["shots"][-1]["reloads"] == 0
+    out = active_overview([{"do": "tick"}], [status("running", 7)], storage=storage)
+    assert out["shots"][-1]["storageUses"] == 0 and out["shots"][-1]["reloads"] == 0
 
 
-def test_no_reload_while_the_run_scan_post_waits_and_the_post_is_sent_once():
+def test_the_scripts_have_no_reload_on_a_turned_away_answer_and_no_session_storage():
+    shared = (JS / "status-requests.js").read_text(encoding="utf-8")
+    assert "location" not in shared and "reload(" not in shared
+    for name in ("status-requests.js", "run-scan.js", "scan-status.js"):
+        script = (JS / name).read_text(encoding="utf-8")
+        assert "sessionStorage" not in script and "localStorage" not in script, name
+        assert "pmscProxyRefresh" not in script, name
+    # The only reload left is Scan history's, when a scan finishes after a successful poll.
+    assert (JS / "scan-status.js").read_text(encoding="utf-8").count("window.location.reload()") == 1
+    assert "location.reload" not in (JS / "run-scan.js").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("kind", sorted(TURNED_AWAY))
+def test_a_turned_away_run_scan_post_shows_its_message_and_is_not_repeated(kind):
+    out = run("run-scan.js", overview(), [{"do": "submit", "target": "form"}, {"do": "tick"}, {"do": "tick"}],
+              [TURNED_AWAY[kind]], path="/", now=NOW_MS)
+    last = out["shots"][-1]
+    assert last["els"]["note"]["text"] == POST_TURNED_AWAY
+    assert (last["els"]["button"]["text"], last["els"]["button"]["disabled"]) == ("Run scan", False)
+    assert last["reloads"] == 0 and last["storageUses"] == 0 and last["timers"] == 0
+    assert [f["method"] for f in out["fetches"]] == ["POST"]  # Sent once, never again.
+
+
+def test_a_run_scan_post_is_sent_once_while_a_poll_is_turned_away():
     # An Overview polling a run, with Run scan still on (the stand-in allows it), so a poll can be turned away
     # while the POST waits for its answer.
     page = overview("active", "7", running=False)
     started = {"hold": True, "body": {"notice": "started", "civis_run_id": 8, "message": "The scan has started."}}
     out = run("run-scan.js", page, [{"do": "submit", "target": "form"}, {"do": "tick"}, {"do": "release"}],
               [started, TURNED_AWAY["html"]], path="/", now=NOW_MS)
-    reloads = [shot["reloads"] for shot in out["shots"]]
-    assert reloads == [0, 0, 0, 0, 1]  # Start, submit (two shots), the turned-away poll, then the POST's answer.
+    assert all(shot["reloads"] == 0 for shot in out["shots"])
     assert [f["method"] for f in out["fetches"]] == ["POST", "GET"]
+    assert out["shots"][-1]["els"]["note"]["text"] == "The scan has started."
 
 
-@pytest.mark.parametrize("kind", sorted(TURNED_AWAY))
-def test_a_turned_away_run_scan_post_keeps_its_message_and_never_reloads(kind):
-    out = run("run-scan.js", overview(), [{"do": "submit", "target": "form"}, {"do": "tick"}], [TURNED_AWAY[kind]],
-              path="/", now=NOW_MS)
-    last = out["shots"][-1]
-    assert last["els"]["note"]["text"] == "Civis did not start the scan. Reload the page and try again."
-    assert last["els"]["button"]["text"] == "Run scan" and last["reloads"] == 0 and last["storage"] == {}
-    assert [f["method"] for f in out["fetches"]] == ["POST"]  # Sent once, never again.
+def test_scan_history_still_reloads_once_when_the_scan_ends_after_a_successful_poll():
+    """The finish reload follows a successful poll, so the proxy's cookie was valid a moment earlier."""
+    ended = {"body": {"state": "succeeded", "civis_run_id": 7}}
+    out = scan_history([{"do": "tick"}], [ended])
+    assert out["shots"][-1]["reloads"] == 1 and out["shots"][-1]["storageUses"] == 0
+    out = scan_history([{"do": "tick"}, {"do": "tick"}], [TURNED_AWAY["html"], ended])
+    assert [shot["reloads"] for shot in out["shots"]] == [0, 0, 1]  # Only the success led to it.
 
 
-def test_a_json_answer_never_reloads():
-    out = scan_history([{"do": "tick"}, {"do": "advance", "ms": 120_000}, {"do": "tick"}, {"do": "tick"}],
-                       [RUNNING, RUNNING, RUNNING])
-    assert out["shots"][-1]["reloads"] == 0 and out["shots"][-1]["storage"] == {}
-    assert out["shots"][-1]["fetches"] == 3 and out["shots"][-1]["timers"] == 1
-
-    out = active_overview([{"do": "tick"}, {"do": "tick"}], [status("running", 7), status("running", 7)])
-    assert out["shots"][-1]["reloads"] == 0 and out["shots"][-1]["storage"] == {}
+def test_the_overview_says_to_reload_the_whole_civis_page_when_the_scan_ends():
+    out = active_overview([{"do": "tick"}], [status("succeeded", 7, True)])
+    assert out["shots"][-1]["els"]["note"]["text"] == ENDED and out["shots"][-1]["reloads"] == 0
 
 
-def test_scan_history_still_reloads_once_when_the_scan_ends():
-    out = scan_history([{"do": "tick"}], [{"body": {"state": "succeeded", "civis_run_id": 7}}])
-    assert out["shots"][-1]["reloads"] == 1 and out["shots"][-1]["storage"] == {}  # Not an automatic reload.
-
-
-def test_the_stop_line_follows_the_writing_style_and_shows_in_a_checked_color():
-    script = (JS / "proxy-refresh.js").read_text(encoding="utf-8")
-    assert '"Progress stopped updating because Civis asked for the page to be reloaded. " +\n' in script
-    assert '"Reload this page to see the latest progress."' in script
-    assert "—" not in STOP_LINE and "–" not in STOP_LINE and "!" not in STOP_LINE
-    # The line shows in Scan history's ETA note and the Overview's Run scan note, both class "note", whose color
-    # (--muted on --bg and --surface) is in test_app.test_text_contrast_is_at_least_4_5_to_1.
+def test_the_messages_follow_the_writing_style_and_show_in_a_checked_color():
+    shared = (JS / "status-requests.js").read_text(encoding="utf-8")
+    joined = "".join(re.findall(r'"([^"]*)"', shared[shared.index("var STOP_LINE"):shared.index("var JSON_TYPE")]))
+    assert joined == STOP_LINE
+    run_scan = (JS / "run-scan.js").read_text(encoding="utf-8")
+    assert f'"{ENDED}"' in run_scan
+    assert f'"{POST_TURNED_AWAY}"' in run_scan
+    for text in (STOP_LINE, POST_TURNED_AWAY, ENDED):
+        assert "—" not in text and "–" not in text and "!" not in text
+    # The stop line shows in Scan history's note under the headline and the Overview's Run scan note, both class
+    # "note", whose color (--muted on --bg and --surface) is in test_app.test_text_contrast_is_at_least_4_5_to_1.
     css = (ROOT / "app/static/css/app.css").read_text(encoding="utf-8")
     assert ".note { font-size: 13px; color: var(--muted); margin: 0; }" in css
     from tests.test_app import test_text_contrast_is_at_least_4_5_to_1 as contrast
 
     contrast()
-    assert not re.search(r"innerHTML|insertAdjacentHTML|document\.write", script)
+    for script in (shared, run_scan, (JS / "scan-status.js").read_text(encoding="utf-8")):
+        assert not re.search(r"innerHTML|insertAdjacentHTML|document\.write", script)
 
 
 # --- The pages ------------------------------------------------------------------------------------------
@@ -521,16 +523,16 @@ def test_every_page_has_the_working_region_and_loads_busy_js(preview, monkeypatc
     assert 'href="/setup/summary" data-busy>Build test summary</a>' in setup
     summary = client.get("/setup/summary").get_data(as_text=True)
     assert 'class="filters" data-busy>' in summary and 'data-busy>Back to Setup</a>' in summary
-    for path in ("js/busy.js", "js/run-scan.js", "js/proxy-refresh.js", "js/scan-status.js"):
+    for path in ("js/busy.js", "js/run-scan.js", "js/status-requests.js", "js/scan-status.js"):
         assert client.get(f"/static/{path}").status_code == 200
 
 
-def test_the_shared_refresh_loads_before_the_page_scripts(preview, monkeypatch):
-    """docs/PLAN.md 17.8, Part B: one shared file, loaded (deferred, so in order) before scan-status.js and
-    run-scan.js, and only on those two pages."""
+def test_the_shared_status_requests_load_before_the_page_scripts(preview, monkeypatch):
+    """docs/PLAN.md 17.8, Part B, renamed in 17.9: one shared file, loaded (deferred, so in order) before
+    scan-status.js and run-scan.js, and only on those two pages. The old file is gone."""
     monkeypatch.delenv("FLASK_DEBUG", raising=False)
     client = make_app(preview).test_client()
-    shared = '<script src="/static/js/proxy-refresh.js" defer></script>'
+    shared = '<script src="/static/js/status-requests.js" defer></script>'
     for url, script in (("/", "run-scan.js"), ("/scan", "scan-status.js")):
         body = client.get(url).get_data(as_text=True)
         page = f'<script src="/static/js/{script}" defer></script>'
@@ -538,7 +540,10 @@ def test_the_shared_refresh_loads_before_the_page_scripts(preview, monkeypatch):
     scan = client.get("/scan").get_data(as_text=True)
     assert 'data-scan-status data-endpoint="/api/scan-status"' in scan and '<div class="note" data-field="eta">' in scan
     for url in ("/inventory", "/findings", "/setup"):
-        assert "proxy-refresh.js" not in client.get(url).get_data(as_text=True), url
+        assert "status-requests.js" not in client.get(url).get_data(as_text=True), url
+    for url in ("/", "/scan", "/inventory", "/findings", "/setup"):
+        assert "proxy-refresh" not in client.get(url).get_data(as_text=True), url
+    assert client.get("/static/js/proxy-refresh.js").status_code == 404 and not (JS / "proxy-refresh.js").exists()
 
 
 def test_the_storage_button_is_a_plain_post_form_that_shows_the_message(tmp_path, monkeypatch):

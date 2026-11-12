@@ -1,19 +1,22 @@
 // Scan progress: asks /api/scan-status every 15 seconds and updates the page.
 // Plain JavaScript, loaded from the app itself (no inline scripts; see the CSP).
 // Values are written with textContent only, never as HTML.
-// proxy-refresh.js (loaded first) sends each request and reloads the page when Civis's proxy turns one away.
+// status-requests.js (loaded first) sends each request. When Civis's proxy turns 2 polls in a row away (its session
+// for the page expired), polling stops and the note under the headline says to reload the whole Civis page. The
+// page never reloads itself because a request was turned away. It reloads once when the scan finishes, right
+// after a successful poll, so the proxy's cookie was valid a moment earlier.
 (function () {
   "use strict";
 
   var POLL_MS = 15000;
   var card = document.querySelector("[data-scan-status]");
-  if (!card || !window.pmscProxyRefresh || typeof window.fetch !== "function") {
+  if (!card || !window.pmscStatusRequests || typeof window.fetch !== "function") {
     return;
   }
   var endpoint = card.getAttribute("data-endpoint");
   var startState = card.getAttribute("data-state");
   var timer = null;
-  var refresh = window.pmscProxyRefresh.create({
+  var requests = window.pmscStatusRequests.create({
     show: function (text) {
       setText("eta", text); // The note under the headline.
     },
@@ -84,9 +87,9 @@
   }
 
   function poll() {
-    // A turned-away request resolves to null: proxy-refresh.js reloads the page or stops polling, and otherwise
-    // the next interval tries again.
-    refresh.poll(endpoint).then(update);
+    // A turned-away request resolves to null: the next interval tries again, unless status-requests.js stopped
+    // polling after 2 in a row.
+    requests.poll(endpoint).then(update);
   }
 
   timer = window.setInterval(poll, POLL_MS);
