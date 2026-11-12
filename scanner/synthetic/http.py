@@ -8,7 +8,16 @@ Routes:
   repo marked "rate_limited" answers 403 with X-RateLimit-Remaining: 0.
 - ``https://codeload.github.com/...`` answers with a gzipped tarball built in
   memory, with GitHub's top-level folder.
-- Notebook links listed in "notebook_files" answer with the notebook JSON.
+- Notebook links whose address (with no query string) is listed in
+  "notebook_files" answer with the notebook JSON when the link is one the
+  synthetic client signed and is at most 300 seconds old on the session's
+  SyntheticClock. An older link gets 403 with S3's AccessDenied "Request has
+  expired" XML body, and a link the client did not sign gets 403
+  SignatureDoesNotMatch (scanner/synthetic/links.py, docs/PLAN.md 17.9).
+  "notebook_download_statuses" maps an address to a list of statuses that its
+  successive downloads answer first (403 with the expired body), for tests.
+  ``notebook_downloads`` records each download's address and the link's issue
+  time, never the query string.
 
 Any other URL raises ConnectionError, so a test fails loudly if the scanner
 tries to reach somewhere it should not.
@@ -20,6 +29,8 @@ import io
 import json
 import tarfile
 from urllib.parse import unquote, urlsplit
+
+from scanner.synthetic.links import EXPIRED_BODY, SyntheticClock, base_of, check_link, link_issued_at
 
 
 class SyntheticResponse:
@@ -49,11 +60,16 @@ def build_tarball(top: str, files: dict[str, str]) -> bytes:
 
 
 class SyntheticSession:
-    def __init__(self, data: dict, token: str | None = "synthetic-github-token"):
+    def __init__(self, data: dict, token: str | None = "synthetic-github-token", clock: SyntheticClock | None = None):
         self.github = data.get("github", {})
-        self.notebooks = data.get("notebook_files", {})
+        self.notebooks = {base_of(url): body for url, body in data.get("notebook_files", {}).items()}
+        self.download_statuses = {
+            base_of(url): list(statuses) for url, statuses in data.get("notebook_download_statuses", {}).items()
+        }
         self.token = token
+        self.clock = clock or SyntheticClock()
         self.requests: list[tuple[str, dict]] = []  # (url without query, headers) for tests.
+        self.notebook_downloads: list[tuple[str, object]] = []  # (address, the link's issue time) for tests.
 
     def get(self, url, headers=None, stream=False, allow_redirects=True, timeout=None):
         headers = dict(headers or {})
@@ -63,11 +79,25 @@ class SyntheticSession:
             return self._github_api(parts.path, headers)
         if parts.netloc == "codeload.github.com":
             return self._codeload(parts.path)
-        if url in self.notebooks:
-            return SyntheticResponse(200, json.dumps(self.notebooks[url]).encode("utf-8"))
+        base = base_of(url)
+        if base in self.notebooks:
+            return self._notebook(url, base)
         if parts.netloc.endswith(".amazonaws.com"):
             return SyntheticResponse(404)
         raise ConnectionError("The synthetic session does not serve this host.")
+
+    def _notebook(self, url: str, base: str) -> SyntheticResponse:
+        self.notebook_downloads.append((base, link_issued_at(url)))
+        forced = self.download_statuses.get(base)
+        if forced:
+            status = forced.pop(0)
+            if status != 200:
+                body = EXPIRED_BODY if status == 403 else b""
+                return SyntheticResponse(status, body, {"Content-Type": "application/xml"})
+        status, body = check_link(url, self.clock.now())
+        if status != 200:
+            return SyntheticResponse(status, body, {"Content-Type": "application/xml"})
+        return SyntheticResponse(200, json.dumps(self.notebooks[base]).encode("utf-8"))
 
     def _github_api(self, path: str, headers: dict) -> SyntheticResponse:
         pieces = [unquote(p) for p in path.strip("/").split("/")]

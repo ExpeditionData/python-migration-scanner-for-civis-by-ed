@@ -43,7 +43,7 @@ ERROR_LINES = ("OBJECT_ERROR", "CIVIS_GIT_FAILED", "PARSE_ERROR", "TABLE_WRITE_F
 # The counts on the scanner's final RUN line, in order (scanner/scan_log.py, RUN_COUNTS).
 RUN_COUNTS = (
     "objects_total", "objects_scanned", "api_calls", "github_tarball_requests", "github_cache_peak_bytes",
-    "github_cache_evictions", "civis_git_reads", "civis_git_failures",
+    "github_cache_evictions", "civis_git_reads", "civis_git_failures", "notebook_links", "notebook_link_retries",
 )
 SCAN_STATUSES = ("running", "succeeded", "tables_failed", "failed")
 FINAL_STATUSES = ("succeeded", "tables_failed", "failed")  # The default scan is the newest with one of these.

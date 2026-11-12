@@ -25,7 +25,7 @@ Line formats (parsed by the web app to show progress):
     FATAL error=SchemaNotDedicated reason=results_schema_holds_other_tables_or_views other_objects=3
     TABLE_WRITE_FAILED table=findings error=CivisAPIError status=403
     RUN run_id=run-20261013T120000Z-a1b2c3 status=running
-    RUN run_id=run-20261013T120000Z-a1b2c3 status=succeeded objects_total=2000 objects_scanned=2000 api_calls=6120 github_tarball_requests=14 github_cache_peak_bytes=52428800 github_cache_evictions=0 civis_git_reads=37 civis_git_failures=2
+    RUN run_id=run-20261013T120000Z-a1b2c3 status=succeeded objects_total=2000 objects_scanned=2000 api_calls=6120 github_tarball_requests=14 github_cache_peak_bytes=52428800 github_cache_evictions=0 civis_git_reads=37 civis_git_failures=2 notebook_links=41 notebook_link_retries=1
 
 INVENTORY: one line per listed type (the six script, notebook, and Service
 lists, then workflows), logged after every list is read and before any detail
@@ -48,7 +48,12 @@ civis-python's own helpers and are not counted (docs/PLAN.md 12.13). The
 github_* counts come from the repository file cache (scanner/retrieval/github.py).
 civis_git_reads and civis_git_failures count the files read, and the reads that
 failed, through the Civis git endpoints (scanner/retrieval/civis_git.py); each
-failure also has a CIVIS_GIT_FAILED line.
+failure also has a CIVIS_GIT_FAILED line. notebook_links counts the
+notebooks.get calls made right before notebook downloads, retries included, and
+notebook_link_retries the second links asked for after S3 refused a download
+with HTTP 403 or 400 (scanner/retrieval/notebooks.py, docs/PLAN.md 17.9). Each
+notebooks.get call is also counted in api_calls. Like the other counts, a
+resumed run counts only its own calls.
 """
 
 from __future__ import annotations
@@ -163,7 +168,8 @@ def table_write_failed(table: str, exc: BaseException) -> None:
 
 
 RUN_COUNTS = ("objects_total", "objects_scanned", "api_calls", "github_tarball_requests",
-              "github_cache_peak_bytes", "github_cache_evictions", "civis_git_reads", "civis_git_failures")
+              "github_cache_peak_bytes", "github_cache_evictions", "civis_git_reads", "civis_git_failures",
+              "notebook_links", "notebook_link_retries")
 
 
 def run_status(run_id: str, status: str, **counts: int) -> None:

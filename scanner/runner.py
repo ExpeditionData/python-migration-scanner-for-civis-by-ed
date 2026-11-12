@@ -12,8 +12,10 @@ Steps:
 6. Apply the retention setting, then record the final run status. The final
    log line also gives the object count, the number of Civis API calls (so
    calls per object can be measured, docs/PLAN.md section 5), the GitHub
-   tarball requests, peak cache size, and cache evictions, and the files read
-   (and failed reads) through the Civis git endpoints.
+   tarball requests, peak cache size, and cache evictions, the files read
+   (and failed reads) through the Civis git endpoints, and the notebook links
+   asked for right before downloads (and the second links after a refused
+   download).
 
 If the tables cannot be written, the scan keeps going, still saves the CSV
 report, and ends with status "tables_failed". Every API call to Civis goes
@@ -53,6 +55,7 @@ from scanner.ratelimit import BudgetedClient, RequestBudget
 from scanner.retrieval.civis_git import CivisGitFiles
 from scanner.retrieval.github import GitHubRepos
 from scanner.retrieval.http import SafeHttp
+from scanner.retrieval.notebooks import NotebookLinks
 from scanner.retrieval.tempdir import private_tempdir
 
 PROGRESS_EVERY_SECONDS = 30.0
@@ -229,6 +232,7 @@ def _run_scan(
     civis = BudgetedClient(client, budget)
     user_id, user_name = scanning_user(civis)
     civis_git = CivisGitFiles(civis)
+    notebook_links = NotebookLinks(civis)
 
     def status_row(status: str, finished_at: datetime | None) -> dict:
         return {
@@ -269,6 +273,7 @@ def _run_scan(
             lookback_days=config.lookback_days,
             now=now(),
             civis_git=civis_git,
+            notebook_links=notebook_links,
         )
         done = result.skipped_as_done
         last_progress = monotonic()
@@ -337,7 +342,8 @@ def _run_scan(
         run_id, final, objects_total=total, objects_scanned=len(todo), api_calls=budget.requests,
         github_tarball_requests=repos.downloads, github_cache_peak_bytes=repos.peak_cache_bytes,
         github_cache_evictions=repos.evictions, civis_git_reads=civis_git.reads,
-        civis_git_failures=civis_git.failures,
+        civis_git_failures=civis_git.failures, notebook_links=notebook_links.links,
+        notebook_link_retries=notebook_links.retries,
     )
 
     result.status = final

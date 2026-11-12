@@ -117,8 +117,9 @@ class UserInfo:
 class InventoryItem:
     obj: CivisObject
     # In-memory only. Keys used: source, docker_command, code_preview,
-    # backing_source, backing_docker_command, notebook_url, definition,
-    # deployment_id. Never written to tables, outputs, or logs.
+    # backing_source, backing_docker_command, inline_tasks, deployment_id,
+    # git_ref_type, git_branch. Never written to tables, outputs, or logs. A
+    # notebook's link is not kept here (docs/PLAN.md 17.9).
     code: dict[str, Any] = field(default_factory=dict)
 
 

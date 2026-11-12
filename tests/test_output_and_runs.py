@@ -428,14 +428,23 @@ def test_final_log_line_counts_every_civis_api_call(tmp_path, log_stream, monkey
     logged = log_stream.getvalue()
     reads, failures = civis_git_counts(clients[0], logged)
     assert (reads, failures) == (2, 4)  # Read: 109 and 605. Failed: 110, 111, 112, and 606.
+    links = notebook_link_calls(clients[0])
+    assert links == 4  # One fresh link for each Python notebook (401, 403, 404, 405), docs/PLAN.md 17.9.
     final = logged.splitlines()[-1]
     counts = re.fullmatch(
         rf"RUN run_id={result.run_id} status=succeeded objects_total={DRY_RUN_OBJECTS} objects_scanned={DRY_RUN_OBJECTS} api_calls={sent} "
         rf"github_tarball_requests={tarballs} github_cache_peak_bytes=(\d+) github_cache_evictions=0 "
-        rf"civis_git_reads={reads} civis_git_failures={failures}",
+        rf"civis_git_reads={reads} civis_git_failures={failures} notebook_links={links} notebook_link_retries=0",
         final,
     )
     assert counts and tarballs > 0 and 0 < int(counts.group(1)) <= CACHE_MAX_BYTES
+
+
+def notebook_link_calls(client) -> int:
+    """notebooks.get calls made for downloads. Inventory calls notebooks.get once for each Python notebook, so
+    every call after a notebook's first is a link asked for right before a download (docs/PLAN.md 17.9)."""
+    calls = [args[0] for name, args, _ in client.calls if name == "notebooks.get"]
+    return len(calls) - len(set(calls))
 
 
 def civis_git_counts(client, logged: str) -> tuple[int, int]:
@@ -468,7 +477,8 @@ def test_final_log_line_counts_civis_git_reads_without_a_token(tmp_path, log_str
     final = logged.splitlines()[-1]
     assert final.endswith(
         f" api_calls={len(clients[0].calls)} github_tarball_requests=0 github_cache_peak_bytes=0 "
-        f"github_cache_evictions=0 civis_git_reads={reads} civis_git_failures={failures}"
+        f"github_cache_evictions=0 civis_git_reads={reads} civis_git_failures={failures} "
+        f"notebook_links={notebook_link_calls(clients[0])} notebook_link_retries=0"
     )
     assert result.api_calls == len(clients[0].calls)
 

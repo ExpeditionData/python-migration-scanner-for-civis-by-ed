@@ -71,6 +71,22 @@ def test_log_counts():
     assert counts.users is None
 
 
+def test_run_line_includes_the_notebook_link_counts():
+    """docs/PLAN.md 17.9: the summary's allow list for the RUN line is the scanner's RUN_COUNTS, so the live test
+    can read notebook_links and notebook_link_retries from the summary."""
+    line = (f"RUN run_id={RUN_A} status=succeeded objects_total=2 objects_scanned=2 api_calls=9 github_tarball_requests=0 "
+            "github_cache_peak_bytes=0 github_cache_evictions=0 civis_git_reads=1 civis_git_failures=1 "
+            "notebook_links=58 notebook_link_retries=2")
+    counts = summary.count_log([line])
+    assert counts.run_counts["notebook_links"] == 58 and counts.run_counts["notebook_link_retries"] == 2
+    assert summary.RUN_COUNTS[-2:] == ("notebook_links", "notebook_link_retries")
+    try:
+        from scanner.scan_log import RUN_COUNTS
+    except ImportError:  # pragma: no cover - the scanner package is in every test image.
+        return
+    assert summary.RUN_COUNTS == RUN_COUNTS
+
+
 def test_every_civis_git_error_type_is_counted_by_type():
     """The summary has no list of CIVIS_GIT_FAILED types: any class name is counted as itself (docs/PLAN.md 17.7)."""
     types = ("GitCommitNotFound", "GitFileEmpty", "GitFileTooLarge", "GitFileAmbiguous", "CivisAPIError status=404")

@@ -458,7 +458,7 @@ def test_select_files_for_a_file_a_folder_and_the_cap():
 
 def test_fetch_notebook(synthetic):
     client, session = synthetic
-    url = next(n for n in client.data["notebooks"] if n["id"] == 401)["notebook_url"]
+    url = client.notebooks.get(401)["notebook_url"]  # A new signed link, as Civis gives (docs/PLAN.md 17.9).
     assert json.loads(fetch_notebook(SafeHttp(session), url))["nbformat"] == 4
     with pytest.raises(NotebookUnavailable, match="HTTP 404"):
         fetch_notebook(SafeHttp(session), "https://example-notebooks.s3.amazonaws.com/missing.ipynb")

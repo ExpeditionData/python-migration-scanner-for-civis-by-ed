@@ -155,7 +155,7 @@ def preview_instance(fixed: bool, now: datetime) -> dict:
 
     for index in range(6):
         object_id = 4101 + index
-        url = f"https://example-notebooks.s3.amazonaws.com/notebook-{object_id}.ipynb?X-Amz-Signature=synthetic"
+        url = f"https://example-notebooks.s3.amazonaws.com/notebook-{object_id}.ipynb"
         keys = [sorted(_SNIPPETS)[index % len(_SNIPPETS)]]
         is_fixed = fixed and index % 2 == 0
         cell = "".join(_SNIPPETS[k][1 if is_fixed else 0] for k in keys)

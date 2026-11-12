@@ -149,6 +149,69 @@ def test_git_files_read_through_civis_never_reach_any_output(tmp_path, scanner_l
     assert "CIVIS_GIT_FAILED object_type=python_script object_id=111 error=FakeAPIError status=403" in scanner_log.getvalue()
 
 
+def test_notebook_links_never_reach_any_output(tmp_path, scanner_log, monkeypatch):
+    """docs/PLAN.md 17.9: the fresh notebook link asked for before each download, and the second link after a
+    refused download, stay in memory. No link, host, bucket, query string, or signature reaches a log line, a
+    table row, a CSV line, or an exception's text, for a scanned, a retried, a refused, and a failed link."""
+    import scanner.process as process
+    from scanner.__main__ import dry_run
+    from scanner.synthetic import FakeClient as SyntheticClient
+    from scanner.synthetic import links as synthetic_links
+
+    issued, reasons = [], []
+    real_sign = synthetic_links.sign_link
+
+    def recording_sign(url, when):
+        link = real_sign(url, when)
+        issued.append(link)
+        return link
+
+    monkeypatch.setattr("scanner.synthetic.client.sign_link", recording_sign)
+    real_links = process.NotebookLinks
+
+    class RecordingLinks(real_links):
+        def download(self, http, notebook_id):
+            try:
+                return super().download(http, notebook_id)
+            except Exception as exc:
+                reasons.append(f"{exc} {exc!r} {getattr(exc, 'reason', '')}")
+                raise
+
+    monkeypatch.setattr("scanner.runner.NotebookLinks", RecordingLinks)
+    data = copy.deepcopy(SyntheticClient.from_fixture("synthetic_instance.json").data)
+    data["notebook_download_statuses"] = {
+        "https://example-notebooks.s3.amazonaws.com/notebook-401.ipynb": [403],  # Retried, then scanned.
+        "https://example-notebooks.s3-fips.us-east-1.amazonaws.com/notebook-404.ipynb": [403, 403],  # Refused twice.
+    }
+    next(n for n in data["notebooks"] if n["id"] == 405)["_get_errors"] = [None, 503]  # The link call fails.
+    dry_run(tmp_path, data=data)
+
+    assert len(issued) >= 7 and reasons  # Inventory's 4 links, then 401 twice, 403, and 404 twice.
+    pieces = {"example-notebooks", "amazonaws", "s3-fips", "X-Amz", "Signature", "Security-Token", ".ipynb",
+              "SYNTHETICKEYID", "synthetic-session-token", "AccessDenied", "Request has expired"}
+    for link in issued:
+        query = link.split("?", 1)[1]
+        pieces |= {link, query, *(value for pair in query.split("&") for value in pair.split("=")[1:])}
+    pieces = {p for p in pieces if len(p) > 6}  # Short values (such as "300" and "host") are common words.
+    outputs = {
+        "log": scanner_log.getvalue(),
+        "tables": (tmp_path / "results.sqlite").read_bytes().decode("utf-8", errors="replace"),
+        "csv": "".join(path.read_text(encoding="utf-8-sig") for path in tmp_path.glob("*.csv")),
+        "exceptions": " ".join(reasons),
+    }
+    for where, text in outputs.items():
+        for piece in pieces:
+            assert piece not in text, (where, piece)
+    conn = sqlite3.connect(tmp_path / "results.sqlite")
+    try:
+        notes = dict(conn.execute("SELECT object_id, scan_note FROM objects WHERE object_type = 'notebook'"))
+    finally:
+        conn.close()
+    assert notes[401] is None
+    assert notes[404] == "The notebook file could not be downloaded. The request was refused (HTTP 403)."
+    assert notes[405].startswith("The link to the notebook file could not be requested from Civis.")
+
+
 def test_parse_failures_log_object_id_and_error_type_only(scanner_log):
     broken = f"print 'old style' {FAKE_PASSWORD} {FAKE_EMAIL}\n"
     result = Engine().scan_python(broken, "jobs/legacy.py")

@@ -27,6 +27,7 @@ import sys
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from common.redact import install_redaction
 from scanner import scan_log
@@ -48,12 +49,14 @@ def dry_run(out: Path, fixture: Path | None = None, now: datetime | None = None,
             checkpoint_objects: int = 500, stop_after: int | None = None, data: dict | None = None,
             civis_job_id: int | None = None, civis_run_id: int | None = None,
             clock: Callable[[], datetime] | None = None,
-            github_token: str | None = "synthetic-github-token") -> RunResult:
+            github_token: str | None = "synthetic-github-token", file_clock: Any = None) -> RunResult:
     """Run the whole pipeline against the synthetic instance. No network calls.
 
     ``data`` replaces the synthetic instance file (used by the preview seeder),
     ``clock`` replaces the fixed ``now`` so runs can have a duration, and
-    ``github_token=None`` runs without a GitHub token, the normal setup.
+    ``github_token=None`` runs without a GitHub token, the normal setup, and
+    ``file_clock`` (a scanner.synthetic.links.SyntheticClock) is the clock the
+    synthetic notebook links are issued and checked on.
     """
     from scanner.output import LocalRunOutputs, SqliteSink
     from scanner.synthetic import FIXTURES, FakeClient, SyntheticSession
@@ -62,6 +65,9 @@ def dry_run(out: Path, fixture: Path | None = None, now: datetime | None = None,
         data = json.loads((fixture or FIXTURES / "synthetic_instance.json").read_text(encoding="utf-8"))
     client = FakeClient(data)
     session = SyntheticSession(data)
+    # One made-up clock for the notebook links the client issues and the file host checks
+    # (scanner/synthetic/links.py). It moves only when a test advances it.
+    session.clock = client.clock = file_clock or client.clock
     out.mkdir(parents=True, exist_ok=True)
     sink = SqliteSink(out / "results.sqlite", DRY_RUN_SCHEMA)
     if stop_after is not None:

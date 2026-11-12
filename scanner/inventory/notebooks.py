@@ -1,9 +1,11 @@
 """Notebooks.
 
 Endpoints (docs/PLAN.md section 2): notebooks.list and notebooks.get. The
-notebook file is downloaded from ``notebook_url`` in Phase 3. That link is
-time-limited and is kept in memory only. Notebooks in languages other than
-Python (for example R) are left out.
+detail call gives the language, image, owner, and git fields. Its
+``notebook_url`` is not kept: each link expires 5 minutes after Civis issues
+it, so the code and log scan asks for a fresh one right before the download
+(scanner/retrieval/notebooks.py, docs/PLAN.md 17.9). Notebooks in languages
+other than Python (for example R) are left out.
 """
 
 from __future__ import annotations
@@ -54,7 +56,6 @@ def notebook_item(ctx: InventoryContext, row: Any) -> InventoryItem | None:
         obj,
         classify_image(ObjectType.NOTEBOOK, field_of(detail, "docker_image_name"), field_of(detail, "docker_image_tag")),
     )
-    item.code["notebook_url"] = field_of(detail, "notebook_url")
     obj.git_repo = field_of(detail, "git_repo_url")
     if obj.git_repo:
         obj.git_ref = field_of(detail, "git_ref")

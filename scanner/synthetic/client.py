@@ -17,6 +17,14 @@ call answers with a list holding one object, as Civis did in the first live
 test; "file_shape": "object" gives the one object the API spec describes.
 "commits_error" or "file_error" makes that call raise FakeAPIError.
 
+Notebooks: "notebook_url" holds the file's address with no query string, and
+every notebooks.get call answers with a new signed link to it, issued at the
+time of the call on the client's SyntheticClock (scanner/synthetic/links.py),
+as Civis did in the live test (docs/PLAN.md 17.9). "_get_errors" on a notebook
+is a list of HTTP statuses (or null) for its successive notebooks.get calls:
+a status makes that call raise FakeAPIError. ``issued_links`` records each link
+issued, with the notebook ID, for tests.
+
 "users_list_errors" makes users.list refuse an account_status (see _users__list).
 The default instance refuses "all" and "inactive" with HTTP 404, as Civis did
 for the scanning user in the first live test (docs/PLAN.md 17.5).
@@ -25,7 +33,10 @@ for the scanning user in the first live test (docs/PLAN.md 17.5).
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
+
+from scanner.synthetic.links import SyntheticClock, sign_link
 
 FIXTURES = Path(__file__).parent
 
@@ -84,9 +95,13 @@ class _Endpoint:
 
 
 class FakeClient:
-    def __init__(self, data: dict):
+    def __init__(self, data: dict, clock: SyntheticClock | None = None):
         self.data = data
         self.calls: list[tuple[str, tuple, dict]] = []
+        self.clock = clock or SyntheticClock()
+        self.issued_links: list[tuple[int, str]] = []
+        self._notebook_gets: dict[int, int] = {}
+        self._lock = threading.Lock()
         for name in ("scripts", "templates", "notebooks", "services", "workflows", "jobs", "users"):
             setattr(self, name, _Endpoint(self, name))
 
@@ -193,7 +208,21 @@ class FakeClient:
         return self._list(self.data.get("notebooks", []), NOTEBOOK_LIST_FIELDS, **kwargs)
 
     def _notebooks__get(self, object_id):
-        return self._get(self.data.get("notebooks", []), object_id)
+        """A new signed link on every call, issued now on the client's clock (docs/PLAN.md 17.9)."""
+        rows = self.data.get("notebooks", [])
+        raw = next((r for r in rows if r["id"] == object_id), None)
+        with self._lock:
+            index = self._notebook_gets.get(object_id, 0)
+            self._notebook_gets[object_id] = index + 1
+        errors = (raw or {}).get("_get_errors") or []
+        if index < len(errors) and errors[index]:
+            raise FakeAPIError(errors[index])
+        row = self._get(rows, object_id)
+        if row.get("notebook_url"):
+            row["notebook_url"] = sign_link(row["notebook_url"], self.clock.now())
+            with self._lock:
+                self.issued_links.append((object_id, row["notebook_url"]))
+        return row
 
     def _services__list(self, **kwargs):
         return self._list(self.data.get("services", []), SERVICE_LIST_FIELDS, **kwargs)

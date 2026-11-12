@@ -9,6 +9,9 @@ Every object ends with a coverage status:
 - not_scanned: neither its code nor a log could be read (the reason says why
   and asks for a manual review).
 
+A notebook is read from its notebook file, through a link asked for from Civis
+right before the download (scanner/retrieval/notebooks.py).
+
 A git-backed Python script is read from GitHub when a token is attached. If
 there is no token, or GitHub cannot be read, the script's own file is read
 through the Civis API instead (scanner/retrieval/civis_git.py). That covers the
@@ -32,7 +35,7 @@ from scanner.retrieval.civis_git import CivisGitFiles
 from scanner.retrieval.code import inline_units
 from scanner.retrieval.github import DEFAULT_FILE_CAP, NO_TOKEN, GitHubRepos, RepoUnavailable, select_files
 from scanner.retrieval.http import SafeHttp
-from scanner.retrieval.notebooks import NotebookUnavailable, fetch_notebook
+from scanner.retrieval.notebooks import NotebookLinks, NotebookUnavailable
 
 MAX_NOTE_CHARS = 1000
 PARSE_NOTE = "Some code could not be parsed as Python 3, so it was checked with simpler text rules."
@@ -52,6 +55,12 @@ class ScanDeps:
     now: datetime
     file_cap: int = DEFAULT_FILE_CAP
     civis_git: CivisGitFiles | None = None  # None: never read git files through Civis.
+    # Fresh notebook links right before each download (docs/PLAN.md 17.9). None: one is made on ``client``.
+    notebook_links: NotebookLinks | None = None
+
+    def __post_init__(self) -> None:
+        if self.notebook_links is None:
+            self.notebook_links = NotebookLinks(self.client)
 
 
 @dataclass
@@ -91,11 +100,12 @@ def process_item(item: InventoryItem, deps: ScanDeps) -> ObjectResult:
             take(deps.engine.scan_shell(unit.text, unit.label))
         scanned = True
 
-    # Notebook file.
+    # Notebook file, from a link asked for right before the download: a link read during inventory has
+    # expired by now (docs/PLAN.md 17.9).
     if obj.object_type is ObjectType.NOTEBOOK:
         needed = True
         try:
-            text = fetch_notebook(deps.http, item.code.get("notebook_url"))
+            text = deps.notebook_links.download(deps.http, obj.object_id)
             take(deps.engine.scan_notebook(text, "notebook file"))
             del text
             scanned = True

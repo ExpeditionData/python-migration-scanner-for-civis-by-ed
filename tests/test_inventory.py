@@ -240,7 +240,7 @@ def test_custom_script_fallback_to_code_preview(built):
 def test_code_is_kept_in_memory_only(built):
     assert "list_me" in item(built, 101).code["source"]
     assert item(built, 201).code["docker_command"].startswith("pip install civis")
-    assert item(built, 401).code["notebook_url"].startswith("https://example-notebooks.s3.amazonaws.com/")
+    assert "notebook_url" not in item(built, 401).code  # Asked for right before the download (docs/PLAN.md 17.9).
     assert item(built, 501).code["deployment_id"] == 7001
     inline = item(built, 601).code["inline_tasks"]
     assert [t.action for t in inline] == ["civis.scripts.python3"]

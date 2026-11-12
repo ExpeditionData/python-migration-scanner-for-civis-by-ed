@@ -912,7 +912,7 @@
       },
       "docker_image_name": "",
       "docker_image_tag": "",
-      "notebook_url": "https://example-notebooks.s3.amazonaws.com/notebook-401.ipynb?X-Amz-Signature=synthetic",
+      "notebook_url": "https://example-notebooks.s3.amazonaws.com/notebook-401.ipynb",
       "git_repo_url": null
     },
     {
@@ -942,7 +942,7 @@
       },
       "docker_image_name": "civisanalytics/civis-jupyter-python3",
       "docker_image_tag": "5.1.1",
-      "notebook_url": "https://example-notebooks.s3.amazonaws.com/notebook-403.ipynb?X-Amz-Signature=synthetic",
+      "notebook_url": "https://example-notebooks.s3.amazonaws.com/notebook-403.ipynb",
       "git_repo_url": "https://github.com/example-org/notebooks.git",
       "git_ref": "main",
       "git_path": "analysis.ipynb"
@@ -960,7 +960,7 @@
       },
       "docker_image_name": "civisanalytics/civis-jupyter-python3",
       "docker_image_tag": "5.1",
-      "notebook_url": "https://example-notebooks.s3-fips.us-east-1.amazonaws.com/notebook-404.ipynb?X-Amz-Signature=synthetic",
+      "notebook_url": "https://example-notebooks.s3-fips.us-east-1.amazonaws.com/notebook-404.ipynb",
       "git_repo_url": null
     },
     {
@@ -976,7 +976,7 @@
       },
       "docker_image_name": "civisanalytics/civis-jupyter-python3",
       "docker_image_tag": "5",
-      "notebook_url": "https://example-notebooks.s3.amazonaws.com/notebook-405.ipynb?X-Amz-Signature=synthetic",
+      "notebook_url": "https://example-notebooks.s3.amazonaws.com/notebook-405.ipynb",
       "git_repo_url": null
     }
   ],
@@ -1262,7 +1262,7 @@
     ]
   },
   "notebook_files": {
-    "https://example-notebooks.s3.amazonaws.com/notebook-401.ipynb?X-Amz-Signature=synthetic": {
+    "https://example-notebooks.s3.amazonaws.com/notebook-401.ipynb": {
       "nbformat": 4,
       "nbformat_minor": 5,
       "metadata": {},
@@ -1304,7 +1304,7 @@
         }
       ]
     },
-    "https://example-notebooks.s3-fips.us-east-1.amazonaws.com/notebook-404.ipynb?X-Amz-Signature=synthetic": {
+    "https://example-notebooks.s3-fips.us-east-1.amazonaws.com/notebook-404.ipynb": {
       "nbformat": 4,
       "nbformat_minor": 5,
       "metadata": {},
@@ -1322,7 +1322,7 @@
         }
       ]
     },
-    "https://example-notebooks.s3.amazonaws.com/notebook-405.ipynb?X-Amz-Signature=synthetic": {
+    "https://example-notebooks.s3.amazonaws.com/notebook-405.ipynb": {
       "nbformat": 4,
       "nbformat_minor": 5,
       "metadata": {},
