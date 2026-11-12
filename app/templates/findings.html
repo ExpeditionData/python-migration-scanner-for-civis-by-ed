@@ -15,7 +15,7 @@
     <button type="submit" form="checklist-form" class="button button-primary">Save changes</button>
     {% endif %}
     {% if current and current.civis_run_id %}
-    <a class="button button-secondary" href="{{ url_for('pages.download', civis_run_id=current.civis_run_id) }}">Download CSV</a>
+    <a class="button button-secondary" href="{{ url_for('pages.download', civis_run_id=current.civis_run_id) }}" data-no-busy>Download CSV</a>
     {% endif %}
   </div>
   {% endif %}

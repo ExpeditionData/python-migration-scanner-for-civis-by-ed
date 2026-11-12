@@ -662,30 +662,87 @@ def _contrast(a: str, b: str) -> float:
     return (high + 0.05) / (low + 0.05)
 
 
-def test_text_contrast_is_at_least_4_5_to_1():
+# Text and background pairs whose contrast is checked (test_text_contrast_is_at_least_4_5_to_1 and
+# test_busy_dimming_keeps_text_contrast).
+CONTRAST_PAIRS = [
+    # Body text and muted text on every background they appear on.
+    ("text", "bg"), ("text", "surface"), ("text", "stripe"), ("text", "row-border"),
+    ("muted", "bg"), ("muted", "surface"), ("muted", "stripe"),
+    # Navy: headings, labels, links, nav, tile numbers, step states, disabled buttons.
+    ("primary", "bg"), ("primary", "surface"), ("primary", "stripe"), ("primary", "nav-active-bg"),
+    ("primary", "disabled-bg"), ("primary", "info-bg"), ("primary-hover", "surface"), ("primary-hover", "stripe"),
+    # White on navy: primary buttons, table headers, skip link.
+    ("white", "primary"), ("white", "primary-hover"),
+    # Semantic colors, unchanged.
+    ("warn-text", "warn-bg"), ("error-text", "error-bg"), ("fixed", "success-bg"), ("fixed", "surface"),
+    ("fixed", "stripe"), ("affected", "affected-bg"), ("affected", "surface"), ("affected", "stripe"),
+    ("advisory", "advisory-bg"), ("advisory", "surface"), ("advisory", "stripe"),
+]
+
+
+def _css_colors() -> dict[str, str]:
     css = (Path(__file__).resolve().parent.parent / "app/static/css/app.css").read_text(encoding="utf-8")
     colors = dict(re.findall(r"--([\w-]+):\s*(#[0-9a-fA-F]{6});", css))
     colors["white"] = "#ffffff"
-    pairs = [
-        # Body text and muted text on every background they appear on.
-        ("text", "bg"), ("text", "surface"), ("text", "stripe"), ("text", "row-border"),
-        ("muted", "bg"), ("muted", "surface"), ("muted", "stripe"),
-        # Navy: headings, labels, links, nav, tile numbers, step states, disabled buttons.
-        ("primary", "bg"), ("primary", "surface"), ("primary", "stripe"), ("primary", "nav-active-bg"),
-        ("primary", "disabled-bg"), ("primary", "info-bg"), ("primary-hover", "surface"), ("primary-hover", "stripe"),
-        # White on navy: primary buttons, table headers, skip link.
-        ("white", "primary"), ("white", "primary-hover"),
-        # Semantic colors, unchanged.
-        ("warn-text", "warn-bg"), ("error-text", "error-bg"), ("fixed", "success-bg"), ("fixed", "surface"),
-        ("fixed", "stripe"), ("affected", "affected-bg"), ("affected", "surface"), ("affected", "stripe"),
-        ("advisory", "advisory-bg"), ("advisory", "surface"), ("advisory", "stripe"),
-    ]
+    return colors
+
+
+def test_text_contrast_is_at_least_4_5_to_1():
+    css = (Path(__file__).resolve().parent.parent / "app/static/css/app.css").read_text(encoding="utf-8")
+    colors = _css_colors()
+    pairs = CONTRAST_PAIRS
     low = [(a, b, round(_contrast(colors[a], colors[b]), 2)) for a, b in pairs if _contrast(colors[a], colors[b]) < 4.5]
     assert low == []
     # Orange is decoration only: it fails text contrast, so it must never color text or focus outlines.
     assert _contrast(colors["accent"], colors["surface"]) < 4.5
     assert not re.search(r"(?<![-\w])color:\s*var\(--accent\)", css)
     assert "outline: 3px solid var(--primary)" in css
+
+
+def _blend(color: str, back: str, alpha: float) -> str:
+    """``color`` drawn at ``alpha`` opacity over ``back`` (both #rrggbb)."""
+    parts = [round(alpha * int(color[i:i + 2], 16) + (1 - alpha) * int(back[i:i + 2], 16)) for i in (1, 3, 5)]
+    return "#" + "".join(f"{v:02x}" for v in parts)
+
+
+def test_busy_dimming_keeps_text_contrast():
+    """docs/PLAN.md 17.9, Part D: while the next page loads, busy.js puts "is-loading" on body, which dims main to
+    the opacity in app.css. Main is drawn over the body's --bg, so every text and background pair is blended over
+    --bg at that opacity, and each still meets 4.5 to 1. The " Loading" text inherits its link's or container's
+    color, so it is one of the checked pairs too."""
+    css = (Path(__file__).resolve().parent.parent / "app/static/css/app.css").read_text(encoding="utf-8")
+    match = re.search(r"body\.is-loading main \{ opacity: ([0-9.]+); \}", css)
+    assert match, "the dimmed state must be a class rule in app.css"
+    alpha = float(match.group(1))
+    assert 0.85 < alpha < 1  # Slightly dimmed.
+    assert re.search(r"body \{\n  margin: 0;\n  background: var\(--bg\);", css)
+    colors = _css_colors()
+    back = colors["bg"]
+    low = []
+    for a, b in CONTRAST_PAIRS:
+        ratio = _contrast(_blend(colors[a], back, alpha), _blend(colors[b], back, alpha))
+        if ratio < 4.5:
+            low.append((a, b, round(ratio, 2)))
+    assert low == []
+    assert re.search(r"body\.is-loading, body\.is-loading a, body\.is-loading button, body\.is-loading select "
+                     r"\{ cursor: progress; \}", css)
+    assert ".busy-cue {" in css and "color:" not in css[css.index(".busy-cue {"):].split("}")[0]
+
+
+@pytest.mark.parametrize("state", ["normal", "tables-failed"])
+def test_every_download_link_has_data_no_busy(preview, monkeypatch, state):
+    """docs/PLAN.md 17.9, Part D: a download leaves the page in place, so busy.js shows no cue for it."""
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    client = make_app(preview, state).test_client()
+    seen = 0
+    for url in PAGES + ["/setup"]:
+        body = client.get(url).get_data(as_text=True)
+        for tag in re.findall(r"<a\b[^>]*\bhref=\"/download/[^\"]*\"[^>]*>", body):
+            assert " data-no-busy" in tag, (url, tag)
+            seen += 1
+        for tag in re.findall(r"<a\b[^>]*>(?:Download CSV|Download its CSV report|CSV<)", body):
+            assert " data-no-busy" in tag, (url, tag)
+    assert seen >= 3  # The Overview's and Findings' Download CSV, and Scan history's CSV links.
 
 
 def test_input_borders_meet_3_to_1():

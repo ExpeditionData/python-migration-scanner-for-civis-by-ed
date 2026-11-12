@@ -41,7 +41,9 @@ WORKING = "Working. This can take up to a minute."
 # waits for a "release" step). "storage" is "ok" (default; "session" seeds it), "throws" (every use throws), or
 # "none" (window.sessionStorage is missing). "now" sets Date.now; the "advance" step moves it by "ms". The
 # "visibility" step sets document.hidden and fires visibilitychange. A "tick" runs the first waiting timer (an
-# interval stays waiting).
+# interval stays waiting). Elements can nest ("children"), and each snapshot gives the text the script added
+# inside an element ("added") and how many " Loading" cues it holds ("cues"), and the body's class. A "submit" step
+# can name its "submitter" button. The page's address is https://app.example.test plus "path".
 HARNESS = r"""
 const fs = require("fs");
 const scenario = JSON.parse(process.argv[1]);
@@ -49,19 +51,58 @@ function element(spec) {
   const el = {
     attrs: Object.assign({}, spec.attrs || {}), hidden: !!spec.hidden, disabled: !!spec.disabled,
     textContent: spec.text || "", className: spec.className || "", listeners: {}, tag: spec.tag, children: [],
+    parentNode: null, created: !!spec.created,
     getAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attrs, name) ? this.attrs[name] : null; },
     hasAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attrs, name); },
     setAttribute(name, value) { this.attrs[name] = String(value); },
+    removeAttribute(name) { delete this.attrs[name]; },
     addEventListener(type, fn) { (this.listeners[type] = this.listeners[type] || []).push(fn); },
-    querySelector(selector) { return this.children.find((c) => c.matches(selector)) || null; },
-    closest(selector) { return this.matches(selector) ? this : null; },
+    get classList() {
+      const self = this;
+      const names = () => self.className.split(/\s+/).filter(Boolean);
+      return {
+        add(c) { if (!names().includes(c)) self.className = names().concat([c]).join(" "); },
+        remove(c) { self.className = names().filter((n) => n !== c).join(" "); },
+        contains(c) { return names().includes(c); },
+      };
+    },
+    appendChild(child) { child.parentNode = this; this.children.push(child); return child; },
+    insertBefore(child, ref) {
+      child.parentNode = this;
+      const i = ref ? this.children.indexOf(ref) : -1;
+      if (i < 0) this.children.push(child); else this.children.splice(i, 0, child);
+      return child;
+    },
+    removeChild(child) {
+      const i = this.children.indexOf(child);
+      if (i >= 0) this.children.splice(i, 1);
+      child.parentNode = null;
+      return child;
+    },
+    get nextSibling() {
+      if (!this.parentNode) return null;
+      const siblings = this.parentNode.children;
+      return siblings[siblings.indexOf(this) + 1] || null;
+    },
+    querySelector(selector) {
+      for (const child of this.children) {
+        if (child.matches(selector)) return child;
+        const deeper = child.querySelector(selector);
+        if (deeper) return deeper;
+      }
+      return null;
+    },
+    closest(selector) {
+      for (let node = this; node; node = node.parentNode) if (node.matches(selector)) return node;
+      return null;
+    },
+    // A tag, an attribute ([name] or [name="value"]), or a tag with one attribute.
     matches(selector) {
-      if (selector === "form") return this.tag === "form";
-      if (selector === "button") return this.tag === "button";
-      if (selector === "a[data-busy]") return this.tag === "a" && this.hasAttribute("data-busy");
-      const m = selector.match(/^\[([\w-]+)(?:="([^"]*)")?\]$/);
-      if (!m) return false;
-      return m[2] === undefined ? this.hasAttribute(m[1]) : this.getAttribute(m[1]) === m[2];
+      const m = selector.match(/^([a-z]+)?(?:\[([\w-]+)(?:="([^"]*)")?\])?$/);
+      if (!m || (!m[1] && !m[2])) return false;
+      if (m[1] && this.tag !== m[1]) return false;
+      if (!m[2]) return true;
+      return m[3] === undefined ? this.hasAttribute(m[2]) : this.getAttribute(m[2]) === m[3];
     },
   };
   return el;
@@ -69,8 +110,9 @@ function element(spec) {
 const els = {};
 for (const [name, spec] of Object.entries(scenario.elements)) els[name] = element(spec);
 for (const [name, spec] of Object.entries(scenario.elements)) {
-  for (const child of spec.children || []) els[name].children.push(els[child]);
+  for (const child of spec.children || []) els[name].appendChild(els[child]);
 }
+const body = els.body || element({ tag: "body" });
 const docListeners = {};
 const winListeners = {};
 const timers = [];
@@ -118,7 +160,8 @@ global.window = {
     return Promise.resolve(answer(next));
   },
   FormData: function (form) { this.from = form.getAttribute("action"); },
-  location: { pathname: scenario.path || "/", reload() { reloads += 1; } },
+  location: { pathname: scenario.path || "/", href: "https://app.example.test" + (scenario.path || "/"),
+              reload() { reloads += 1; } },
 };
 // Every mode counts each time a script reaches for window.sessionStorage, so a test can show it is never used.
 Object.defineProperty(global.window, "sessionStorage", { get() {
@@ -128,6 +171,8 @@ Object.defineProperty(global.window, "sessionStorage", { get() {
 } });
 global.document = {
   hidden: !!scenario.hidden,
+  body,
+  createElement(tag) { return element({ tag, created: true }); },
   querySelector(selector) { return Object.values(els).find((e) => e.matches(selector)) || null; },
   addEventListener(type, fn) { (docListeners[type] = docListeners[type] || []).push(fn); },
 };
@@ -135,11 +180,13 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 function snapshot() {
   const out = {};
   for (const [name, el] of Object.entries(els)) {
+    const added = el.children.filter((c) => c.created);
     out[name] = { text: el.textContent, hidden: el.hidden, disabled: el.disabled, className: el.className,
-                  busy: el.getAttribute("aria-busy") };
+                  busy: el.getAttribute("aria-busy"), added: added.map((c) => c.textContent).join(""),
+                  cues: added.filter((c) => c.className === "busy-cue").length };
   }
   return { els: out, timers: timers.length, fetches: fetches.length, reloads,
-           storage: Object.assign({}, stored), storageUses };
+           storage: Object.assign({}, stored), storageUses, bodyClass: body.className };
 }
 (async () => {
   for (const script of scenario.scripts) eval(fs.readFileSync(script, "utf8"));
@@ -148,6 +195,7 @@ function snapshot() {
     if (step.do === "submit" || step.do === "click") {
       const event = Object.assign({ target: els[step.target], defaultPrevented: false, button: 0,
                                     preventDefault() { this.defaultPrevented = true; } }, step.event || {});
+      if (step.submitter) event.submitter = els[step.submitter];
       for (const fn of els[step.target].listeners[step.do] || []) fn(event);
       for (const fn of docListeners[step.do] || []) fn(event);
       shots.push(Object.assign(snapshot(), { prevented: event.defaultPrevented }));
@@ -191,41 +239,176 @@ def run(script: str, elements: dict, steps: list, responses: list | None = None,
     return json.loads(result.stdout)
 
 
-# --- busy.js -------------------------------------------------------------------------------------------
+# --- busy.js: the busy cue and the "Working" message (docs/PLAN.md 17.6, 17.8, and 17.9, Part D) ---------------
+
+LOADING = " Loading"
 
 
-BUSY_PAGE = {
-    "region": {"tag": "div", "attrs": {"data-busy-region": ""}, "hidden": True},
-    "storage": {"tag": "form", "attrs": {"data-busy": "", "action": "/setup/storage"}},
-    "setup": {"tag": "a", "attrs": {"data-busy": "", "href": "/setup"}},
-    "plain": {"tag": "a", "attrs": {"href": "/inventory"}},
-}
+def busy_page(**changes) -> dict:
+    """A stand-in Findings page (path /findings) with every kind of link and form busy.js looks at."""
+    page = {
+        "body": {"tag": "body"},
+        "skip": {"tag": "a", "attrs": {"class": "skip-link", "href": "#main"}, "text": "Skip to main content"},
+        "nav_inventory": {"tag": "a", "attrs": {"href": "/inventory"}, "text": "Inventory"},
+        "nav_scan": {"tag": "a", "attrs": {"href": "/scan", "data-busy": ""}, "text": "Scan history"},
+        "nav_setup": {"tag": "a", "attrs": {"href": "/setup", "data-busy": ""}, "text": "Setup"},
+        "main": {"tag": "main", "attrs": {"id": "main"},
+                 "children": ["region", "head", "filters", "checklist", "next_page", "civis", "download",
+                              "download_attr", "same_page", "self_link", "other_site", "box", "storage",
+                              "summary_link"]},
+        "region": {"tag": "div", "attrs": {"data-busy-region": ""}, "hidden": True},
+        "head": {"tag": "div", "children": ["download_csv", "save"]},
+        "download_csv": {"tag": "a", "attrs": {"href": "/download/503", "data-no-busy": ""}, "text": "Download CSV"},
+        "save": {"tag": "button", "attrs": {"type": "submit", "form": "checklist-form"}, "text": "Save changes"},
+        "filters": {"tag": "form", "attrs": {"method": "get", "action": "/findings"}, "children": ["actions"]},
+        "actions": {"tag": "div", "children": ["apply", "clear"]},
+        "apply": {"tag": "button", "attrs": {"type": "submit"}, "text": "Apply filters"},
+        "clear": {"tag": "a", "attrs": {"href": "/findings"}, "text": "Clear filters"},
+        "checklist": {"tag": "form", "attrs": {"id": "checklist-form", "method": "post", "action": "/findings/save"}},
+        "next_page": {"tag": "a", "attrs": {"href": "/findings?impact=affected&page=2"}, "text": "Next page"},
+        "civis": {"tag": "a", "attrs": {"href": "https://platform.example.test/spa/#/scripts/python3/101",
+                                        "target": "_blank", "rel": "noopener noreferrer"}, "text": "Example job"},
+        "download": {"tag": "a", "attrs": {"href": "/download/503", "data-no-busy": ""}, "text": "CSV"},
+        "download_attr": {"tag": "a", "attrs": {"href": "/download/503", "download": ""}, "text": "CSV file"},
+        "same_page": {"tag": "a", "attrs": {"href": "/findings#rules"}, "text": "Rules on this page"},
+        "self_link": {"tag": "a", "attrs": {"href": "/inventory?type=notebook", "target": "_self"}, "text": "Notebooks"},
+        "other_site": {"tag": "a", "attrs": {"href": "https://www.example.test/"}, "text": "Another site"},
+        "box": {"tag": "div", "attrs": {"data-run-scan": "", "data-status": "/api/scan-status"},
+                "children": ["run_form"]},
+        "run_form": {"tag": "form", "attrs": {"method": "post", "action": "/scan/start"}, "children": ["run_button"]},
+        "run_button": {"tag": "button", "attrs": {"type": "submit"}, "text": "Run scan"},
+        "storage": {"tag": "form", "attrs": {"method": "post", "action": "/setup/storage", "data-busy": ""},
+                    "children": ["storage_button"]},
+        "storage_button": {"tag": "button", "attrs": {"type": "submit"}, "text": "Set up results storage"},
+        "summary_link": {"tag": "a", "attrs": {"href": "/setup/summary", "data-busy": ""}, "text": "Build test summary"},
+    }
+    for name, spec in changes.items():
+        page[name] = spec
+    return page
 
 
-def test_the_working_message_shows_when_storage_setup_is_sent():
-    out = run("busy.js", BUSY_PAGE, [{"do": "submit", "target": "storage"}])
-    region = out["shots"][1]["els"]["region"]
-    assert (region["text"], region["hidden"]) == (WORKING, False)
-    assert out["shots"][1]["els"]["storage"]["busy"] == "true" and out["shots"][1]["prevented"] is False
+def busy(steps: list, **changes) -> dict:
+    return run("busy.js", busy_page(**changes), steps, path="/findings")
 
 
-def test_the_working_message_shows_for_a_plain_click_on_setup_only():
-    out = run("busy.js", BUSY_PAGE, [
-        {"do": "click", "target": "plain"},
-        {"do": "click", "target": "setup", "event": {"ctrlKey": True}},  # Opens a new tab: nothing to wait for.
-        {"do": "click", "target": "setup", "event": {"button": 1}},
-        {"do": "click", "target": "setup"},
-        {"do": "pageshow"},  # Back from the browser's history.
-    ])
-    regions = [shot["els"]["region"] for shot in out["shots"]]  # Two shots per click, one for the pageshow.
-    assert [r["hidden"] for r in regions] == [True, True, True, True, True, True, True, False, False, True]
-    assert regions[7]["text"] == WORKING and regions[9]["text"] == ""
-    assert out["fetches"] == []  # It only shows text; it sends nothing.
+def cues(shot: dict) -> dict[str, int]:
+    return {name: el["cues"] for name, el in shot["els"].items() if el["cues"]}
 
 
-def test_busy_does_nothing_without_its_region():
-    out = run("busy.js", {"storage": BUSY_PAGE["storage"]}, [{"do": "submit", "target": "storage"}])
-    assert out["shots"][1]["els"]["storage"]["busy"] is None
+def loading(shot: dict) -> bool:
+    return shot["bodyClass"] == "is-loading" and shot["els"]["main"]["busy"] == "true"
+
+
+@pytest.mark.parametrize("link", ["nav_inventory", "next_page", "clear", "self_link"])
+def test_a_plain_click_on_an_app_link_shows_the_cue_at_once(link):
+    out = busy([{"do": "click", "target": link}])
+    shot = out["shots"][1]
+    assert cues(shot) == {link: 1} and shot["els"][link]["added"] == LOADING
+    assert loading(shot) and shot["prevented"] is False  # The browser still follows the link.
+    assert shot["els"]["region"]["hidden"] is True  # The "Working" message is only for data-busy.
+    assert out["fetches"] == []
+
+
+def test_a_filter_form_shows_the_cue_next_to_its_button():
+    out = busy([{"do": "submit", "target": "filters"}])  # No submitter: the form's own submit button is used.
+    shot = out["shots"][1]
+    assert cues(shot) == {"actions": 1} and shot["els"]["actions"]["added"] == LOADING
+    assert loading(shot) and shot["prevented"] is False
+
+
+@pytest.mark.parametrize("submitter", [None, "save"])
+def test_save_changes_shows_the_cue_next_to_its_button_outside_the_form(submitter):
+    step = {"do": "submit", "target": "checklist"}
+    if submitter:
+        step["submitter"] = submitter
+    shot = busy([step])["shots"][1]
+    assert cues(shot) == {"head": 1} and loading(shot)  # Beside "Save changes", which sits in the page head.
+
+
+@pytest.mark.parametrize("target, event", [
+    ("civis", {}),  # Opens Civis in a new tab.
+    ("nav_inventory", {"ctrlKey": True}),
+    ("nav_inventory", {"metaKey": True}),
+    ("nav_inventory", {"shiftKey": True}),
+    ("nav_inventory", {"altKey": True}),
+    ("nav_inventory", {"button": 1}),  # Middle click: a new tab.
+    ("nav_inventory", {"defaultPrevented": True}),
+    ("skip", {}),  # The skip link: a place on this page.
+    ("same_page", {}),
+    ("download_attr", {}),
+    ("download", {}),
+    ("download_csv", {}),
+    ("other_site", {}),
+])
+def test_no_cue_for_links_that_do_not_load_another_app_page_here(target, event):
+    shot = busy([{"do": "click", "target": target, "event": event}])["shots"][1]
+    assert cues(shot) == {} and shot["bodyClass"] == "" and shot["els"]["main"]["busy"] is None
+    assert shot["els"]["region"]["hidden"] is True
+
+
+def test_no_cue_for_the_run_scan_form():
+    shot = busy([{"do": "submit", "target": "run_form"}])["shots"][1]
+    assert cues(shot) == {} and shot["bodyClass"] == "" and shot["els"]["main"]["busy"] is None
+
+
+def test_no_cue_for_a_new_tab_click_on_a_data_busy_link():
+    shot = busy([{"do": "click", "target": "nav_setup", "event": {"ctrlKey": True}}])["shots"][1]
+    assert cues(shot) == {} and shot["els"]["region"]["hidden"] is True
+
+
+@pytest.mark.parametrize("target, kind", [("nav_scan", "click"), ("nav_setup", "click"), ("summary_link", "click"),
+                                          ("storage", "submit")])
+def test_data_busy_links_and_forms_get_the_cue_and_the_working_message(target, kind):
+    shot = busy([{"do": kind, "target": target}])["shots"][1]
+    place = "storage" if target == "storage" else target  # The storage button's cue goes beside it, in its form.
+    assert cues(shot) == {place: 1} and loading(shot)
+    assert (shot["els"]["region"]["text"], shot["els"]["region"]["hidden"]) == (WORKING, False)
+    assert shot["els"][target]["busy"] == "true"
+
+
+def test_coming_back_from_history_clears_the_cue_the_class_and_aria_busy():
+    out = busy([{"do": "click", "target": "nav_setup"}, {"do": "pageshow"},
+                {"do": "submit", "target": "filters"}, {"do": "pageshow"}])
+    after_link, after_form = out["shots"][3], out["shots"][6]  # Two shots per click or submit, one per pageshow.
+    for shot in (after_link, after_form):
+        assert cues(shot) == {} and shot["bodyClass"] == "" and shot["els"]["main"]["busy"] is None
+        assert (shot["els"]["region"]["hidden"], shot["els"]["region"]["text"]) == (True, "")
+        assert shot["els"]["nav_setup"]["busy"] is None
+    assert cues(out["shots"][4]) == {"actions": 1}  # The cue can show again after coming back.
+
+
+def test_a_second_click_while_the_cue_shows_adds_nothing():
+    out = busy([{"do": "click", "target": "next_page"}, {"do": "click", "target": "next_page"},
+                {"do": "click", "target": "clear"}, {"do": "submit", "target": "filters"}])
+    for shot in out["shots"][1:]:
+        assert cues(shot) == {"next_page": 1}
+    assert out["shots"][-1]["els"]["next_page"]["added"] == LOADING
+
+
+def test_no_cue_while_the_checklist_has_unsaved_changes_except_for_saving_them():
+    """The browser asks before leaving a page with unsaved checklist changes (findings.js), and the viewer may stay,
+    so a link or the filters show no cue then. Saving the changes still does."""
+    dirty = {"tag": "form", "attrs": {"id": "checklist-form", "method": "post", "action": "/findings/save",
+                                      "data-dirty": "true"}}
+    for step in ({"do": "click", "target": "nav_inventory"}, {"do": "submit", "target": "filters"}):
+        assert cues(busy([step], checklist=dirty)["shots"][1]) == {}
+    shot = busy([{"do": "submit", "target": "checklist", "submitter": "save"}], checklist=dirty)["shots"][1]
+    assert cues(shot) == {"head": 1}
+
+
+def test_without_the_working_region_the_cue_still_shows():
+    page = busy_page()
+    del page["region"]
+    page["main"]["children"].remove("region")
+    out = run("busy.js", page, [{"do": "click", "target": "nav_setup"}], path="/findings")
+    shot = out["shots"][1]
+    assert cues(shot) == {"nav_setup": 1} and loading(shot) and shot["els"]["nav_setup"]["busy"] is None
+
+
+def test_busy_js_sets_text_only_and_no_inline_style():
+    script = (JS / "busy.js").read_text(encoding="utf-8")
+    assert not re.search(r"innerHTML|insertAdjacentHTML|document\.write|\.style\b|setAttribute\(\"style", script)
+    assert '" Loading"' in script and "textContent" in script
 
 
 # --- run-scan.js ---------------------------------------------------------------------------------------
@@ -579,7 +762,8 @@ def test_the_run_scan_message_has_its_own_row_under_the_buttons(preview, monkeyp
     head = body[body.index('<div class="page-head">'): body.index('<p class="note run-window">')]
     # The selector's path: the page head > .actions > .run-scan > the message, with Download CSV in .actions.
     assert re.search(r'<div class="actions">\s*<div class="run-scan" data-run-scan', head)
-    assert re.search(r'</p></div>\s*<a class="button button-secondary" href="/download/\d+">Download CSV</a>', head)
+    assert re.search(r'</p></div>\s*<a class="button button-secondary" href="/download/\d+" data-no-busy>Download CSV</a>',
+                     head)
     assert 'role="status" aria-live="polite" hidden></p>' in head and "style=" not in head
     css = (Path(__file__).resolve().parent.parent / "app/static/css/app.css").read_text(encoding="utf-8")
     grid = ".page-head:has(> .actions > .run-scan)"

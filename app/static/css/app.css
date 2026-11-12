@@ -336,6 +336,13 @@ tbody tr:nth-child(even) th { background: var(--stripe); }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
 .note { font-size: 13px; color: var(--muted); margin: 0; }
+
+/* The busy cue while the next app page loads (js/busy.js, docs/PLAN.md 17.9). The " Loading" text inherits its
+   link's or container's checked color. Main is dimmed to 0.9 opacity, which keeps every pair in the contrast test
+   at 4.5 to 1 or more (test_app.test_busy_dimming_keeps_text_contrast). */
+.busy-cue { font-size: 0.85em; font-weight: 400; white-space: pre; }
+body.is-loading, body.is-loading a, body.is-loading button, body.is-loading select { cursor: progress; }
+body.is-loading main { opacity: 0.9; }
 .reason { font-size: 13px; color: var(--affected); margin-top: 2px; max-width: 360px; white-space: normal; }
 .cell-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .findings-table { min-width: 1000px; }

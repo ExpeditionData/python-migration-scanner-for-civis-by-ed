@@ -60,7 +60,7 @@
           <td class="num affected-text">{{ row.affected }}</td>
           <td class="num advisory-text">{{ row.advisory }}</td>
           <td class="num fixed-text">{{ row.fixed }}</td>
-          <td>{% if row.has_report and row.civis_run_id %}<a href="{{ url_for('pages.download', civis_run_id=row.civis_run_id) }}">CSV<span class="sr-only"> report for {{ row.run }}</span></a>{% endif %}</td>
+          <td>{% if row.has_report and row.civis_run_id %}<a href="{{ url_for('pages.download', civis_run_id=row.civis_run_id) }}" data-no-busy>CSV<span class="sr-only"> report for {{ row.run }}</span></a>{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>

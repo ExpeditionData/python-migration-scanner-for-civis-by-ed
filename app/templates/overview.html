@@ -12,7 +12,7 @@
   <div class="actions">
     {{ run_scan_button(can_start, situation, live=True) }}
     {% if stats and situation.current.civis_run_id %}
-    <a class="button button-secondary" href="{{ url_for('pages.download', civis_run_id=situation.current.civis_run_id) }}">Download CSV</a>
+    <a class="button button-secondary" href="{{ url_for('pages.download', civis_run_id=situation.current.civis_run_id) }}" data-no-busy>Download CSV</a>
     {% endif %}
   </div>
 </div>

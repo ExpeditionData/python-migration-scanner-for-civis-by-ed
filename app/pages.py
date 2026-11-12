@@ -155,7 +155,8 @@ def banners(situation: views.Situation) -> list[dict]:
     elif outcome == "tables_failed":
         items.append({"kind": "warning", "text": "The last scan finished but could not save its results tables, so "
                       f"its results are only in its CSV report.{shown_text}", **shown,
-                      "link": url_for("pages.download_latest"), "link_text": "Download its CSV report"})
+                      "link": url_for("pages.download_latest"), "link_text": "Download its CSV report",
+                      "no_busy": True})  # A download leaves the page in place: no busy cue (busy.js).
     return items
 
 

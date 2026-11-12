@@ -42,7 +42,7 @@
       <div class="banner banner-info" data-busy-region role="status" aria-live="polite" hidden></div>
       {% for banner in banners %}
       <div class="banner banner-{{ banner.kind }}" role="{{ 'alert' if banner.kind == 'error' else 'status' }}">
-        <p>{{ banner.text }}{% if banner.when %} {{ local_time(banner.when) }}{{ banner.tail }}{% endif %}{% if banner.link %} <a href="{{ banner.link }}">{{ banner.link_text }}</a>{% endif %}</p>
+        <p>{{ banner.text }}{% if banner.when %} {{ local_time(banner.when) }}{{ banner.tail }}{% endif %}{% if banner.link %} <a href="{{ banner.link }}"{% if banner.no_busy %} data-no-busy{% endif %}>{{ banner.link_text }}</a>{% endif %}</p>
       </div>
       {% endfor %}
       {% block content %}{% endblock %}
