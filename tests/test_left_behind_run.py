@@ -87,15 +87,14 @@ def test_every_page_shows_with_a_left_behind_run(monkeypatch, with_old_scan):
 @pytest.mark.parametrize("with_old_scan", [True, False], ids=["after_a_completed_scan", "only_scan"])
 def test_scan_history_lists_the_left_behind_run_as_failed(monkeypatch, with_old_scan):
     text = _main_text(_web(monkeypatch, with_old_scan).get("/scan"))
-    run = "Run 2" if with_old_scan else "Run 1"
-    assert re.search(rf"{run} [^R]*? Failed ", text)
+    assert re.search(r"Civis run 702 [^|]{0,80}? Failed ", text)
     if with_old_scan:
-        assert re.search(r"Run 1 [^R]*? Completed ", text)
+        assert re.search(r"Civis run 701 [^|]{0,80}? Completed ", text)
 
 
 def test_the_overview_keeps_the_completed_scan_as_current(monkeypatch):
     text = _main_text(_web(monkeypatch, True).get("/"))
-    assert "The last scan failed before it finished. The results shown are from Run 1" in text
+    assert "The last scan failed before it finished. The results shown are from Civis run 701" in text
     assert "No completed scan yet" not in text and "No scan yet" not in text
 
 

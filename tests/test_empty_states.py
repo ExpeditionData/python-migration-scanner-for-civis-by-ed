@@ -29,7 +29,7 @@ OTHER = "No scan has finished with results to show yet."
 def _scan(status: str, civis_run_id: int = 702) -> ScanRun:
     return ScanRun(run_id="run-20261110T120000Z-abc123", status=status,
                    started_at=datetime(2026, 11, 10, 12, 0, tzinfo=timezone.utc), finished_at=None,
-                   civis_run_id=civis_run_id, scanning_user=None, parameters={}, ordinal=1)
+                   civis_run_id=civis_run_id, scanning_user=None, parameters={}, first_civis_run_id=civis_run_id)
 
 
 def _run(state: str, run_id: int = 702) -> JobRun:

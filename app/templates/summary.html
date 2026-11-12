@@ -19,7 +19,7 @@
     <label for="summary-run">Scan</label>
     <select id="summary-run" name="run">
       {% for scan in scans %}
-      <option value="{{ scan.run_id }}"{% if chosen and scan.run_id == chosen.run_id %} selected{% endif %}>{{ scan.label }} ({{ scan.run_id }})</option>
+      <option value="{{ scan.run_id }}"{% if chosen and scan.run_id == chosen.run_id %} selected{% endif %}>{{ scan.label }}{% if scan.first_civis_run_id is not none %} ({{ scan.run_id }}){% endif %}</option>
       {% endfor %}
     </select>
     <button type="submit" class="button button-secondary">Build summary</button>

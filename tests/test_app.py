@@ -123,7 +123,7 @@ def test_overview_numbers(app):
     page = text_of(app.test_client().get("/"))
     assert "Python objects found 102" in page
     assert "Checklist progress" in page and "Most common issues" in page
-    assert "Last scan: October 7, 2026" in page and "Run 3." in page
+    assert "Last scan: October 7, 2026" in page and "Civis run 503." in page
     assert "A scan is running." in page
 
 
@@ -175,7 +175,7 @@ def test_scan_page_progress_and_history(app):
     for status in ("In progress", "Completed", "Failed"):
         assert status in page
     history = page[page.index("Fixed since last run"):]
-    assert re.search(r"Run 3 .* Completed \d+ \d+ \d+", history)  # Fixed since Run 1 is a number.
+    assert re.search(r"Civis run 503 .* Completed \d+ \d+ \d+", history)  # Fixed since Civis run 501 is a number.
 
 
 def test_scan_status_api(app):

@@ -137,18 +137,24 @@ class ScanRun:
     status: str
     started_at: datetime | None
     finished_at: datetime | None
-    civis_run_id: int | None
+    civis_run_id: int | None  # The newest row's Civis run ID (Download CSV uses it).
     scanning_user: str | None
     parameters: dict
-    ordinal: int = 0
+    # The Civis run ID of the scanner run that started the scan: the earliest row for this run ID that has one. A
+    # resumed scan keeps it. None when no row has one.
+    first_civis_run_id: int | None = None
 
     @property
     def label(self) -> str:
-        return f"Run {self.ordinal}"
+        """"Civis run <ID>" for the run that started the scan, else "Scan <run ID>". It stays the same when
+        retention removes older runs (docs/PLAN.md 17.9)."""
+        if self.first_civis_run_id is not None:
+            return f"Civis run {self.first_civis_run_id}"
+        return f"Scan {self.run_id}"
 
 
 def summarize_scan_runs(rows: list[dict]) -> list[ScanRun]:
-    """One entry per run ID, newest first, numbered Run 1, Run 2, ... by start time."""
+    """One entry per run ID, newest first by start time, each labeled by the Civis run that started it."""
     grouped: dict[str, list[dict]] = defaultdict(list)
     for row in rows:
         if row.get("run_id"):
@@ -157,6 +163,8 @@ def summarize_scan_runs(rows: list[dict]) -> list[ScanRun]:
     for run_id, items in grouped.items():
         newest = max(items, key=lambda r: (str(r.get("recorded_at") or ""), r.get("status") != "running"))
         final = [r for r in items if r.get("status") != "running"]
+        oldest_first = sorted(items, key=lambda r: (str(r.get("recorded_at") or ""), r.get("status") != "running"))
+        first_civis = next((r["civis_run_id"] for r in oldest_first if r.get("civis_run_id") is not None), None)
         try:
             parameters = json.loads(newest.get("parameters") or "{}")
         except ValueError:
@@ -170,11 +178,10 @@ def summarize_scan_runs(rows: list[dict]) -> list[ScanRun]:
                 civis_run_id=newest.get("civis_run_id"),
                 scanning_user=newest.get("scanning_user_name"),
                 parameters=parameters if isinstance(parameters, dict) else {},
+                first_civis_run_id=first_civis,
             )
         )
     scans.sort(key=lambda s: s.started_at or datetime.min.replace(tzinfo=timezone.utc))
-    for index, scan in enumerate(scans, start=1):
-        scan.ordinal = index
     return list(reversed(scans))
 
 
