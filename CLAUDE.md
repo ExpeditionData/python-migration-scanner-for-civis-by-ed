@@ -60,7 +60,7 @@ be made public at any time.
   credential. Rob changes its visibility himself; never change it from a
   session.
 - Releases are git tags, protected by the "release tags" ruleset. The first
-  live test set up on `v0.1.0-rc5` and runs its scans on `v0.1.0-rc9`, with
+  live test set up on `v0.1.0-rc5` and runs its scans on `v0.1.0-rc10`, with
   `LOOKBACK_DAYS` 30. Create a tag or a GitHub Release only when Rob's prompt
   says to.
 - Commit after each completed step, with a clear message that says what changed
@@ -184,7 +184,14 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   default image tag and its major tag counted as the default image, an
   archived custom script run by a workflow read as a custom script, the
   Scan history link's working message, and Findings' "How to read this
-  page". The build under test is `v0.1.0-rc9`, with `LOOKBACK_DAYS` 30.
+  page". Scan C on `v0.1.0-rc9` succeeded in 22 minutes, but every
+  notebook was refused with HTTP 403 and live progress stopped when Civis's
+  "Cookie expired." page replaced the app frame. Fixed for `v0.1.0-rc10`
+  (docs/PLAN.md 17.9): a fresh notebook link right before each download,
+  live progress that stops with one line instead of reloading the frame,
+  run labels by Civis run ID that stay the same after retention, and a busy
+  cue on every same-tab app link. The build under test is `v0.1.0-rc10`,
+  with `LOOKBACK_DAYS` 30.
   Implementation choices not in the approved plan are in docs/PLAN.md
   sections 10 to 17.
 - **App flow.** `app/__init__.create_app` -> `app/services.py` (Civis or local
@@ -203,9 +210,21 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   link the backing script only when it is in the same scan (its stored
   link; no URL pattern is guessed), and filter by template ID; the Overview
   shows the next scan's window, the scripts left out, and the templates with
-  findings. `app/static/js/busy.js` shows "Working. This can take up to a
-  minute." for slow actions (the Setup and Scan history links among them),
-  and `app/static/js/run-scan.js` starts a scan
+  findings. Each scan is labeled "Civis run <ID>" by the Civis run that
+  started it (`ScanRun.first_civis_run_id`, from the earliest `scan_runs` row
+  with one, so a resumed scan keeps it), or "Scan <run ID>" with none; the
+  label stays the same when retention removes older runs, and
+  `ScanRun.civis_run_id` (the newest row's) still drives Download CSV
+  (docs/PLAN.md 17.9). `app/static/js/busy.js` shows a short busy cue for a
+  plain click on a same-origin link that loads another app page in the same
+  tab, and for every form sent except Run scan: " Loading" beside the link
+  or the submit button, `aria-busy` on main, and the `is-loading` body class
+  (progress cursor, main at 0.9 opacity). Download CSV links have
+  `data-no-busy`; new-tab, modified, hash, and download links get no cue,
+  nor does anything while the checklist has unsaved changes. Links and forms
+  with `data-busy` (the Setup and Scan history links among them) also show
+  "Working. This can take up to a minute." Coming back from history clears
+  everything (docs/PLAN.md 17.9). `app/static/js/run-scan.js` starts a scan
   from the Overview without a reload (`POST /scan/start` answers JSON when
   asked) and polls the status API only while a run is starting or active.
   `app/static/js/status-requests.js`, loaded before `run-scan.js` and
@@ -246,7 +265,13 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   reads an item's own git file through the Civis API: a git-backed workflow's
   definition during inventory (`workflows.get_git` is called for every active
   workflow), and a git-backed Python script's file in `process_item` when
-  there is no token or GitHub fails. The file call returns a JSON array with
+  there is no token or GitHub fails. A notebook's file is downloaded from a
+  link asked for right before the download (`retrieval/notebooks.NotebookLinks`
+  calls `notebooks.get` through the `BudgetedClient`): each link expires 5
+  minutes after Civis issues it, so inventory does not keep `notebook_url`. A
+  download refused with HTTP 403 or 400 gets one more link and one more
+  download; a failed `notebooks.get` leaves the notebook not scanned with a
+  short reason (docs/PLAN.md 17.9). The file call returns a JSON array with
   one object (`content` as plain text, `fileHash`, `size`, `type` "file"),
   which civis 2.10 turns into a `ListResponse`; `_file_text` accepts it and
   the spec's one object (several items: the one file with content, else
@@ -256,9 +281,11 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   whole-number column fails the load. An object whose code was not read but
   whose log was is partial. The final `RUN` log line adds `objects_total`,
   `objects_scanned`, `api_calls`, `github_tarball_requests`,
-  `github_cache_peak_bytes`, `github_cache_evictions`, `civis_git_reads`, and
-  `civis_git_failures`, so calls per object, memory use, and Civis git reads
-  can be measured in a live test. Failed Civis git reads also get a
+  `github_cache_peak_bytes`, `github_cache_evictions`, `civis_git_reads`,
+  `civis_git_failures`, `notebook_links` (`notebooks.get` calls for
+  downloads, retries included), and `notebook_link_retries` (second links
+  after a refused download), so calls per object, memory use, Civis git
+  reads, and notebook links can be measured in a live test. Failed Civis git reads also get a
   `CIVIS_GIT_FAILED` line. The GitHub file cache is capped at 1 GB of text
   (`CACHE_MAX_BYTES`) with least-recently-used eviction.
 - **Scanner users, hidden objects, retries, FATAL (docs/PLAN.md 17.5).**
@@ -404,8 +431,19 @@ Run the full suite on both Python versions before every commit:
 
 - `tests/test_security.py` proves the SECURITY.md requirements: no secret or
   personal data from logs, code, or notebook output reaches any output,
-  malicious schema names are rejected, keys in exceptions are redacted, and
-  values from Civis render as text in the web app.
+  no notebook link (host, bucket, query string, or signature) reaches a log
+  line, table row, CSV line, or exception text, malicious schema names are
+  rejected, keys in exceptions are redacted, and values from Civis render as
+  text in the web app.
+- `tests/test_notebook_links.py` covers the fresh notebook link (docs/PLAN.md
+  17.9): the synthetic `notebooks.get` signs a new link on every call on a
+  `SyntheticClock` (`scanner/synthetic/links.py`), and the synthetic file
+  host refuses a link more than 300 seconds old with 403 AccessDenied
+  ("Request has expired"). `dry_run(..., file_clock=)` shares one clock;
+  `notebook_download_statuses` and a notebook's `_get_errors` force answers.
+  The tests cover a dry run whose code scan starts 301 seconds after
+  inventory, the 403 and 400 retry, no retry for other statuses, a failed
+  link call, the counts, a resumed run, and no extra calls for other types.
 
 - Unit tests make no Civis or network calls. Inventory tests use the
   synthetic client in `scanner/synthetic/` (re-exported by
@@ -455,8 +493,13 @@ Run the full suite on both Python versions before every commit:
   states.
 - `tests/test_app.py` covers every page and API, CSRF on every POST, escaping
   of hostile object names, security headers, the concurrent-run guard, the
-  batched checklist save, the empty and error states, text contrast, and local
-  preview mode, and the templates display and filter.
+  batched checklist save, the empty and error states, text contrast (also
+  in the busy cue's dimmed state), `data-no-busy` on every download link,
+  and local preview mode, and the templates display and filter.
+- `tests/test_run_labels.py` covers the run labels (docs/PLAN.md 17.9): the
+  same after the oldest runs are removed, a resumed scan's first Civis run
+  ID, the "Scan <run ID>" fallback, the preview's four scans (Civis runs 501
+  to 504), and no numbered "Run N" label left.
 - `tests/test_read_counts.py` checks how many `civis.io` reads each page
   sends, cold and warm, and the `query_civis` preview limit, fallback,
   conversion, and request memo. The recording fake's `query_civis` answers a
@@ -474,7 +517,13 @@ Run the full suite on both Python versions before every commit:
   polling and two in a row stop with the stop line, a success resets the
   count, no reload and no `sessionStorage` use on either page (hidden or
   visible, every storage mode), a turned-away POST shows its message and is
-  sent once, and the reload when a scan finishes (docs/PLAN.md 17.9).
+  sent once, and the reload when a scan finishes (docs/PLAN.md 17.9). The
+  stand-in page also has a small DOM (nesting, `createElement`,
+  `insertBefore`, `classList`, `closest`, tag and attribute selectors) and a
+  page address, for the busy cue tests: nav, pagination, Clear filters, a
+  filter form, and Save changes get the cue; new-tab, modified, hash, and
+  download links and the Run scan form do not; `data-busy` gets the cue and
+  the message; pageshow clears it; a second click adds nothing.
 - `tests/test_default_tags.py` covers the default-image rule for every
   object type (current tag, major tag, patch and older tags, tags on the
   wrong image, spaces, a tag inside the image name), the

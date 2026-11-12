@@ -359,7 +359,9 @@ cancelled or hit the 5-day limit for container scripts):
    in the last year, a scan was estimated at about 20 minutes with the
    default request budget. A full audit (`LOOKBACK_DAYS` of 3650) of an
    organization that size can take several hours. You can close the app; the
-   scan keeps running.
+   scan keeps running. Scan history labels each scan by the Civis run ID of
+   the scanner run that started it (for example "Civis run 12345"), so the
+   label stays the same when older runs are deleted.
 4. When the scan finishes, review the Overview, Inventory, and Findings pages.
    Change checklist statuses on the Findings page and click **Save changes**.
    Each change is saved with your Civis user name and the time.
@@ -384,12 +386,14 @@ saves it on new objects that do not choose one. A patch tag such as `9.1.1`
 names a fixed image, so its findings are Advisory. The Findings page's "How
 to read this page" explains impact, confidence, and status.
 
-**If progress stops updating.** Civis has asked for the page to be reloaded:
-Civis's proxy in front of the Service uses a cookie that expires after some
-minutes, and only a page load renews it. When that happens, the app reloads
-the page itself, about once a minute at most, and after a few tries it asks
-you to reload the page. Civis's "Cookie expired." message on the Service's
-page is the same thing: reload the page.
+**If progress stops updating.** Live progress updates on its own for a few
+minutes after the Civis page loads. Then Civis's session for the page
+expires: Civis's proxy in front of the Service uses a cookie that lasts about
+5 to 6 minutes, and only a reload of the whole Civis page renews it. The app
+then stops updating and says so. To see the latest progress, reload the whole
+Civis page with the browser's reload button (F5 on Windows). Reloading only
+the app's frame does not help. Civis's "Cookie expired." message on the
+Service's page means the same thing: reload the whole Civis page.
 
 ### The CSV report
 

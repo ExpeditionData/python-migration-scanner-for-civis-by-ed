@@ -16,14 +16,21 @@ README setup and every fact that could not be confirmed from documentation
   `error=CivisAPIError status=403`) are fine to record; they hold no content.
 - If something you would need to record looks like client content, write
   "content withheld" and describe it in general terms instead.
-- **Release tag:** scans use `v0.1.0-rc9`, with `LOOKBACK_DAYS` set to `30`
+- **Release tag:** scans use `v0.1.0-rc10`, with `LOOKBACK_DAYS` set to `30`
   on the scanner job. Setup (section 1) was done on `v0.1.0-rc5` and passed,
   and it stays: before the next scan, move the scanner job and the Service to
-  `v0.1.0-rc9` by changing their tag only (README "Update to a new release",
+  `v0.1.0-rc10` by changing their tag only (README "Update to a new release",
   steps 2 to 4). The scanner job keeps its `LOOKBACK_DAYS` parameter with the
   value `30` (add it as an optional Integer parameter if it is missing). The
   Overview then says a scan checks scripts that ran or changed in the last 30
-  days. `v0.1.0-rc9` follows `v0.1.0-rc8` because scans A and B on
+  days. `v0.1.0-rc10` follows `v0.1.0-rc9` because scan C on `v0.1.0-rc9`
+  succeeded but every notebook was refused with HTTP 403 and live progress
+  stopped when Civis's "Cookie expired." page replaced the app frame
+  (docs/PLAN.md 17.9): the scanner now asks Civis for a fresh notebook link
+  right before each download, live progress stops with one line instead of
+  reloading the app frame, scans are labeled by their Civis run ID, and
+  every same-tab app link shows a short "Loading" cue.
+  `v0.1.0-rc9` follows `v0.1.0-rc8` because scans A and B on
   `v0.1.0-rc8` succeeded but found four problems and two small requests
   (docs/PLAN.md 17.8): notebook files on Amazon S3 FIPS hosts are now
   downloaded, the progress pages reload themselves when Civis's proxy turns a
@@ -52,9 +59,9 @@ README setup and every fact that could not be confirmed from documentation
   no rows, and the shape of the Civis sharing lists. `v0.1.0-rc4` followed
   `v0.1.0-rc3` because of two safety guards: Run scan starts only this tool's
   scanner job, and the tool refuses a results schema that holds anything
-  else. Use `v0.1.0-rc9` wherever the README says `<release tag>` from now on.
-  Item 5.6 (update to a new release) waits for the first release tag after
-  `v0.1.0-rc9`.
+  else. Use `v0.1.0-rc10` wherever the README says `<release tag>` from now
+  on. Item 5.6 (update to a new release) waits for the first release tag
+  after `v0.1.0-rc10`.
 - **Browser:** Chrome, Edge, or Firefox. Safari ignores the report-only frame
   rule (the optional items 2.2 and 2.3).
 
@@ -63,7 +70,7 @@ README setup and every fact that could not be confirmed from documentation
 1. Section 1 (setup) on `v0.1.0-rc5`, with no GitHub token attached to the
    scanner job. Done.
 2. Section 2 (frame rule), then the Setup page again (end of item 1.10).
-   Then move the scanner job and the Service to `v0.1.0-rc9` (tag only), check
+   Then move the scanner job and the Service to `v0.1.0-rc10` (tag only), check
    that the scanner job's `LOOKBACK_DAYS` is `30`, and check that the Setup
    page's lines 2 and 4 still pass. Line 7 passes too, or is "review" instead
    of a pass when Civis added the deploying user's GitHub token to the Service
@@ -78,7 +85,7 @@ README setup and every fact that could not be confirmed from documentation
    results.
 
 Item 5.6 is not part of this run. It waits for the first release tag after
-`v0.1.0-rc9`.
+`v0.1.0-rc10`.
 
 ## Prepare the test organization
 
@@ -297,20 +304,28 @@ Only for troubleshooting, or if item 2.1 failed.
 
 ### 3.3 Progress
 
-- **Steps:** Watch the Scan history page.
+- **Steps:** Open the Scan history page when the scan starts and watch it.
+  When the stop line shows, reload the whole Civis page with the browser's
+  reload button (F5 on Windows), not only the app's frame, and watch again.
 - **Expected:** Inventory with a moving count ("1. Inventory" shows "N of M
   objects" while it reads the scripts in the window, after a few minutes of
   listing), then Code and log scan with a moving count, then Save results.
-  The card updates without a manual reload. When Civis's proxy turns a status
-  request away (its cookie expired), the page may reload itself, about once a
-  minute at most (docs/PLAN.md 17.8). After 3 reloads in a row with no update
-  in between, it stops and shows "Progress stopped updating because Civis
-  asked for the page to be reloaded. Reload this page to see the latest
-  progress." On the Overview, the Run scan button comes back when the scan
-  ends.
+  The card updates on its own for the first few minutes after the Civis page
+  loads. When Civis's session for the page expires (its proxy cookie lasts
+  about 5 to 6 minutes), the card stops updating and shows "Progress stopped
+  updating because the Civis session for this page expired. To see the
+  latest progress, reload the whole Civis page with the browser's reload
+  button (F5 on Windows). Reloading only this frame does not help." The app
+  does not replace its frame with Civis's "Cookie expired." page
+  (docs/PLAN.md 17.9). A reload of the whole Civis page brings current counts,
+  and the card updates on its own again for a few minutes. On the Overview,
+  the Run scan button comes back when the scan ends, or the same stop line
+  shows under it.
 - **Record:** pass or fail for each: the inventory count moved, the code scan
-  count moved, the Overview button came back. Also yes or no: the page
-  reloaded itself; the stop line appeared.
+  count moved, the Overview button came back (or its stop line showed). Also
+  yes or no: the card updated on its own at first; the stop line appeared;
+  the frame showed "Cookie expired."; a reload of the whole Civis page
+  brought current counts.
 
 ### 3.4 Scan results
 
@@ -333,7 +348,8 @@ Only for troubleshooting, or if item 2.1 failed.
   Civis API request the scanner sent through its request budget. Table writes
   and the CSV upload are not counted (a few calls per checkpoint).
 - **Expected:** About 3 to 4 per object (section 5 estimates 3, plus about 1
-  for each Python script, PLAN.md 10.4), plus 1 for each active workflow
+  for each Python script, PLAN.md 10.4), plus 1 for each Python notebook
+  (its fresh file link, `notebook_links`; PLAN.md 17.9), plus 1 for each active workflow
   (`workflows.get_git`, including workflows that only run other jobs and so
   are not counted in `objects_total`), plus up to 2 for each git-backed Python
   script or workflow read through Civis (`civis_git_reads` plus
@@ -368,8 +384,13 @@ Only for troubleshooting, or if item 2.1 failed.
   keeps its own cache, so a page may be slow once per worker.
 - **Expected:** Each page loads. The first load reads the result tables, so it
   can take longer than later loads. The Service stays healthy while it loads.
+- **Busy cue:** while you click through, check that a nav link, an Apply
+  filters button, and a Next page link show "Loading" beside them at once,
+  with the progress cursor, until the next page arrives (docs/PLAN.md 17.9).
+  A Download CSV link shows no cue.
 - **Record:** seconds per page; the slowest first page load in seconds; whether
-  any page load failed or timed out (yes or no, with the error code if shown).
+  any page load failed or timed out (yes or no, with the error code if shown);
+  the busy cue line in the results template.
 
 ## 4. Facts to confirm (PLAN.md "confirm in Phase 7")
 
@@ -384,19 +405,30 @@ Only for troubleshooting, or if item 2.1 failed.
 - **Record:** pass, fail, or "none to test" per type. If one fails, record the
   path Civis uses for that type, with the ID replaced by `<id>`.
 
-### 4.2 Notebook download host (PLAN.md 12.4)
+### 4.2 Notebook downloads (PLAN.md 12.4 and 17.9)
 
 - **Steps:** On the Inventory page, filter to notebooks. Count notebooks that
-  were scanned and notebooks whose reason is "The notebook file could not be
+  were scanned, notebooks whose reason is "The notebook file could not be
   downloaded. The link points to a host the scanner is not allowed to
-  contact."
-- **Expected:** Every notebook with a file was scanned; none refused for its host.
-- **Record:** both counts. If any were refused, open one notebook in Civis with
-  the browser's Network tab open, find the request that downloads the `.ipynb`
+  contact.", notebooks whose reason is "The notebook file could not be
+  downloaded. The request was refused (HTTP 403).", and notebooks with any
+  other reason. Read `notebook_links` and `notebook_link_retries` from the
+  test summary's `run_line`.
+- **Expected:** Python notebooks with a file are scanned; none refused for
+  their host or with HTTP 403. `notebook_links` is about the number of Python
+  notebooks (one fresh link each, right before its download), and
+  `notebook_link_retries` is 0 or small (a second link after a refused
+  download). On `v0.1.0-rc8`, all 58 notebooks were refused for the FIPS
+  host form, which `v0.1.0-rc9` accepts. On `v0.1.0-rc9`, all 58 were refused
+  with HTTP 403, because the link read during Inventory had expired 5 minutes
+  after Civis issued it, long before the download.
+- **Record:** the four counts; `notebook_links` and `notebook_link_retries`.
+  If any were refused for their host, open one notebook in Civis with the
+  browser's Network tab open, find the request that downloads the `.ipynb`
   file, and record only the shape of its host with the account parts replaced
   (for example `<bucket>.s3.<region>.amazonaws.com` or
-  `<bucket>.s3-fips.<region>.amazonaws.com`). On `v0.1.0-rc8`, all 58
-  notebooks were refused for the FIPS form, which `v0.1.0-rc9` accepts.
+  `<bucket>.s3-fips.<region>.amazonaws.com`). For any other reason, record it
+  in general terms (it holds no content).
 
 ### 4.3 Missing schema after setup (PLAN.md 14.11 and 17.2)
 
@@ -417,7 +449,8 @@ Only for troubleshooting, or if item 2.1 failed.
 
 - **Steps:** After at least two scans, pick the older run's ID (the
   `run_id=` value in the `RUN run_id=... status=running` line near the top of
-  that run's log, or from the test summary's select list). In a Civis query
+  that run's log, or from the test summary's select list, which shows each
+  scan as "Civis run <ID> (<run ID>)"). In a Civis query
   against the results database, count that run's rows in each of the five
   tables, run the manual deletion SQL from SECURITY.md for that run ID, and
   count again. Run the query with the `RESULTS_DB` credential, since its
@@ -584,12 +617,12 @@ Only for troubleshooting, or if item 2.1 failed.
 
 ### 5.6 Update to a new release, and removal
 
-This item waits for the first release tag after `v0.1.0-rc9`. It is not part
+This item waits for the first release tag after `v0.1.0-rc10`. It is not part
 of this run.
 
 - **Steps:**
   1. Follow README "Update to a new release" to move both objects from
-     `v0.1.0-rc9` to the new tag. Its last step ("Run a new scan") is a new
+     `v0.1.0-rc10` to the new tag. Its last step ("Run a new scan") is a new
      scan from the app.
   2. Optional, at the end of that test: follow README "Remove the tool".
 - **Expected:** Each step works as written. After the update, the Service
@@ -621,7 +654,7 @@ item 5.7 pasted below it. Counts and redacted error types only.
 
 ```
 Python Migration Scanner: first live test results
-Release tag: v0.1.0-rc5 (setup), v0.1.0-rc9 (scans, LOOKBACK_DAYS 30)
+Release tag: v0.1.0-rc5 (setup), v0.1.0-rc10 (scans, LOOKBACK_DAYS 30)
 Date (MM/DD/YYYY):
 Browser:
 
@@ -649,8 +682,9 @@ Item  Result (pass/fail/skipped)  Counts or note
 2.3   seen/not seen
 3.1   guard:
 3.2   Scan history shows Robot user: yes/no   job run started by Robot user: yes/no
-3.3   inventory count moved:  code scan count moved:  Overview button came back:
-      page reloaded itself: yes/no   stop line appeared: yes/no
+3.3   inventory count moved:  code scan count moved:  Overview button came back (or stop line):
+      updated on its own at first: yes/no   stop line appeared: yes/no
+      frame showed "Cookie expired.": yes/no   whole-page reload brought current counts: yes/no
 3.4   status=  minutes=  lookback_days=  objects_total=  objects_scanned=  api_calls=
       civis_git_reads=  civis_git_failures=
       inventory (from the summary, per type): listed=  kept=  outside_window=  template_copies=  not_python=
@@ -661,7 +695,8 @@ Item  Result (pass/fail/skipped)  Counts or note
 3.6   other lines=   kind (general terms):   error types: (line type, error type, and count)
 3.7   seconds: overview=  inventory=  findings=  slowest=   any failed or timed out: yes/no
 4.1   python3=  custom=  notebooks=  services=  workflows=  dbt=
-4.2   notebooks scanned=  refused for host=   host shape (if any):
+4.2   notebooks scanned=  refused for host=  refused HTTP 403=  other reason=   host shape (if any):
+      notebook_links=  notebook_link_retries=
 4.3   missing schema state (Setup line 9, Overview):   restored:
 4.4   per table rows before/after:
 4.5   runs before=  after=
@@ -681,8 +716,9 @@ Item  Result (pass/fail/skipped)  Counts or note
       step 3 edit by Robot user: yes/no   resumed run shows Robot user: yes/no
       step 4 edit by Robot user: yes/no   next run shows Robot user: yes/no
 5.5   minutes to wake=
-5.6   waits for the first tag after v0.1.0-rc9
+5.6   waits for the first tag after v0.1.0-rc10
 5.7   built:  copied (button/by hand):  sent:  looked like a name: yes/no
+Busy cue: a nav link, a filter, and a pagination link show "Loading" at once: yes/no
 
 Error types seen (from the scanner's log only), with counts:
 Anything that did not match the README (general terms only):
