@@ -43,9 +43,9 @@ README setup and every fact that could not be confirmed from documentation
   read no git-backed file through Civis (docs/PLAN.md 17.7): whole numbers
   are now written as whole numbers in the result tables, the git file is read
   from the list Civis returns, the Run scan message shows under the button,
-  and the Overview says "No completed scan yet" after a cancelled scan.
+  and the Overview says "No completed scan yet" after a canceled scan.
   `v0.1.0-rc7` follows `v0.1.0-rc6` because Scan A on `v0.1.0-rc6` was still
-  in Inventory after about 1.5 hours and was cancelled (docs/PLAN.md 17.6):
+  in Inventory after about 1.5 hours and was canceled (docs/PLAN.md 17.6):
   template copies are inventoried once, only scripts that ran or changed in
   the `LOOKBACK_DAYS` window are read (default 400 days), inventory logs its
   counts and progress, the app reads small results faster and shows progress
