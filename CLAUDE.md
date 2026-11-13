@@ -176,7 +176,7 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   `v0.1.0-rc8` (docs/PLAN.md 17.7): typed result frames (whole numbers as
   `Int64`, booleans as `true`/`false`), the git file read from the list
   Civis returns, the Run scan message under the button, "No completed scan
-  yet" after a cancelled scan, and the frame rule enforced by default.
+  yet" after a canceled scan, and the frame rule enforced by default.
   Scans A and B on `v0.1.0-rc8` succeeded with identical counts, and found
   four problems and two small requests, fixed for `v0.1.0-rc9` (docs/PLAN.md
   17.8): notebook files on S3 FIPS hosts, the progress pages reloading
@@ -191,7 +191,9 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   live progress that stops with one line instead of reloading the frame,
   run labels by Civis run ID that stay the same after retention, and a busy
   cue on every same-tab app link. The build under test is `v0.1.0-rc10`,
-  with `LOOKBACK_DAYS` 30.
+  with `LOOKBACK_DAYS` 30. Phase 7 testing on `v0.1.0-rc10` is done except
+  a scan with a GitHub token, and the docs were updated from the live test
+  (docs/PLAN.md 17.10).
   Implementation choices not in the approved plan are in docs/PLAN.md
   sections 10 to 17.
 - **App flow.** `app/__init__.create_app` -> `app/services.py` (Civis or local
