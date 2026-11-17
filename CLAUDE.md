@@ -193,7 +193,9 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   cue on every same-tab app link. The build under test is `v0.1.0-rc10`,
   with `LOOKBACK_DAYS` 30. Phase 7 testing on `v0.1.0-rc10` is done except
   a scan with a GitHub token, and the docs were updated from the live test
-  (docs/PLAN.md 17.10).
+  (docs/PLAN.md 17.10). Post-test build part 1 (the busy cue's look,
+  "Canceled" in UI text, the Findings sideways scroll at phone width, and
+  the CSV link for a run left running) is done (docs/PLAN.md 17.11).
   Implementation choices not in the approved plan are in docs/PLAN.md
   sections 10 to 17.
 - **App flow.** `app/__init__.create_app` -> `app/services.py` (Civis or local
@@ -219,14 +221,24 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   `ScanRun.civis_run_id` (the newest row's) still drives Download CSV
   (docs/PLAN.md 17.9). `app/static/js/busy.js` shows a short busy cue for a
   plain click on a same-origin link that loads another app page in the same
-  tab, and for every form sent except Run scan: " Loading" beside the link
-  or the submit button, `aria-busy` on main, and the `is-loading` body class
-  (progress cursor, main at 0.9 opacity). Download CSV links have
+  tab, and for every form sent except Run scan: the `is-busy-trigger` class
+  on the clicked link or the form's submit button (gray `--busy-trigger`, no
+  underline or hover change, progress cursor; a primary button gets a gray
+  background; the button is never disabled), `aria-busy` on main, and the
+  `is-loading` body class (progress cursor, main at 0.7 opacity, the lowest
+  that keeps every text pair in main at 3 to 1; no text is added;
+  docs/PLAN.md 17.11). Download CSV links have
   `data-no-busy`; new-tab, modified, hash, and download links get no cue,
   nor does anything while the checklist has unsaved changes. Links and forms
   with `data-busy` (the Setup and Scan history links among them) also show
   "Working. This can take up to a minute." Coming back from history clears
-  everything (docs/PLAN.md 17.9). `app/static/js/run-scan.js` starts a scan
+  everything, the trigger's class too (docs/PLAN.md 17.9). Scan history also
+  links the CSV of a scan whose newest `scan_runs` row is "running" once
+  Civis has ended its run, and a run with no CSV output gets the error page
+  "This scan has no CSV report. It stopped before saving one." (status 404;
+  docs/PLAN.md 17.11). `.table-wrap` is `position: relative`, so it clips
+  the `.sr-only` text in its table and no page scrolls sideways at phone
+  width. `app/static/js/run-scan.js` starts a scan
   from the Overview without a reload (`POST /scan/start` answers JSON when
   asked) and polls the status API only while a run is starting or active.
   `app/static/js/status-requests.js`, loaded before `run-scan.js` and
@@ -491,13 +503,18 @@ Run the full suite on both Python versions before every commit:
   git file call answers a list with one object by default (`"file_shape":
   "object"` gives the spec's shape). `tests/test_typed_columns.py`,
   `tests/test_left_behind_run.py`, and `tests/test_empty_states.py` cover
-  the typed frames, a run left by the old failure, and the Overview's empty
-  states.
+  the typed frames, a run left by the old failure (and its CSV link and
+  no-report page, docs/PLAN.md 17.11), and the Overview's empty states.
 - `tests/test_app.py` covers every page and API, CSRF on every POST, escaping
   of hostile object names, security headers, the concurrent-run guard, the
-  batched checklist save, the empty and error states, text contrast (also
-  in the busy cue's dimmed state), `data-no-busy` on every download link,
-  and local preview mode, and the templates display and filter.
+  batched checklist save, the empty and error states, text contrast (4.5 to
+  1; in the busy cue's dimmed state, 3 to 1 for every text color in main,
+  with the opacity the lowest that keeps it; the trigger gray at 4.5 to 1 on
+  the header and nav), the trigger CSS rules, `data-no-busy` on every
+  download link, no "cancelled" in any page's shown text in any preview
+  state, every table and its `.sr-only` text inside a `.table-wrap`, the
+  preview's canceled scan's CSV link and no-report page, and local preview
+  mode, and the templates display and filter.
 - `tests/test_run_labels.py` covers the run labels (docs/PLAN.md 17.9): the
   same after the oldest runs are removed, a resumed scan's first Civis run
   ID, the "Scan <run ID>" fallback, the preview's four scans (Civis runs 501
@@ -522,10 +539,13 @@ Run the full suite on both Python versions before every commit:
   sent once, and the reload when a scan finishes (docs/PLAN.md 17.9). The
   stand-in page also has a small DOM (nesting, `createElement`,
   `insertBefore`, `classList`, `closest`, tag and attribute selectors) and a
-  page address, for the busy cue tests: nav, pagination, Clear filters, a
-  filter form, and Save changes get the cue; new-tab, modified, hash, and
-  download links and the Run scan form do not; `data-busy` gets the cue and
-  the message; pageshow clears it; a second click adds nothing.
+  page address, for the busy cue tests: nav, pagination, and Clear filters
+  links and the submit buttons of a filter form and Save changes get the
+  `is-busy-trigger` class, the buttons stay enabled, and nothing is added
+  to the page (no " Loading" text); new-tab, modified, hash, and download
+  links and the Run scan form get no cue; `data-busy` gets the cue and the
+  message; pageshow clears it; a second click adds nothing (docs/PLAN.md
+  17.11).
 - `tests/test_default_tags.py` covers the default-image rule for every
   object type (current tag, major tag, patch and older tags, tags on the
   wrong image, spaces, a tag inside the image name), the

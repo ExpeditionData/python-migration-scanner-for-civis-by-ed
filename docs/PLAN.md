@@ -1113,7 +1113,7 @@ Counts, statuses, and error types only.
 - `boolean_text` accepts only a bool (Python's or numpy's) or None. Anything else, including 0, 1, and the text "true", is `ColumnValueError`, so a wrong type is found in the tests, not written.
 - The fake's BOOLEAN check accepts only `true`, `false`, and empty, because Redshift's COPY rules for other spellings were not read in this session. The old frame also wrote Python's `True` and `False` for BOOLEAN columns, which the strict check refuses. Whether the live load also refused those is not known; the objects table is the only table with BOOLEAN columns and the one whose load failed. Either way, the new frame writes `true` and `false`.
 - `SqliteSink` is unchanged, since SQLite accepts floats; the dry-run test runs every batch through `table_frame` and the CSV check as well.
-- A run left by the old failure has its CSV report on its Civis run, but Scan history offers no CSV link for it, because its only `scan_runs` row is "running" (a link needs `succeeded` or `tables_failed`). Unchanged.
+- A run left by the old failure has its CSV report on its Civis run, but Scan history offers no CSV link for it, because its only `scan_runs` row is "running" (a link needs `succeeded` or `tables_failed`). Unchanged. **Changed by 17.11, Part D:** the link shows once Civis has ended the run.
 
 #### Part B: the git file read from the list Civis returns
 
@@ -1391,3 +1391,70 @@ TESTING.md changes "canceled" in prose only. Its Order step 2 and item 1.10 alre
 #### Not changed
 
 - UI text (for example the Scan history status label "Cancelled") waited for the next tagged build: 17.11, Part B changed it to "Canceled". No code, tests, or SECURITY.md.
+
+### 17.11 Post-test build, part 1: app look and small fixes (November 17, 2026)
+
+**Why.** The first live test of `v0.1.0-rc10` is finished. This is the first of four post-test parts that make up one build, which gets one new tag later and a retest with a fresh install. This part changes the web app only: the busy cue's look, "Canceled" in UI text, a sideways scroll on Findings at phone width, and a CSV link for a run left with only a "running" row. Requested by Rob on November 17, 2026. No tag.
+
+#### What the live test showed
+
+- **Busy cue.** The cue worked, but the " Loading" text beside the link label looked odd, and the progress cursor and main at 0.9 opacity went unnoticed (Rob).
+- **Spelling.** Scan history's status label read "Cancelled" (17.10, "Not changed").
+- **Phone width.** At 390 px wide, Findings scrolled sideways as a whole page in the local preview on `v0.1.0-rc9` and `v0.1.0-rc10`; the Overview did not.
+- **Left-behind run.** A scan whose only `scan_runs` row is "running" while its Civis run has ended had no CSV link (17.7.5), although the scanner may have attached its CSV before it stopped.
+
+#### Part A: busy cue look
+
+| # | Change | Status |
+|---|---|---|
+| 17.11.1 | `app/static/js/busy.js` adds no text: the " Loading" span is gone. It puts the class `is-busy-trigger` on the clicked link, or on the sent form's submit button (the `submitter`, else the form's submit button, else a `button[form=<id>]`, as before). The button is not given `disabled`, so the form still sends its name and value. A second click adds nothing, and `pageshow` (coming back from history) removes the class with the rest of the cue. | Decided by Rob on November 12, 2026 |
+| 17.11.2 | `app.css`: a new custom property, `--busy-trigger` (`#595959`). The trigger link is that gray with no underline, no hover change (a nav link that is not the active one keeps no hover background), and the progress cursor. A secondary button gets gray text and border on `--surface`; a primary button gets a gray background with white text. | Decided by Rob on November 12, 2026 |
+| 17.11.3 | Main dims to opacity **0.7**, not the 0.6 asked for: at 0.6, `--muted` on `--bg` is 2.51 to 1, below the 3 to 1 floor. 0.7 is the lowest opacity, in steps of 0.01, that keeps every text pair in main at 3 to 1; at 0.69, `--muted` on `--bg` is 2.95. Kept: `aria-busy="true"` on main, the `is-loading` body class and the progress cursor, the "Working. This can take up to a minute." line for `data-busy` links and forms, and no cue for Run scan, new-tab, modified, hash, download, and `data-no-busy` links, or while the checklist has unsaved changes. | Decided by Rob on November 12, 2026 |
+| 17.11.4 | Contrast (`tests/test_app.py`). WCAG 1.4.3 exempts text in an inactive part of the interface, and main is inactive while the next page loads, so `test_busy_dimming_keeps_text_contrast` now has a floor of 3 to 1 for every pair in the contrast list and for the gray in main, blended over `--bg` at the dimmed opacity, and checks that one step lower fails. The lowest dimmed pairs at 0.7: `--muted` on `--bg` 3.02, on `--stripe` 3.05, on `--surface` 3.17; `--fixed` on `--success-bg` 3.13; the gray on `--error-bg` 3.15 and on `--info-bg` 3.17. New `test_busy_trigger_gray_meets_4_5_to_1_outside_main`: the gray undimmed on `--surface` (the header) 7.00, `--stripe` 6.68, and `--nav-active-bg` (the active nav link) 6.19, and white on the gray 7.00. New `test_busy_trigger_rules_gray_the_link_or_button_without_disabling_it` checks the CSS rules and that `busy.js` never disables a button. | Decided by Rob on November 12, 2026 |
+| 17.11.5 | `tests/test_scripts_js.py`: the stand-in page reports each element's classes and how many elements the script added. Every check of the " Loading" span is now a check of the trigger's class (the link, the Apply filters button, Save changes, and the storage form's button), plus a check that nothing was added; the submit buttons stay enabled. Every other busy cue test is kept. TESTING.md's busy cue item and results line say the link or button turns gray. | Decided by Rob on November 12, 2026 |
+
+**Implementation choices, for review:**
+
+- The gray is `#595959`, darker than the first choice (`#5f5f5f`), so it also keeps 3 to 1 dimmed on the banner backgrounds, where a banner's app link can sit (`#5f5f5f` gave 2.96 on `--error-bg`).
+- The trigger rules are scoped with `body.is-loading`, which busy.js sets at the same moment, so they win over the nav, banner, and button rules without `!important`.
+- A form with no submit button found gets the rest of the cue with no gray element. The app has no such form.
+
+#### Part B: "Canceled" in UI text
+
+| # | Change | Status |
+|---|---|---|
+| 17.11.6 | Shown text now says "canceled": Scan history's status label "Canceled" (`app/views._status_label`), the Overview's empty state "The last scan was canceled before it finished. Run the scan again." (`app/pages._empty_state`), and Setup line 10 "The newest scan was canceled." (`app/setup.py`). The test summary's sentences and the CSV report's notes had no such word. | Requested by Rob on November 17, 2026 |
+| 17.11.7 | "cancelled" is kept wherever it is a value: Civis's run state and every comparison with it (`app/views.py`, `app/pages.py`), the `latest_state` values (`app/setup.LATEST_STATES` and the Setup line 10 table key), the local preview state `first-scan-cancelled` and the synthetic runs' state, comments that name the state, and identifiers (for example `CANCELLED` in `tests/test_empty_states.py`). No table column, stored value, or log key has the word. | Requested by Rob on November 17, 2026 |
+| 17.11.8 | Tests: no page in any local preview state shows "cancelled" as text (the test summary's text box, which holds allow-list values, is left out); the canceled scan's label and Setup line; the values are unchanged; and the two tests that checked the empty state's sentence. 17.10's "Not changed" line says this part changed it. | Requested by Rob on November 17, 2026 |
+
+#### Part C: Findings scrolls sideways at 390 px
+
+| # | Change | Status |
+|---|---|---|
+| 17.11.9 | **Cause.** `.sr-only` is absolutely positioned. The status labels in Findings' Status column (and the screen reader text of Scan history's CSV links) had no positioned ancestor, so their containing block was the page, and the `.table-wrap` scroll box did not clip them. Placed at the table's right edge (Findings' table is at least 1000 px wide), they widened the page: Findings was 957 px wide at 390 px, and Scan history 874 px. The Overview, Inventory, and Setup have no `.sr-only` text inside a table, so they did not scroll. | Requested by Rob on November 17, 2026 |
+| 17.11.10 | **Fix.** `.table-wrap { overflow-x: auto; position: relative; }`, so the box is that text's containing block and clips it. Measured in headless Edge at 390 px (device metrics set through its DevTools protocol) on the local preview: the Overview, Findings (open and all), Inventory, Scan history, Setup, and the test summary are 390 px wide in the normal state, and the five pages in nine other states (`no-scan`, `first-scan-running`, `first-scan-cancelled`, `failed`, `tables-failed`, `schema-refused`, `setup-failures`, `not-scanner-job`, `schema-shared`). | Requested by Rob on November 17, 2026 |
+| 17.11.11 | Tests (`tests/test_app.py`): the `.table-wrap` rule and the `.sr-only` rule's `position: absolute`; every table, and every `.sr-only` element inside a table, sits in a `.table-wrap` on every page in five preview states. | Requested by Rob on November 17, 2026 |
+
+#### Part D: CSV link for a run left with only a "running" row
+
+| # | Change | Status |
+|---|---|---|
+| 17.11.12 | `app/views.history` shows the CSV link (with `data-no-busy` and the same screen reader text) also for a scan whose newest `scan_runs` row is "running" and whose Civis run is listed and not active (failed or canceled). Scan history makes no new API call. | Requested by Rob on November 17, 2026 |
+| 17.11.13 | The download route (`app/pages.download`) answers a run with no CSV output with the app's normal error page, status 404, titled "No CSV report", with "This scan has no CSV report. It stopped before saving one." The route still refuses another job's run outputs: a `SCANNER_JOB_ID` that is not this tool's job reads no outputs, and a run whose outputs cannot be read (for example a run of another job) gets the plain 404 page, as before. `error_page` renders both. No new civis call. | Requested by Rob on November 17, 2026 |
+| 17.11.14 | Tests (`tests/test_left_behind_run.py`, `tests/test_app.py`): the link shows for a failed or canceled run left running, with no outputs call, and not for a queued or running one; the download redirects when the run attached a CSV; the no-report page, its title, text, and status, with no outputs or with outputs that are not a CSV; another job's run is still refused. The local preview's existing `first-scan-cancelled` state shows the case: Scan history links Civis run 504's CSV, and the link opens the no-report page. No new preview state. README "The CSV report" says when the link shows. | Requested by Rob on November 17, 2026 |
+
+**Implementation choices, for review:**
+
+- A scan whose Civis run is not in the listed runs gets no link, because the app cannot tell whether that run is still active (for example when the runs list could not be read).
+- `/download/latest` uses the same route, so a newest completed scan with no CSV output also gets the no-report page instead of the plain 404.
+
+#### Part E: docs
+
+| # | Change | Status |
+|---|---|---|
+| 17.11.15 | This section, and notes in 17.7 (Part A's choices) and 17.10 ("Not changed"). CLAUDE.md (the busy cue in "App flow", the test entries for `test_scripts_js.py` and `test_app.py`, and the status). README "The CSV report" (Part D). SECURITY.md describes none of these four parts, so it is unchanged. | Requested by Rob on November 17, 2026 |
+
+#### Not changed
+
+- The scanner, the request budget, civis calls, SQL statements, and the Content Security Policy. No inline scripts or styles.
+- Legal text and SECURITY.md "By design".
