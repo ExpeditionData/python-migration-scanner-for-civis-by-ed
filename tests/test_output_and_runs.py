@@ -93,7 +93,8 @@ def test_config_reads_every_parameter_and_hides_the_token():
     }
     config = ScanConfig.from_env(env)
     assert (config.credential_id, config.lookback_days, config.max_concurrency, config.request_budget) == (77, 120, 8, 300)
-    assert (config.retention_days, config.run_id, config.civis_job_id, config.civis_run_id) == (365, "run-20261013T120000Z-abc123", 5, 9)
+    # RUN_ID is no longer read (docs/PLAN.md 17.13): the scanner decides by itself whether to resume.
+    assert (config.retention_days, config.run_id, config.civis_job_id, config.civis_run_id) == (365, None, 5, 9)
     assert "ghp_" not in repr(config) and "ghp_" not in config.parameters_json()
     assert '"github_token_attached": true' in config.parameters_json()
     assert ScanConfig.from_env({**BASE_ENV, "RETENTION_DAYS": "0"}).retention_days is None
@@ -108,13 +109,19 @@ def test_config_reads_every_parameter_and_hides_the_token():
         ({**BASE_ENV, "MAX_CONCURRENCY": "64"}, "MAX_CONCURRENCY must be between 1 and 16"),
         ({**BASE_ENV, "LOOKBACK_DAYS": "abc"}, "LOOKBACK_DAYS must be a whole number"),
         ({**BASE_ENV, "REQUEST_BUDGET": "5000"}, "REQUEST_BUDGET"),
-        ({**BASE_ENV, "RUN_ID": "x'; DROP"}, "RUN_ID"),
     ],
 )
 def test_config_errors_name_the_parameter_not_the_value(env, message):
     with pytest.raises(ConfigError, match=re.escape(message)) as excinfo:
         ScanConfig.from_env(env)
     assert "DROP" not in str(excinfo.value)
+
+
+def test_a_left_over_run_id_is_not_validated_or_used():
+    """A job set up on an earlier release may still have RUN_ID, with any value. It is ignored (docs/PLAN.md
+    17.13), so even a value that is not a run ID does not stop the scan."""
+    config = ScanConfig.from_env({**BASE_ENV, "RUN_ID": "x'; DROP"})
+    assert config.run_id is None and "DROP" not in config.parameters_json()
 
 
 # --- Sinks and the CSV report -------------------------------------------------------------

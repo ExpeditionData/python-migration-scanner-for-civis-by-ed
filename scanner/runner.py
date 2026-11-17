@@ -2,8 +2,10 @@
 
 Steps:
 
-1. Create the tables if they are missing, and record the run as "running".
-   On a rerun with the same run ID, read which objects are already done.
+1. Create the tables if they are missing. Decide whether to resume the newest
+   stopped scan (common/resume.py, docs/PLAN.md 17.13) and log one RESUME line.
+   On a resume, keep its run ID, read which objects are already done, and use
+   its first start. Then record the run as "running".
 2. Inventory every object (see scanner/inventory).
 3. Scan each remaining object in a thread pool (MAX_CONCURRENCY), writing a
    checkpoint every 500 objects or 10 minutes, with PROGRESS log lines.
@@ -34,10 +36,11 @@ import secrets
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from common import resume
 from common.disclaimer import DISCLAIMER
 from common.models import CoverageItem, ObjectType, ScanStatus
 from common.retention import expired_run_ids
@@ -194,7 +197,6 @@ def _run_scan(
     step("schema_check")
     timeouts_before = request_timeouts()  # This run's share of the process's timed-out requests.
     started = now()
-    run_id = config.run_id or new_run_id(started)
     # Before anything is created or written (tables, rows, retention deletes, the CSV): the results schema
     # must hold nothing but this tool's five tables. If it holds other tables or views, stop. If the check
     # itself fails, write no tables (as when a table write fails) and still save the CSV to this run.
@@ -206,10 +208,9 @@ def _run_scan(
             other, check_error = 0, exc
         if other:
             raise SchemaNotDedicated(other)
-    scan_log.run_status(run_id, "running")
     step("tables")
     tables = _Tables(sink)
-    state.tables, state.run_id = tables, run_id
+    state.tables = tables
     if check_error is not None:
         def failed_check():
             raise check_error
@@ -217,11 +218,26 @@ def _run_scan(
         tables.run("scan_runs", failed_check)  # Logs TABLE_WRITE_FAILED and turns every table write off.
     tables.run("scan_runs", sink.ensure_tables if sink else lambda: None)
 
+    # Resume the newest stopped scan, or start a new one (common/resume.py, docs/PLAN.md 17.13). The decision
+    # reads only: the scan_runs rows, one Civis run, and whether the scan saved its summary rows. It never
+    # stops the scan.
+    budget = budget or RequestBudget(config.request_budget, 300.0)
+    civis = BudgetedClient(client, budget)
+    decision = _resume_decision(config, sink, tables, civis, started)
+    if decision.resume:
+        config = replace(config, run_id=decision.run_id)
+        scan_log.resume(decision.run_id, decision.resumes + 1)
+    else:
+        scan_log.resume(reason=decision.reason)
+    run_id = config.run_id or new_run_id(started)
+    scan_log.run_status(run_id, "running")
+    state.run_id = run_id
+
     finished: set[int] = set()
     previous: dict[str, list[dict]] = {"objects": [], "findings": [], "coverage": []}
     if config.run_id and tables.ok:
         if tables.run("scan_runs", lambda: sink.latest_status(run_id)) == "succeeded":
-            raise AlreadyFinished(run_id)
+            raise AlreadyFinished(run_id)  # Only a dry run's --run-id can name a finished scan.
         finished = tables.run("objects", lambda: sink.finished_object_ids(run_id)) or set()
         previous = tables.run("objects", lambda: sink.run_rows(run_id)) or previous
         first_start = [s for r, s in (tables.run("scan_runs", sink.run_starts) or []) if r == run_id]
@@ -229,8 +245,6 @@ def _run_scan(
             started = first_start[0].replace(tzinfo=timezone.utc) if first_start[0].tzinfo is None else first_start[0]
 
     step("scanning_user")
-    budget = budget or RequestBudget(config.request_budget, 300.0)
-    civis = BudgetedClient(client, budget)
     user_id, user_name = scanning_user(civis)
     civis_git = CivisGitFiles(civis)
     notebook_links = NotebookLinks(civis)
@@ -357,6 +371,59 @@ def _run_scan(
     for row in all_objects:
         result.statuses[row["scan_status"]] = result.statuses.get(row["scan_status"], 0) + 1
     return result
+
+
+def _resume_decision(config: ScanConfig, sink: ResultSink | None, tables: _Tables, civis: Any,
+                     now: datetime) -> resume.Decision:
+    """Resume the newest stopped scan, or start a new scan with a reason (common/resume.py).
+
+    Reads only: the scan_runs rows, then (only for a stopped scan) its newest Civis run with
+    ``scripts.get_containers_runs`` through the request budget, then (only when everything else allows a
+    resume) whether it already saved its summary rows. Unusable tables give "tables_unavailable", and any read
+    that fails gives "read_failed": the scan never stops over this decision, and a failed read does not turn
+    the table writes off. A dry run's --run-id resumes that run as before."""
+    if sink is None or not tables.ok:
+        return (resume.Decision(True, run_id=config.run_id) if config.run_id
+                else resume.Decision.new("tables_unavailable"))
+    try:
+        rows = sink.scan_run_rows()
+    except Exception:
+        return resume.Decision(True, run_id=config.run_id) if config.run_id else resume.Decision.new("read_failed")
+    if config.run_id:
+        mine = resume.newest_scan(r for r in rows if r.get("run_id") == config.run_id)
+        return resume.Decision(True, run_id=config.run_id, resumes=mine.resumes if mine else 0)
+    scan = resume.newest_scan(rows)
+    runs: dict[int, resume.CivisRun] = {}
+    stopped = scan is not None and not scan.finished and scan.status in resume.STOPPED_STATUSES
+    newest = scan.newest_civis_run_id if stopped else None
+    # Only a run of this job is read. A run of another job, or a scan with no Civis run (a dry run), stays
+    # unknown, which starts a new scan.
+    if newest is not None and config.civis_job_id is not None and scan.civis_job_id == config.civis_job_id:
+        try:
+            run = civis.scripts.get_containers_runs(config.civis_job_id, newest)
+        except Exception:
+            return resume.Decision.new("read_failed")
+        # Only the state and the end time are kept; nothing else from the response (it can hold an error text).
+        runs[newest] = resume.CivisRun(_field(run, "state"), resume.moment(_field(run, "finished_at")))
+    known = {"version": __version__, "lookback_days": config.lookback_days,
+             "github_attached": bool(config.github_token)}
+    decision = resume.decide(rows, now, civis_runs=runs, **known)
+    if not decision.resume:
+        return decision
+    try:
+        saved = sink.has_summary_rows(decision.run_id)
+    except Exception:
+        return resume.Decision.new("read_failed")
+    return resume.decide(rows, now, civis_runs=runs, results_saved=saved, **known)
+
+
+def _field(response: Any, name: str) -> Any:
+    """A field of a civis Response (attribute) or a plain dict (key)."""
+    if isinstance(response, dict):
+        value = response.get(name)
+    else:
+        value = getattr(response, name, None)
+    return value if isinstance(value, str) or value is None else str(value)
 
 
 def _safe_process(item, deps: ScanDeps) -> ObjectResult:

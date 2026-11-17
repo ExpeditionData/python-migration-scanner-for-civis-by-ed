@@ -39,6 +39,8 @@ from common.schema import (
 )
 
 _VARCHAR = re.compile(r"VARCHAR\((\d+)\)")
+# The scan_runs columns the resume decision reads (common/resume.py, docs/PLAN.md 17.13).
+RESUME_COLUMNS = "run_id, started_at, status, tool_version, parameters, civis_job_id, civis_run_id, recorded_at"
 
 
 class SchemaNotDedicated(Exception):
@@ -160,6 +162,8 @@ class ResultSink(Protocol):
     def finished_object_ids(self, run_id: str) -> set[int]: ...
     def run_rows(self, run_id: str) -> dict[str, list[dict]]: ...
     def latest_status(self, run_id: str) -> str | None: ...
+    def scan_run_rows(self) -> list[dict]: ...  # The resume decision's columns of every scan_runs row.
+    def has_summary_rows(self, run_id: str) -> bool: ...  # The run already saved its coverage summary rows.
     def checklist_pairs(self) -> set[tuple[int, str]]: ...
     def run_starts(self) -> list[tuple[str, datetime]]: ...
     def delete_runs(self, run_ids: list[str]) -> None: ...
@@ -225,6 +229,16 @@ class SqliteSink:
             (run_id,),
         )
         return newest_status(rows)
+
+    def scan_run_rows(self) -> list[dict]:
+        return self._select(f"SELECT {RESUME_COLUMNS} FROM {sql.qualified_table(self.schema, SCAN_RUNS.name)}")
+
+    def has_summary_rows(self, run_id: str) -> bool:
+        rows = self._select(
+            f"SELECT COUNT(*) AS summary_rows FROM {sql.qualified_table(self.schema, COVERAGE.name)} "
+            "WHERE run_id = ? AND row_kind = 'summary'", (run_id,),
+        )
+        return bool(rows and rows[0]["summary_rows"])
 
     def checklist_pairs(self) -> set[tuple[int, str]]:
         rows = self._select(f"SELECT DISTINCT object_id, rule_id FROM {sql.qualified_table(self.schema, CHECKLIST_STATUS.name)}")
@@ -347,6 +361,18 @@ class CivisSink:
             f"SELECT status, recorded_at FROM {sql.qualified_table(self.schema, SCAN_RUNS.name)} WHERE run_id = {sql.run_id(run_id)}"
         )
         return newest_status(rows)
+
+    def scan_run_rows(self) -> list[dict]:
+        """Text values, as read_civis_sql returns them; common/resume.py reads them as text."""
+        return self._read(f"SELECT {RESUME_COLUMNS} FROM {sql.qualified_table(self.schema, SCAN_RUNS.name)}")
+
+    def has_summary_rows(self, run_id: str) -> bool:
+        rows = self._read(
+            f"SELECT COUNT(*) AS summary_rows FROM {sql.qualified_table(self.schema, COVERAGE.name)} "
+            f"WHERE run_id = {sql.run_id(run_id)} AND row_kind = 'summary'"
+        )
+        value = str(rows[0].get("summary_rows") or "0").strip() if rows else "0"
+        return value.isdigit() and int(value) > 0
 
     def checklist_pairs(self) -> set[tuple[int, str]]:
         rows = self._read(f"SELECT DISTINCT object_id, rule_id FROM {sql.qualified_table(self.schema, CHECKLIST_STATUS.name)}")

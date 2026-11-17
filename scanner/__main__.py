@@ -31,7 +31,7 @@ from typing import Any
 
 from common.redact import install_redaction
 from scanner import scan_log
-from scanner.config import ConfigError, ScanConfig
+from scanner.config import ConfigError, ScanConfig, run_id_left_over
 from scanner.output import SchemaNotDedicated
 from scanner.runner import AlreadyFinished, RunResult, ScanFailed, run_scan
 
@@ -57,6 +57,11 @@ def dry_run(out: Path, fixture: Path | None = None, now: datetime | None = None,
     ``github_token=None`` runs without a GitHub token, the normal setup, and
     ``file_clock`` (a scanner.synthetic.links.SyntheticClock) is the clock the
     synthetic notebook links are issued and checked on.
+
+    Without ``run_id``, the run makes the same resume decision as a live scan
+    (common/resume.py). It can resume only when ``civis_job_id`` and
+    ``civis_run_id`` are set and the synthetic instance's ``container_runs``
+    holds the stopped scan's Civis run; otherwise it starts a new scan.
     """
     from scanner.output import LocalRunOutputs, SqliteSink
     from scanner.synthetic import FIXTURES, FakeClient, SyntheticSession
@@ -113,6 +118,10 @@ def live_run() -> RunResult:
     config = ScanConfig.from_env()
     if not (config.civis_job_id and config.civis_run_id):
         raise ConfigError("A live scan runs only inside Civis, as a container script. Use --dry-run on a local machine.")
+    if run_id_left_over():
+        # A job set up on an earlier release. The scanner now decides by itself whether to resume
+        # (common/resume.py, docs/PLAN.md 17.13), so the value is not used.
+        scan_log.run_id_ignored()
     import civis  # In the scanner image.
 
     from scanner.output import CivisRunOutputs, CivisSink
@@ -163,7 +172,8 @@ def main(argv: list[str] | None = None) -> int:
         scan_log.schema_not_dedicated(exc.count)  # One FATAL line; nothing was written.
         return 2
     except AlreadyFinished:
-        print("That run ID already finished. Start a new scan without RUN_ID.", file=sys.stderr)
+        print("That run ID already finished. Run the dry run again without --run-id to start a new scan.",
+              file=sys.stderr)
         return 2
     except SimulatedStop:
         print("Stopped on purpose after the requested number of objects. Rerun with --run-id to resume.", file=sys.stderr)

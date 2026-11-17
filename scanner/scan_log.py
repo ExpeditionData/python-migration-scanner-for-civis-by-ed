@@ -27,6 +27,9 @@ Line formats (parsed by the web app to show progress):
     FATAL error=CivisAPIError status=404 step=inventory_users
     FATAL error=SchemaNotDedicated reason=results_schema_holds_other_tables_or_views other_objects=3
     TABLE_WRITE_FAILED table=findings error=CivisAPIError status=403
+    RESUME decision=new reason=last_scan_finished
+    RESUME decision=resume run_id=run-20261013T120000Z-a1b2c3 resumes=1
+    RUN_ID_IGNORED
     RUN run_id=run-20261013T120000Z-a1b2c3 status=running
     RUN run_id=run-20261013T120000Z-a1b2c3 status=succeeded objects_total=2000 objects_scanned=2000 api_calls=6120 github_tarball_requests=14 github_cache_peak_bytes=52428800 github_cache_evictions=0 civis_git_reads=37 civis_git_failures=2 notebook_links=41 notebook_link_retries=1 request_timeouts=0
 
@@ -73,6 +76,14 @@ API requests that ended in a timeout (scanner/ratelimit.py,
 install_request_timeout; docs/PLAN.md 17.12). Like the other counts, a resumed
 run counts only its own calls.
 
+RESUME: logged once, right before the "RUN ... status=running" line: whether
+this run resumes the newest stopped scan (common/resume.py, docs/PLAN.md
+17.13). decision=resume gives the scan's run ID and this resume's number (1
+for the first); decision=new gives a fixed reason from common.resume.REASONS.
+RUN_ID_IGNORED: a live scan found a non-empty RUN_ID environment variable (a
+job set up on an earlier release). It is not used; the scanner decides by
+itself whether to resume.
+
 REQUEST_TIMEOUT: logged once by a live scan before the client is made, with
 the connect and read timeouts in seconds, or installed=no when this civis
 version has no open_session to wrap.
@@ -86,6 +97,7 @@ import sys
 
 from common.models import ObjectType
 from common.redact import install_redaction
+from common.resume import REASONS as RESUME_REASONS
 
 LOGGER_NAME = "scanner"
 PHASES = frozenset({"inventory", "code", "logs", "output", "retention"})
@@ -254,6 +266,24 @@ def request_timeout(installed: bool, connect: int | None = None, read: int | Non
         _logger.info("REQUEST_TIMEOUT installed=no")
     else:
         raise ValueError("installed must be True or False")
+
+
+def resume(run_id: str | None = None, resumes: int | None = None, reason: str | None = None) -> None:
+    """Whether this run resumes the newest stopped scan: its run ID and this resume's number, or a new scan
+    with a fixed reason from common.resume.REASONS. Never names or text from Civis."""
+    if run_id is not None:
+        if reason is not None or not isinstance(run_id, str) or not _RUN_ID.match(run_id):
+            raise ValueError("invalid resume line")
+        _logger.info("RESUME decision=resume run_id=%s resumes=%d", run_id, _count(resumes, "resumes"))
+        return
+    if reason not in RESUME_REASONS or resumes is not None:
+        raise ValueError("unknown resume reason")
+    _logger.info("RESUME decision=new reason=%s", reason)
+
+
+def run_id_ignored() -> None:
+    """The environment still has a RUN_ID (a job set up on an earlier release). It is not used."""
+    _logger.warning("RUN_ID_IGNORED")
 
 
 def output_failed(exc: BaseException) -> None:

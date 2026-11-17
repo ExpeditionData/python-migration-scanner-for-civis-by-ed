@@ -282,6 +282,20 @@ class FakeClient:
     def _workflows__get_git_commits(self, object_id, commit_hash):
         return self._git_file(f"workflows/{object_id}", commit_hash)
 
+    def _scripts__get_containers_runs(self, job_id, run_id):
+        """One run of a container script, for the resume decision (docs/PLAN.md 17.13). ``container_runs`` maps
+        "<job ID>/<run ID>" to the run's state and times, which a test can set; a run that is not there answers
+        404, and ``_error`` raises that status instead."""
+        run = self.data.get("container_runs", {}).get(f"{job_id}/{run_id}")
+        if run is None:
+            raise FakeAPIError(404)
+        if run.get("_error") in TIMEOUT_ERRORS:
+            raise made_up_timeout(run["_error"])
+        if run.get("_error"):
+            raise FakeAPIError(run["_error"])
+        return {"id": run_id, "container_id": job_id, "is_cancel_requested": False, "error": None,
+                "created_at": None, "started_at": None, "finished_at": None, **_public(run)}
+
     def _jobs__get(self, job_id):
         return self._get(self.data.get("jobs", {}), job_id)
 

@@ -2,7 +2,8 @@
 
 Drives every code path that sends SQL, with a recording fake civis.io:
 
-- the scanner's result sink: create tables, appends, resume reads, and the RETENTION_DAYS deletes
+- the scanner's result sink: create tables, appends, resume reads (the resume decision's scan_runs
+  and summary-row reads too), and the RETENTION_DAYS deletes
 - the app's reads (every page), the checklist save, the "Set up results storage" button,
   the Setup page, and the test summary
 
@@ -126,10 +127,14 @@ def test_scanner_sink_statements_stay_in_the_results_schema():
     sink.latest_status("run-1")
     sink.checklist_pairs()
     sink.run_starts()
+    sink.scan_run_rows()  # The resume decision (docs/PLAN.md 17.13): SELECTs only.
+    sink.has_summary_rows("run-1")
     sink.delete_runs(["run-0", "run-1"])
     _assert_in_scope(io, "results_scan")
     kinds = {s.split()[0] for s in io.statements}
     assert kinds == {"CREATE", "SELECT", "DELETE"}
+    resume_reads = [s for s in io.statements if s.startswith("SELECT ") and ("civis_run_id" in s or "'summary'" in s)]
+    assert len(resume_reads) == 2
 
 
 def test_scanner_appends_go_only_to_results_tables():

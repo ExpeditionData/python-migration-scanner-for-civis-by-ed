@@ -12,10 +12,15 @@ Civis exposes each container script parameter as an environment variable
 | MAX_CONCURRENCY | Integer, default 4 | MAX_CONCURRENCY |
 | REQUEST_BUDGET | Integer, default 500 per 5 minutes | REQUEST_BUDGET |
 | RETENTION_DAYS | Integer, blank keeps every run | RETENTION_DAYS |
-| RUN_ID | String, optional, resumes that run | RUN_ID |
 
 Civis also sets CIVIS_JOB_ID and CIVIS_RUN_ID for the running job. "DATABASE"
 is reserved by Civis, so the Database parameter is called RESULTS_DB.
+
+RUN_ID is no longer read (docs/PLAN.md 17.13): the scanner decides by itself
+whether to resume the newest stopped scan (common/resume.py). A job set up on
+an earlier release may still have it; ``run_id_left_over`` tells the live run
+to log RUN_ID_IGNORED. ``ScanConfig.run_id`` is set only by a dry run's
+``--run-id`` (local resume tests) and by the runner when it resumes a scan.
 
 Error messages name the parameter, never its value.
 """
@@ -24,7 +29,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
@@ -32,7 +36,6 @@ from common import sql
 from common.release import DEFAULT_LOOKBACK_DAYS, LOOKBACK_DAYS_RANGE
 DEFAULT_MAX_CONCURRENCY = 4
 DEFAULT_REQUEST_BUDGET = 500
-_RUN_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 class ConfigError(ValueError):
@@ -86,10 +89,6 @@ class ScanConfig:
                 "starting with a letter or underscore."
             ) from None
 
-        run_id = (env.get("RUN_ID") or "").strip() or None
-        if run_id is not None and not _RUN_ID.match(run_id):
-            raise ConfigError("RUN_ID must contain only letters, numbers, hyphens, and underscores.")
-
         retention = _int(env, "RETENTION_DAYS", None, 0, 36500)
         return cls(
             database=database,
@@ -100,10 +99,15 @@ class ScanConfig:
             max_concurrency=_int(env, "MAX_CONCURRENCY", DEFAULT_MAX_CONCURRENCY, 1, 16),
             request_budget=_int(env, "REQUEST_BUDGET", DEFAULT_REQUEST_BUDGET, 10, 1000),
             retention_days=retention or None,
-            run_id=run_id,
             civis_job_id=_int(env, "CIVIS_JOB_ID", None, 1, None),
             civis_run_id=_int(env, "CIVIS_RUN_ID", None, 1, None),
         )
+
+
+def run_id_left_over(env: Mapping[str, str] | None = None) -> bool:
+    """True when the environment still has a non-empty RUN_ID, from a job set up on an earlier release."""
+    env = os.environ if env is None else env
+    return bool((env.get("RUN_ID") or "").strip())
 
 
 def _int(env: Mapping[str, str], name: str, default: int | None, low: int, high: int | None) -> int | None:
