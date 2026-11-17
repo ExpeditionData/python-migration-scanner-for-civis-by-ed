@@ -11,7 +11,9 @@ default image update (Python 3.14 to 3.15, civis-python v2 to v3). A scanner
 job (a Civis container script) inventories objects, reads their code and recent
 logs, and writes findings to a schema the user chooses. A Flask web app (a Civis
 Service) launches scans, shows progress and results, and lets the team track a
-fix checklist. The tool is read-only on every Civis object. The code is licensed
+fix checklist. The scanner and the app are read-only on every Civis object; an
+install script that an admin runs by hand creates and updates the scanner job
+and the Service. The code is licensed
 under Apache 2.0 by Expedition Data LLC and is written so the repository could
 be made public at any time.
 
@@ -70,12 +72,13 @@ be made public at any time.
 - Default branch is `main`. Remote is `origin`
   (`ExpeditionData/python-migration-scanner-for-civis-by-ed`). The repository is public
   (since November 2, 2026), because both Civis objects clone it with no git
-  credential. Rob changes its visibility himself; never change it from a
-  session.
+  credential and admins copy the install script from a release tag. Rob
+  changes its visibility himself; never change it from a session.
 - Releases are git tags, protected by the "release tags" ruleset. The first
-  live test set up on `v0.1.0-rc5` and runs its scans on `v0.1.0-rc10`, with
-  `LOOKBACK_DAYS` 30. Create a tag or a GitHub Release only when Rob's prompt
-  says to.
+  live test set up on `v0.1.0-rc5` and ran its scans on `v0.1.0-rc10`, with
+  `LOOKBACK_DAYS` 30; it is finished. The post-test build waits for tag
+  `v0.1.0-rc11` and a retest with a fresh install. Create a tag or a GitHub
+  Release only when Rob's prompt says to.
 - Commit after each completed step, with a clear message that says what changed
   and why.
 - Before every commit, review the staged files (`git diff --cached --name-only`
@@ -106,10 +109,37 @@ be made public at any time.
 The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
 2026). Where the plan and older notes differ, the plan wins. Summary:
 
-- **Three packages, one repo.** `scanner/` (container script, `python -m scanner`),
-  `app/` (Flask Service, `gunicorn "app:create_app()"`), and `common/` (shared
-  rules, models, table schemas, URL builders, disclaimer). Civis clones the repo
-  to `/app` for both objects.
+- **Three packages and an install script, one repo.** `scanner/` (container
+  script, `python -m scanner`), `app/` (Flask Service,
+  `gunicorn "app:create_app()"`), and `common/` (shared rules, models, table
+  schemas, URL builders, disclaimer). Civis clones the repo to `/app` for both
+  objects. The fourth part, `install/civis_install.py`, is not a package: an
+  admin pastes it into a Civis Python script and runs it by hand.
+- **Install script (docs/PLAN.md 17.14).** Standard library and `civis` only
+  (civis 2.10 on Civis's default Python image), no import from this repo,
+  `main(client, settings=None)`. Settings at the top (`MODE` "check" by
+  default, "install", or "update"; `TAG`; `RESULTS_DATABASE`,
+  `RESULTS_CREDENTIAL`, `RESULTS_SCHEMA` for install; `GITHUB_CREDENTIAL`,
+  `LOOKBACK_DAYS`, `RETENTION_DAYS`; `JOB_ID` and `SERVICE_ID` for update;
+  `INSTALL_SERVICE_ONLY`). Every check runs before the first write. Install:
+  `scripts.post_containers` (name, `required_resources`, image, tag,
+  command), `scripts.patch_containers` (repository, tag, `params`,
+  `arguments` with `RESULTS_DB` in the `object` shape), `services.post`
+  (name, image, tag), `services.patch` (repository, tag, three variables,
+  `schedule` `{"runtimePlan": "on_demand", "recurrences": []}`, no
+  credentials); nested keys are camelCase because civis passes nested dicts
+  as given. Update: identity checks read fresh before each patch, only the
+  fields that differ, `RESULTS_DB` and `RESULTS_SCHEMA` kept and checked,
+  `RUN_ID` removed. Output: `CHECK`, `PLAN`, `WRITE`, `RESULT`, `RECOVER`,
+  `NEXT`, and one `KEEP IN CIVIS:` line with the new IDs. Its constants must
+  equal `common/release.py` (a test checks each).
+- **Resource profiles** (`common/release.ResourceProfile`). With a GitHub
+  token: CPU 1000, memory 4096 MB, disk 4 GB. Without one: CPU 500, memory
+  2048 MB, disk 1 GB. Both add 512 MB per `MAX_CONCURRENCY` thread above 4.
+  The install script picks one from `GITHUB_CREDENTIAL` (on update with
+  `None`, from the job's `GITHUB` value), and Setup line 2 checks the job
+  against the one that matches its `GITHUB` value (below fail, above
+  warning).
 - **Scanner job.** Runs on `civisanalytics/datascience-python:9.1.1` (Python
   3.14.6, civis 2.10.0). Installs nothing at run time. Inventories Python scripts,
   container scripts, custom scripts, notebooks, Services, and workflows; reads
@@ -215,7 +245,9 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   a timeout on Civis requests, and the Inventory progress wording) is done
   (docs/PLAN.md 17.12). Post-test build part 3 (resume a stopped scan
   without editing the job; `RUN_ID` is no longer used) is done
-  (docs/PLAN.md 17.13).
+  (docs/PLAN.md 17.13). Post-test build part 4 (the install script and the
+  setup rewrite) is done (docs/PLAN.md 17.14); the build waits for tag
+  `v0.1.0-rc11` and a retest with a fresh install.
   Implementation choices not in the approved plan are in docs/PLAN.md
   sections 10 to 17.
 - **App flow.** `app/__init__.create_app` -> `app/services.py` (Civis or local
@@ -439,7 +471,13 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
 Constraints to keep in mind when writing code:
 
 - `app/` and `common/` may only call civis methods that exist in civis 2.7.1. A
-  unit test enforces this.
+  unit test enforces this. `install/civis_install.py` runs on civis 2.10 and
+  may call only its four write methods and the listed reads
+  (`tests/test_install_script.py`).
+- App text that cites the README names the section in quotes and its step
+  numbers (README "Install", step 8). `tests/test_readme_citations.py` fails if
+  a cited section or step is missing, so change citations in the same commit
+  as the README.
 - `common/` must run on Python 3.12 and 3.14.
 - Never store, log, or output code snippets. Fetched code stays in memory or a
   temp directory deleted at the end of the run.
@@ -580,6 +618,20 @@ Run the full suite on both Python versions before every commit:
   `scripts.get_containers_runs` answers from `container_runs`
   (`"<job ID>/<run ID>": {state, finished_at}`; 404 when missing, `_error`
   for a status or timeout).
+- `tests/test_install_script.py` drives the install script with a recording
+  fake civis client (18 scenarios): every call exists in the civis 2.10 API
+  spec and binds with its arguments (skipped on civis 2.7.1), only the four
+  write calls and the listed reads, every patch to an object read right
+  before it or just created, refused jobs and Services with no write, check
+  mode writing nothing, install's post and patch fields for each token case,
+  update keeping the results settings and removing `RUN_ID`, the recovery
+  lines, no marker from names, credentials, or error messages in any printed
+  line, no SQL or `civis.io`, the constants against `common/release.py`, and
+  standard-library and `civis` imports only. `tests/test_install_boundary.py`
+  checks that `scanner/`, `app/`, and `common/` never import it.
+- `tests/test_readme_citations.py` parses every README section and numbered
+  step that a string in `app/` cites (README "<section>", step N) and fails
+  if one is missing or a citation leaves its section unquoted.
 - `tests/test_users_timeout.py` covers a timeout on the "all" users list
   (falls back to active, `reason=timeout`), on both lists, a timeout then a
   404, a 500 still FATAL, the summary's `users_list` values, and no
