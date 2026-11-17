@@ -205,7 +205,7 @@ def test_overview_counts_partly_scanned_objects(app):
 
 def test_scan_page_progress_and_history(app):
     page = text_of(app.test_client().get("/scan"))
-    assert "Scanning code and logs: 40 of 103 objects" in page
+    assert "Scanning code and logs: 40 of 103 Python objects" in page
     assert "1. Inventory" in page and "2. Code and log scan" in page and "3. Save results" in page
     for status in ("In progress", "Completed", "Failed"):
         assert status in page
@@ -664,7 +664,7 @@ def test_progress_parsing_and_view():
     ])
     assert (progress.scan_run_id, progress.done, progress.total, progress.last_id) == ("run-9", 50, 200, 6)
     view = views.progress_view(JobRun(9, "running", "2026-10-14T12:00:00Z"), progress)
-    assert view["headline"] == "Scanning code and logs: 50 of 200 objects" and view["percent"] == 25
+    assert view["headline"] == "Scanning code and logs: 50 of 200 Python objects" and view["percent"] == 25
     assert view["eta"] == "About 31 minutes left"
 
 
@@ -1034,8 +1034,8 @@ def test_progress_view_shows_inventory_n_of_m_while_it_runs():
     ])
     assert (progress.inventory_done, progress.inventory_total) == (50, 301)
     view = views.progress_view(JobRun(9, "running", "2026-10-14T12:00:00Z"), progress)
-    assert view["headline"] == "Inventory: 50 of 301 objects read"
-    assert view["steps"][0] == {"name": "1. Inventory", "state": "Running", "detail": "50 of 301 objects"}
+    assert view["headline"] == "Inventory: checking 50 of 301 listed objects"
+    assert view["steps"][0] == {"name": "1. Inventory", "state": "Running", "detail": "50 of 301 listed objects checked"}
     assert view["percent"] == 0
 
     progress.feed([
@@ -1045,8 +1045,11 @@ def test_progress_view_shows_inventory_n_of_m_while_it_runs():
         LogLine(9, "PROGRESS phase=code objects_done=0 objects_total=280", "2026-10-14T12:08:00Z"),
     ])
     view = views.progress_view(JobRun(9, "running", "2026-10-14T12:00:00Z"), progress)
-    assert view["steps"][0] == {"name": "1. Inventory", "state": "Done", "detail": "280 Python objects listed"}
-    assert view["headline"] == "Scanning code and logs: 0 of 280 objects"
+    assert view["steps"][0] == {"name": "1. Inventory", "state": "Done", "detail": "280 Python objects found"}
+    assert view["steps"][1] == {"name": "2. Code and log scan", "state": "Running", "detail": "0 of 280 Python objects"}
+    assert view["headline"] == "Scanning code and logs: 0 of 280 Python objects"
+    # The counts are not changed (docs/PLAN.md 17.12): no old wording is left.
+    assert "objects read" not in json.dumps(view) and "objects listed" not in json.dumps(view)
 
 
 def test_scan_history_and_the_status_api_show_inventory_progress(monkeypatch):
@@ -1071,10 +1074,10 @@ def test_scan_history_and_the_status_api_show_inventory_progress(monkeypatch):
     services = civis_services(Settings(scanner_job_id=1234), client_factory=lambda: client, io_factory=lambda: io)
     app = create_app({"SECRET_KEY": SECRET, "SERVICES": services, "TESTING": True})
     data = app.test_client().get("/api/scan-status").get_json()
-    assert data["state"] == "running" and data["headline"] == "Inventory: 100 of 301 objects read"
-    assert data["steps"][0] == {"name": "1. Inventory", "state": "Running", "detail": "100 of 301 objects"}
+    assert data["state"] == "running" and data["headline"] == "Inventory: checking 100 of 301 listed objects"
+    assert data["steps"][0] == {"name": "1. Inventory", "state": "Running", "detail": "100 of 301 listed objects checked"}
     page = text_of(app.test_client().get("/scan"))
-    assert "1. Inventory" in page and "100 of 301 objects" in page
+    assert "1. Inventory" in page and "100 of 301 listed objects checked" in page
 
 
 # --- Templates (docs/PLAN.md 17.6, Part F) ----------------------------------------------------------------

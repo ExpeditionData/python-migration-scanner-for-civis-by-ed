@@ -45,8 +45,16 @@ the next type, and the coverage table gets a "list_failed" row with a fixed
 note (docs/PLAN.md 17.12). The type's INVENTORY line counts the rows read.
 
 PROGRESS phase=inventory: during the detail calls, every 50 objects or 30
-seconds, and once more when they end. objects_total is the number of kept
-rows across every type, workflows included.
+seconds, and once more when they end. objects_total is the number of listed
+objects to check with a detail call: the kept rows of every type, every
+active workflow included. objects_done is how many have been checked.
+
+PROGRESS phase=code: objects_total is the number of Python objects found,
+the inventory's items after the detail calls. It can differ from the
+inventory total: Services and workflows with no Python and custom scripts on
+non-Python templates drop out, and archived jobs that active workflows run
+are added (docs/PLAN.md 17.12). objects_done is how many have been scanned.
+The app shows them as "listed objects checked" and "Python objects".
 
 The final RUN line carries the run's counts. api_calls is every Civis API
 request the scanner sent through its request budget (scanner/ratelimit.py),

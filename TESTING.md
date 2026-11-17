@@ -307,9 +307,16 @@ Only for troubleshooting, or if item 2.1 failed.
 - **Steps:** Open the Scan history page when the scan starts and watch it.
   When the stop line shows, reload the whole Civis page with the browser's
   reload button (F5 on Windows), not only the app's frame, and watch again.
-- **Expected:** Inventory with a moving count ("1. Inventory" shows "N of M
-  objects" while it reads the scripts in the window, after a few minutes of
-  listing), then Code and log scan with a moving count, then Save results.
+- **Expected:** Inventory with a moving count (the headline reads
+  "Inventory: checking N of M listed objects" and "1. Inventory" shows "N of
+  M listed objects checked" while it checks the scripts in the window, the
+  notebooks, the Services, and the workflows, after a few minutes of
+  listing). Then "1. Inventory" shows "N Python objects found" and Code and
+  log scan has a moving count ("Scanning code and logs: N of M Python
+  objects"), then Save results. The Python objects found can be fewer or
+  more than the listed objects checked: Services and workflows with no
+  Python and custom scripts on other templates drop out, and archived jobs
+  that workflows run are added (docs/PLAN.md 17.12).
   The card updates on its own for the first few minutes after the Civis page
   loads. When Civis's session for the page expires (its proxy cookie lasts
   about 5 to 6 minutes), the card stops updating and shows "Progress stopped

@@ -195,7 +195,9 @@ class Progress:
     current_phase: str | None = None
     done: int | None = None
     total: int | None = None
-    # PROGRESS phase=inventory: objects read so far and the kept rows to read during inventory's detail calls.
+    # PROGRESS phase=inventory: listed objects checked so far, and the listed objects to check, during inventory's
+    # detail calls (kept script rows, notebooks, Services, and every active workflow). done and total are the code
+    # phase's: the Python objects found, which is a different count (docs/PLAN.md 17.12).
     inventory_done: int | None = None
     inventory_total: int | None = None
     code_started_at: str | None = None

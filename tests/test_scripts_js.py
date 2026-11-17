@@ -530,7 +530,7 @@ TURNED_AWAY = {
     "bad-json": {"contentType": "application/json", "text": "Cookie expired."},
     "json-not-object": {"contentType": "application/json", "text": "[1, 2]"},
 }
-RUNNING = {"body": {"state": "running", "headline": "Inventory: 20 of 36 objects read", "eta": "", "percent": 20,
+RUNNING = {"body": {"state": "running", "headline": "Inventory: checking 20 of 36 listed objects", "eta": "", "percent": 20,
                     "civis_run_id": 7, "can_start": False}}
 STORAGE_MODES = ("ok", "throws", "none")
 
@@ -540,7 +540,7 @@ def scan_page(state: str = "running") -> dict:
     return {
         "card": {"tag": "section", "attrs": {"data-scan-status": "", "data-endpoint": "/api/scan-status",
                                              "data-state": state}, "children": ["headline", "eta"]},
-        "headline": {"tag": "div", "attrs": {"data-field": "headline"}, "text": "Inventory: 10 of 36 objects read"},
+        "headline": {"tag": "div", "attrs": {"data-field": "headline"}, "text": "Inventory: checking 10 of 36 listed objects"},
         "eta": {"tag": "div", "attrs": {"data-field": "eta"}, "className": "note"},
     }
 
@@ -586,7 +586,7 @@ def test_a_success_between_turned_away_polls_resets_the_count(page):
 
 def test_scan_history_shows_progress_from_a_success_after_one_turned_away_poll():
     out = scan_history([{"do": "tick"}, {"do": "tick"}], [TURNED_AWAY["network-error"], RUNNING])
-    assert out["shots"][-1]["els"]["headline"]["text"] == "Inventory: 20 of 36 objects read"
+    assert out["shots"][-1]["els"]["headline"]["text"] == "Inventory: checking 20 of 36 listed objects"
     assert out["shots"][-1]["els"]["eta"]["text"] == "" and out["shots"][-1]["timers"] == 1
 
 

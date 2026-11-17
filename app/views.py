@@ -746,28 +746,32 @@ def progress_view(run: JobRun | None, progress: Progress | None, now: datetime |
     def step(name: str, state: str, detail: str) -> dict:
         return {"name": name, "state": state, "detail": detail}
 
-    # While inventory runs, its detail calls report N of M (scanner/inventory, PROGRESS phase=inventory). Once
-    # it is done, the code scan's total is the number of objects listed.
+    # While inventory runs, its detail calls report N of M listed objects checked (scanner/inventory, PROGRESS
+    # phase=inventory): the kept script rows, notebooks, Services, and every active workflow. Once it is done, the
+    # code scan's total is the number of Python objects found, which can differ: Services and workflows with no
+    # Python and custom scripts on other templates drop out, and archived jobs that workflows run are added
+    # (docs/PLAN.md 17.12). The counts are not changed, only the words.
     reading = p.inventory_total is not None and not inventory_done
     listed = p.total if p.total is not None else p.inventory_total
     if run.state == "queued":
         headline = "Waiting for Civis to start the scan"
     elif not inventory_done:
-        headline = (f"Inventory: {number(p.inventory_done or 0)} of {number(p.inventory_total)} objects read"
+        headline = (f"Inventory: checking {number(p.inventory_done or 0)} of {number(p.inventory_total)} listed objects"
                     if reading else "Listing Python objects")
     elif not code_done:
-        headline = f"Scanning code and logs: {number(done)} of {number(total)} objects"
+        headline = f"Scanning code and logs: {number(done)} of {number(total)} Python objects"
     else:
         headline = "Saving results"
 
     running = run.state in ("queued", "running")
     steps = [
         step("1. Inventory", "Done" if inventory_done else ("Running" if running else "Waiting"),
-             f"{number(listed)} Python objects listed" if inventory_done else (
-                 f"{number(p.inventory_done or 0)} of {number(p.inventory_total)} objects" if reading
+             f"{number(listed)} Python objects found" if inventory_done else (
+                 f"{number(p.inventory_done or 0)} of {number(p.inventory_total)} listed objects checked" if reading
                  else "Listing every Python object")),
         step("2. Code and log scan", "Done" if code_done else ("Running" if inventory_done and running else "Waiting"),
-             f"{number(done)} of {number(total)} objects" if inventory_done else "Code, notebooks, repositories, and the most recent run log"),
+             f"{number(done)} of {number(total)} Python objects" if inventory_done
+             else "Code, notebooks, repositories, and the most recent run log"),
         step("3. Save results", "Done" if output_done else ("Running" if code_done and running else "Waiting"),
              "Tables and CSV report"),
     ]
