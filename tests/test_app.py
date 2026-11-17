@@ -167,7 +167,7 @@ def test_overview_shows_the_users_note(app):
     from scanner.inventory.users import USERS_ACTIVE_NOTE
 
     page = text_of(app.test_client().get("/"))
-    assert USERS_ACTIVE_NOTE.format(status=" (HTTP 404)") in page
+    assert USERS_ACTIVE_NOTE.format(cause=" (HTTP 404)") in page
 
 
 HIDDEN_SENTENCE = ("Hidden objects (workflow-created copies and Civis's own query and import jobs) "

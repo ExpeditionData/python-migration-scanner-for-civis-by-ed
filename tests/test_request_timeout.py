@@ -45,6 +45,7 @@ class StubAdapter:
     def __init__(self):
         self.sent: list[tuple[str, object]] = []
         self.errors: dict[str, Exception] = {}
+        self.raise_when = None  # Optional: request -> an error to raise, or None.
         self._lock = threading.Lock()
 
     def send(self, adapter, request, stream=False, timeout=None, verify=True, cert=None, proxies=None):
@@ -53,9 +54,18 @@ class StubAdapter:
             self.sent.append((path, timeout))
         if path in self.errors:
             raise self.errors[path]
+        error = self.raise_when(request) if self.raise_when else None
+        if error is not None:
+            raise error
         response = requests.Response()
         response.status_code = 200
-        response._content = SPEC if path == "/endpoints" else json.dumps({"id": 7, "username": "example_robot"}).encode()
+        if path == "/endpoints":
+            response._content = SPEC
+        elif path == "/users":  # One page with one user; civis asks for pages until one comes back empty.
+            rows = [{"id": 2, "name": "Example Analyst", "active": True}] if "page_num=1" in request.url else []
+            response._content = json.dumps(rows).encode()
+        else:
+            response._content = json.dumps({"id": 7, "username": "example_robot"}).encode()
         response.headers["Content-Type"] = "application/json"
         response.encoding = "utf-8"
         response.url = request.url
@@ -202,12 +212,32 @@ def test_live_run_installs_the_timeout_before_making_the_client(monkeypatch):
     assert calls == ["timeout", "client"]
 
 
+def test_a_timed_out_all_users_list_falls_back_and_is_counted(stub):
+    """docs/PLAN.md 17.12: with civis 2.10's own client, the "all" users list times out, is counted, and the
+    active list is read instead."""
+    from scanner.inventory.users import load_users
+
+    install_request_timeout()
+    client = new_client()
+    stub.raise_when = lambda request: (
+        requests.exceptions.ReadTimeout(MARK) if "account_status=all" in request.url else None)
+    before = request_timeouts()
+    lookup = load_users(client)
+    assert (lookup.source, lookup.status, lookup.reason) == ("active", None, "timeout")
+    assert sorted(lookup.users) == [2]
+    assert request_timeouts() == before + 1
+    users_calls = [timeout for path, timeout in stub.sent if path == "/users"]
+    # The "all" list once (not retried), then the active list's two pages, each with the timeout.
+    assert users_calls == [TIMEOUT, TIMEOUT, TIMEOUT]
+
+
 # --- The RUN line and the test summary -------------------------------------------------------------------
 
 
 def test_the_run_line_and_the_summary_carry_request_timeouts(tmp_path, log_stream, monkeypatch):
     """A timed-out detail call, list call, and run log read in a dry run: each path goes on, and the RUN line
     counts them. The synthetic client raises requests' ReadTimeout after counting it, as the wrapper does."""
+    pytest.importorskip("flask")  # The scanner image has no Flask, and importing app loads it.
     from app import summary
     from scanner.__main__ import dry_run
     from scanner.synthetic import FakeClient
@@ -248,6 +278,7 @@ def test_the_run_line_and_the_summary_carry_request_timeouts(tmp_path, log_strea
 
 
 def test_the_summary_does_not_count_the_request_timeout_line_as_other():
+    pytest.importorskip("flask")  # The scanner image has no Flask, and importing app loads it.
     from app import summary
 
     counts = summary.count_log(["REQUEST_TIMEOUT installed=yes connect=15 read=120", "REQUEST_TIMEOUT installed=no"])

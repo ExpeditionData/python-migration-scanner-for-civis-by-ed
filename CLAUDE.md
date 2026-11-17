@@ -322,11 +322,14 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   (`CACHE_MAX_BYTES`) with least-recently-used eviction.
 - **Scanner users, hidden objects, retries, FATAL (docs/PLAN.md 17.5).**
   `inventory/users.load_users` lists `account_status="all"`; on HTTP 403 or
-  404 it lists active users (an owner not in that list is unknown, never
-  False); if that fails too, there is no user lookup. A `USERS
-  source=all|active|none [status=N]` log line and, when not "all", a coverage
-  row with `row_kind` `users` and a fixed note record it; the Overview shows
-  the note. Hidden objects are skipped and not counted: no list call sends
+  404, or a request timeout (`ratelimit.is_request_timeout`, docs/PLAN.md
+  17.12.24), it lists active users (an owner not in that list is unknown,
+  never False); any other error on "all" still raises; if the active list
+  fails too, there is no user lookup. A `USERS source=all|active|none
+  [status=N | reason=timeout]` log line (for "none", the active list's own
+  cause) and, when not "all", a coverage row with `row_kind` `users` and a
+  fixed note ("(HTTP 404)" or "(the request timed out)") record it; the
+  Overview shows the note. Hidden objects are skipped and not counted: no list call sends
   `hidden`, and `hidden_skipped_count` is written NULL (the column stays).
   `live_run` gives `civis.APIClient` the `ratelimit.civis_retrying` policy (4
   tries or 120 seconds, waits up to 30 seconds; tenacity is pinned in
@@ -519,6 +522,11 @@ Run the full suite on both Python versions before every commit:
   partway (rows kept, `LIST_FAILED`, the `list_failed` row and note, other
   types scanned, status succeeded), the custom and workflow lists, the test
   summary lines, and no exception text in any output.
+- `tests/test_users_timeout.py` covers a timeout on the "all" users list
+  (falls back to active, `reason=timeout`), on both lists, a timeout then a
+  404, a 500 still FATAL, the summary's `users_list` values, and no
+  exception text in any output. The synthetic `users_list_errors` takes
+  `"read_timeout"`, `"connect_timeout"`, or `"body_read_timeout"`.
 - `tests/test_request_timeout.py` runs civis 2.10's own client with
   `requests.adapters.HTTPAdapter.send` stubbed (the bundled API spec for
   `/endpoints`, a made-up host): every request carries the timeout, a

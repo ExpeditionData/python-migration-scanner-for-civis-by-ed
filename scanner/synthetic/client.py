@@ -27,7 +27,9 @@ issued, with the notebook ID, for tests.
 
 "users_list_errors" makes users.list refuse an account_status (see _users__list).
 The default instance refuses "all" and "inactive" with HTTP 404, as Civis did
-for the scanning user in the first live test (docs/PLAN.md 17.5).
+for the scanning user in the first live test (docs/PLAN.md 17.5). A value of
+"read_timeout", "connect_timeout", or "body_read_timeout" raises a made-up
+request timeout instead (docs/PLAN.md 17.12).
 
 "list_errors" makes one object type's list fail partway (docs/PLAN.md 17.12):
 {"custom_script": {"status": 503, "after": 3}} returns the first 3 rows, then
@@ -78,6 +80,22 @@ class FakeAPIError(Exception):
     def __init__(self, status_code: int):
         super().__init__(f"HTTP {status_code}")
         self.status_code = status_code
+
+
+TIMEOUT_ERRORS = ("read_timeout", "connect_timeout", "body_read_timeout")
+
+
+def made_up_timeout(kind: str) -> Exception:
+    """A request timeout as requests raises it, with made-up text: ReadTimeout, ConnectTimeout, or (a timeout while
+    the body is read) a ConnectionError holding urllib3's ReadTimeoutError."""
+    import requests  # The synthetic client is test-only; the scanner's own modules import no HTTP client.
+    from urllib3.exceptions import ReadTimeoutError
+
+    if kind == "read_timeout":
+        return requests.exceptions.ReadTimeout("made-up read timeout")
+    if kind == "connect_timeout":
+        return requests.exceptions.ConnectTimeout("made-up connect timeout")
+    return requests.exceptions.ConnectionError(ReadTimeoutError(None, "", "made-up read timed out"))
 
 
 def _public(row: dict, allowed: set[str] | None = None) -> dict:
@@ -281,6 +299,8 @@ class FakeClient:
             rows = [r for r in rows if not r.get("active")]
 
         def pages():
+            if error in TIMEOUT_ERRORS:
+                raise made_up_timeout(error)
             if error:
                 raise FakeAPIError(error)
             yield from (_public(r) for r in rows)

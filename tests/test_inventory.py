@@ -169,7 +169,7 @@ def test_owners_from_the_active_list_by_default(built):
     assert (former.owner_id, former.owner_name, former.owner_active) == (3, "Example Former Analyst", None)
     assert obj(built, 403).owner_active is None
     assert inventory.users_source == "active"
-    assert inventory.users_note == USERS_ACTIVE_NOTE.format(status=" (HTTP 404)")
+    assert inventory.users_note == USERS_ACTIVE_NOTE.format(cause=" (HTTP 404)")
 
 
 def test_owners_include_deactivated_users_when_all_can_be_listed():
@@ -186,7 +186,7 @@ def test_owners_unknown_when_no_user_list_can_be_read():
     assert {by_id[i].obj.owner_active for i in (101, 102, 403)} == {None}
     assert (by_id[101].obj.owner_name, by_id[102].obj.owner_name) == ("Example Analyst", "Example Former Analyst")
     assert inventory.users_source == "none"
-    assert inventory.users_note == USERS_NONE_NOTE.format(status=" (HTTP 503)")
+    assert inventory.users_note == USERS_NONE_NOTE.format(cause=" (HTTP 503)")
 
 
 def test_schedule_and_last_run(built):
@@ -297,7 +297,7 @@ def test_users_fall_back_to_the_active_list(status):
     assert sorted(lookup.users) == [1, 2] and all(u.active is True for u in lookup.users.values())
     assert [(k["account_status"], k["limit"], k["iterator"]) for _, k in client.called("users.list")] == [
         ("all", 1000, True), ("active", 1000, True)]
-    assert lookup.note() == USERS_ACTIVE_NOTE.format(status=f" (HTTP {status})")
+    assert lookup.note() == USERS_ACTIVE_NOTE.format(cause=f" (HTTP {status})")
 
 
 def test_the_default_synthetic_users_list_refuses_all_and_inactive():
@@ -313,7 +313,7 @@ def test_the_default_synthetic_users_list_refuses_all_and_inactive():
 def test_no_user_lookup_when_the_active_list_also_fails():
     lookup = load_users(_users_allowed({"all": 404, "active": 503}))
     assert (lookup.source, lookup.status, lookup.users) == ("none", 503, {})
-    assert lookup.note() == USERS_NONE_NOTE.format(status=" (HTTP 503)")
+    assert lookup.note() == USERS_NONE_NOTE.format(cause=" (HTTP 503)")
 
 
 def test_no_user_lookup_note_without_a_status():
@@ -326,7 +326,7 @@ def test_no_user_lookup_note_without_a_status():
     client = type("C", (), {"users": Broken()})()
     lookup = load_users(client)
     assert (lookup.source, lookup.status) == ("none", None)
-    assert lookup.note() == USERS_NONE_NOTE.format(status="")
+    assert lookup.note() == USERS_NONE_NOTE.format(cause="")
     assert "made-up" not in lookup.note()
 
 

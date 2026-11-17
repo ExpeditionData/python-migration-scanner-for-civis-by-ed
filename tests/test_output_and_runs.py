@@ -365,7 +365,7 @@ def test_dry_run_records_the_users_fallback(tmp_path, log_stream):
     dry_run(tmp_path, now=NOW)
     conn = db(tmp_path)
     rows = conn.execute("SELECT object_type, object_id, reason FROM coverage WHERE row_kind = 'users'").fetchall()
-    assert rows == [(None, None, USERS_ACTIVE_NOTE.format(status=" (HTTP 404)"))]
+    assert rows == [(None, None, USERS_ACTIVE_NOTE.format(cause=" (HTTP 404)"))]
     assert conn.execute("SELECT COUNT(*) FROM objects WHERE owner_active = 0").fetchone()[0] == 0
     assert "USERS source=active status=404" in log_stream.getvalue().splitlines()
 

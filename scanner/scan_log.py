@@ -18,6 +18,7 @@ Line formats (parsed by the web app to show progress):
     FINDINGS rule_id=CV3-USE-PANDAS count=12
     PHASE name=inventory state=done
     USERS source=active status=404
+    USERS source=active reason=timeout
     CHECKPOINT objects_written=500
     OUTPUT_FAILED error=CivisAPIError
     REQUEST_TIMEOUT installed=yes connect=15 read=120
@@ -216,14 +217,19 @@ def inventory(object_type: ObjectType | str, **counts: int) -> None:
 
 
 USER_SOURCES = ("all", "active", "none")
+USER_REASONS = ("timeout",)
 
 
-def users(source: str, status: int | None = None) -> None:
-    """Which user list owner active status came from (scanner/inventory/users.py), and the HTTP status
-    of the list call that failed. No user names."""
+def users(source: str, status: int | None = None, reason: str | None = None) -> None:
+    """Which user list owner active status came from (scanner/inventory/users.py), and the cause of the list
+    call that failed: its HTTP status, or a reason from USER_REASONS (docs/PLAN.md 17.12). No user names."""
     if source not in USER_SOURCES:
         raise ValueError("unknown users source")
-    if status is None:
+    if reason is not None:
+        if reason not in USER_REASONS or status is not None:
+            raise ValueError("unknown users reason")
+        _logger.info("USERS source=%s reason=%s", source, reason)
+    elif status is None:
         _logger.info("USERS source=%s", source)
     else:
         _logger.info("USERS source=%s status=%d", source, _count(status, "status"))

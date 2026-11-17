@@ -196,6 +196,7 @@ def test_build_inventory_records_the_failure_and_the_known_ids():
 
 
 def test_no_exception_text_reaches_the_log_tables_csv_or_summary(tmp_path, log_stream, monkeypatch):
+    pytest.importorskip("flask")  # The scanner image has no Flask, and importing app loads it.
     from app import summary
 
     original = FakeClient._scripts__list_custom
@@ -231,6 +232,7 @@ def test_no_exception_text_reaches_the_log_tables_csv_or_summary(tmp_path, log_s
 
 
 def test_summary_counts_list_failed_lines_and_lists_each_type():
+    pytest.importorskip("flask")  # The scanner image has no Flask, and importing app loads it.
     from app import summary
 
     lines = [

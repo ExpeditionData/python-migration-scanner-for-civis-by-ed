@@ -138,7 +138,7 @@ def build_inventory(client: Any, civis_git: Any = None, step: Callable[[str], No
     inventory = Inventory()
     step("inventory_users")
     lookup = load_users(client)
-    scan_log.users(lookup.source, lookup.status)
+    scan_log.users(lookup.source, lookup.status, lookup.reason)
     inventory.users_source, inventory.users_note = lookup.source, lookup.note()
     ctx = InventoryContext(client, lookup.users, inventory, civis_git)
 

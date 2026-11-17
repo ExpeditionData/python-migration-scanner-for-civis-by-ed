@@ -62,7 +62,8 @@ _ERROR_LINE = re.compile(r"^(" + "|".join(ERROR_LINES) + r")\b.*?\berror=(\S+)(?
 _RUN_LINE = re.compile(r"^RUN\b")
 # Which user list owner active status came from (scanner/scan_log.py, USER_SOURCES).
 USER_SOURCES = ("all", "active", "none")
-_USERS_LINE = re.compile(r"^USERS source=(\w+)(?: status=(\d{3}))?$")
+USER_REASONS = ("timeout",)  # scanner/scan_log.py, USER_REASONS (docs/PLAN.md 17.12).
+_USERS_LINE = re.compile(r"^USERS source=(\w+)(?: status=(\d{3})| reason=(\w+))?$")
 # Where a scan stopped (scanner/scan_log.py, FATAL_STEPS), from the end of a FATAL line.
 FATAL_STEPS = (
     "setup", "schema_check", "tables", "scanning_user", "inventory_users",
@@ -185,7 +186,13 @@ def count_log(lines: list[str]) -> LogCounts:
         elif line.startswith("USERS"):
             match = _USERS_LINE.match(line)
             source = _label(match.group(1), USER_SOURCES) if match else OTHER
-            users = source if source == OTHER or not match.group(2) else f"{source} status={match.group(2)}"
+            if source == OTHER:
+                users = OTHER
+            elif match.group(3) is not None:
+                reason = _label(match.group(3), USER_REASONS)
+                users = OTHER if reason == OTHER else f"{source} reason={reason}"
+            else:
+                users = source if not match.group(2) else f"{source} status={match.group(2)}"
         elif line.startswith("INVENTORY"):
             match = _INVENTORY_LINE.match(line)
             if match and _label(match.group(1), OBJECT_TYPES) != OTHER:

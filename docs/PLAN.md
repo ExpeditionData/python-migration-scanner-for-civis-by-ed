@@ -1530,7 +1530,7 @@ Counts and command shapes only.
 |---|---|
 | Detail calls in inventory (`scripts.get_*`, `notebooks.get`, `services.get`, `workflows.get`, `jobs.get`) | The object is not scanned with "Reading this object failed (ReadTimeout)." (`describe_error`, unchanged). A failed template or backing script read gives the custom script "The template could not be read. Reading this object failed (ReadTimeout)." (or "The template's backing script could not be read. ..."), and a failed `jobs.get` for a workflow reference adds the workflow's coverage note, as for any other error. |
 | List calls | Part B: `LIST_FAILED ... error=ReadTimeout` (no status), the rows read are kept, and the note ends "(ReadTimeout)". |
-| The users list | `"all"`: a timeout has no HTTP status, so it is not the 403 or 404 fallback and the scan stops with `FATAL error=ReadTimeout step=inventory_users`, as any other error there did before. `"active"` (after a 403 or 404): the scan goes on with no user lookup (`USERS source=none`). **Not changed in this part.** |
+| The users list | **Changed by 17.12.24:** `"all"`: falls back to the active list, as after a 403 or 404 (`USERS source=active reason=timeout`). `"active"` (after a fallback): the scan goes on with no user lookup (`USERS source=none reason=timeout`). Before 17.12.24, a timeout on `"all"` stopped the scan with `FATAL error=ReadTimeout step=inventory_users`. |
 | `scanning_user` (`users.get_me`) | `FATAL ... step=scanning_user`, the failed row, exit 1. |
 | The run log and deployment log reads | "The run log could not be read. Reading this object failed (ReadTimeout)." The object is partial or not scanned as before. |
 | The git file read through Civis (`get_git`, commits, file) | `CIVIS_GIT_FAILED ... error=ReadTimeout`; a workflow falls back to its saved definition, a Python script gets the existing reason. |
@@ -1546,6 +1546,12 @@ Counts and command shapes only.
 - A timeout while the response body is read surfaces from requests as a `ConnectionError` caused by urllib3's `ReadTimeoutError`. It is counted in `request_timeouts` too; in coverage notes it reads "(ConnectionError)".
 - `scanner/ratelimit.py` recognizes requests' exceptions by class name, so it imports no HTTP client and the network test (only `scanner/retrieval/http.py` imports one) is unchanged.
 - The `REQUEST_TIMEOUT` line is logged on every call that finds `open_session`, which in a live scan is once. The test summary does not report it.
+
+**Review change (November 17, 2026):**
+
+| # | Change | Status |
+|---|---|---|
+| 17.12.24 | **A request timeout on the "all" users list falls back to the active list, like HTTP 403 or 404** (changes 17.5.1 for timeouts). The test is `scanner/ratelimit.is_request_timeout` (the former `_timed_out`, now public and used by both the timeout wrapper and `scanner/inventory/users.load_users`): requests' `Timeout`, or its `ConnectionError` for a read timeout while the body is read, matched by class name, so ratelimit still imports no HTTP client. Any other error on the "all" list still raises (`FATAL ... step=inventory_users`), and an active list that then fails gives source "none", as before. The cause is recorded without any error text: `UserLookup.reason` "timeout"; the log line `USERS source=active reason=timeout` (a 403 or 404 keeps `status=NNN`); for source "none" the active list's own failure, `status=NNN` or `reason=timeout`; `scan_log.users` takes the reason from `scan_log.USER_REASONS` ("timeout") and refuses a status with it. The coverage notes say "(the request timed out)" in place of " (HTTP 404)" (`USERS_ACTIVE_NOTE` and `USERS_NONE_NOTE`, whose placeholder is now `{cause}`). The test summary's `users_list` shows `active reason=timeout` or `none reason=timeout`; an unknown reason is "other" (`app/summary.USER_REASONS`). A timed-out "all" call can add up to about 285 seconds (the worst case above) before the fallback, and it is counted in `request_timeouts`. The synthetic client's `users_list_errors` takes `"read_timeout"`, `"connect_timeout"`, or `"body_read_timeout"` to raise a made-up requests timeout. Tests: `tests/test_users_timeout.py` (each timeout kind on "all", on both lists, a timeout then a 404, a 404 then a timeout, a 500 still FATAL, dry runs with the USERS line and the coverage note and no FATAL, the summary lines, and no exception text in the log, tables, CSV, or summary) and `tests/test_request_timeout.py` (civis 2.10's own client: the timed-out "all" call is counted and the active list is read). No existing test asserted FATAL on a timeout of the "all" list; the ones that assert FATAL use HTTP 500 and are unchanged. | Decided by Rob on November 17, 2026 |
 
 #### Part D: Inventory progress wording
 
@@ -1577,5 +1583,5 @@ The new container script 212 adds one object, one detail call, and two findings;
 
 - The request budget, the retries policy (17.5.7), scanner resources, and the Content Security Policy. No inline scripts or styles.
 - No table or column change; the only new stored values are `list_failed` coverage rows in existing columns. No new SQL statement kinds and no new Civis API write calls. `app/` and `common/` still call only civis 2.7.1 methods.
-- The users list's own fallback (17.5.1): a timeout on the "all" list still stops the scan (see the table above).
+- The users list's own fallback (17.5.1) for errors other than a timeout: any other failure of the "all" list still stops the scan. (A timeout falls back since 17.12.24.)
 - Legal text and SECURITY.md "By design".

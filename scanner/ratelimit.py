@@ -144,9 +144,10 @@ def install_request_timeout() -> bool:
     return True
 
 
-def _timed_out(exc: BaseException) -> bool:
+def is_request_timeout(exc: BaseException) -> bool:
     """requests' Timeout (ConnectTimeout, ReadTimeout), or its ConnectionError for a timeout while the body is
-    read. Matched by class name, so this module imports no HTTP client (only SafeHttp does)."""
+    read. Matched by class name, so this module imports no HTTP client (only SafeHttp does). Also used by
+    scanner/inventory/users.load_users, where a timed-out "all" list falls back like a 403 or 404."""
     classes = {(cls.__module__, cls.__name__) for cls in type(exc).__mro__}
     if ("requests.exceptions", "Timeout") in classes:
         return True
@@ -166,7 +167,7 @@ def _open_session_with_timeout(open_session: Callable) -> Callable:
             try:
                 return send(request, **send_kwargs)
             except Exception as exc:
-                if _timed_out(exc):
+                if is_request_timeout(exc):
                     _request_timeouts.add()
                 raise
 

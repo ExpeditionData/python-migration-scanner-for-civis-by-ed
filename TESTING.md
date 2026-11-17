@@ -382,7 +382,8 @@ Only for troubleshooting, or if item 2.1 failed.
   `REQUEST_TIMEOUT installed=yes connect=15 read=120`).
   If `log_other_lines` is not 0, scan the run log without copying it to see
   what kind of lines they are. The summary's `users_list` line says which user
-  list the scan used (`all`, or `active` or `none` with an HTTP status), and
+  list the scan used (`all`, or `active` or `none` with an HTTP status or
+  `reason=timeout`, docs/PLAN.md 17.12.24), and
   `fatal_step` says where a scan stopped, if it did.
 - **Expected:** No other lines, apart from Civis's own container messages. No
   "pip" lines.
