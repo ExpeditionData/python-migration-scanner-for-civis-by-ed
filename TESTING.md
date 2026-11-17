@@ -385,9 +385,9 @@ Only for troubleshooting, or if item 2.1 failed.
 - **Expected:** Each page loads. The first load reads the result tables, so it
   can take longer than later loads. The Service stays healthy while it loads.
 - **Busy cue:** while you click through, check that a nav link, an Apply
-  filters button, and a Next page link show "Loading" beside them at once,
-  with the progress cursor, until the next page arrives (docs/PLAN.md 17.9).
-  A Download CSV link shows no cue.
+  filters button, and a Next page link turn gray at once, with the progress
+  cursor and the page content dimmed, until the next page arrives
+  (docs/PLAN.md 17.9 and 17.11). A Download CSV link shows no cue.
 - **Record:** seconds per page; the slowest first page load in seconds; whether
   any page load failed or timed out (yes or no, with the error code if shown);
   the busy cue line in the results template.
@@ -718,7 +718,7 @@ Item  Result (pass/fail/skipped)  Counts or note
 5.5   minutes to wake=
 5.6   waits for the first tag after v0.1.0-rc10
 5.7   built:  copied (button/by hand):  sent:  looked like a name: yes/no
-Busy cue: a nav link, a filter, and a pagination link show "Loading" at once: yes/no
+Busy cue: a nav link, a filter, and a pagination link turn gray at once: yes/no
 
 Error types seen (from the scanner's log only), with counts:
 Anything that did not match the README (general terms only):

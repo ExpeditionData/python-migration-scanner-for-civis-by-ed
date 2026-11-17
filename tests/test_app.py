@@ -705,28 +705,78 @@ def _blend(color: str, back: str, alpha: float) -> str:
     return "#" + "".join(f"{v:02x}" for v in parts)
 
 
-def test_busy_dimming_keeps_text_contrast():
-    """docs/PLAN.md 17.9, Part D: while the next page loads, busy.js puts "is-loading" on body, which dims main to
-    the opacity in app.css. Main is drawn over the body's --bg, so every text and background pair is blended over
-    --bg at that opacity, and each still meets 4.5 to 1. The " Loading" text inherits its link's or container's
-    color, so it is one of the checked pairs too."""
-    css = (Path(__file__).resolve().parent.parent / "app/static/css/app.css").read_text(encoding="utf-8")
+# The busy trigger's gray (docs/PLAN.md 17.11, Part A) on every background it can sit on. Outside main (the header
+# and the nav, including the active nav background) it is not dimmed and must meet 4.5 to 1, and so must every pair
+# undimmed. Inside main it is dimmed with main and is held to the 3 to 1 floor with the other text in main.
+BUSY_TRIGGER_OUTSIDE_MAIN = [("busy-trigger", "surface"), ("busy-trigger", "stripe"), ("busy-trigger", "nav-active-bg")]
+BUSY_TRIGGER_IN_MAIN = [
+    ("busy-trigger", "bg"), ("busy-trigger", "surface"), ("busy-trigger", "stripe"), ("busy-trigger", "info-bg"),
+    ("busy-trigger", "warn-bg"), ("busy-trigger", "error-bg"), ("white", "busy-trigger"),  # A primary button.
+]
+DIMMED_FLOOR = 3.0  # WCAG 1.4.3 exempts text in an inactive part of the page; main is inactive while it loads.
+
+
+def _busy_opacity(css: str) -> float:
     match = re.search(r"body\.is-loading main \{ opacity: ([0-9.]+); \}", css)
     assert match, "the dimmed state must be a class rule in app.css"
-    alpha = float(match.group(1))
-    assert 0.85 < alpha < 1  # Slightly dimmed.
-    assert re.search(r"body \{\n  margin: 0;\n  background: var\(--bg\);", css)
-    colors = _css_colors()
+    return float(match.group(1))
+
+
+def _dimmed_low(colors: dict[str, str], alpha: float) -> list[tuple[str, str, float]]:
+    """Pairs in main that fall below the floor when main is drawn at ``alpha`` over the body's --bg."""
     back = colors["bg"]
     low = []
-    for a, b in CONTRAST_PAIRS:
+    for a, b in CONTRAST_PAIRS + BUSY_TRIGGER_IN_MAIN:
         ratio = _contrast(_blend(colors[a], back, alpha), _blend(colors[b], back, alpha))
-        if ratio < 4.5:
+        if ratio < DIMMED_FLOOR:
             low.append((a, b, round(ratio, 2)))
-    assert low == []
+    return low
+
+
+def test_busy_dimming_keeps_text_contrast():
+    """docs/PLAN.md 17.9, Part D and 17.11, Part A: while the next page loads, busy.js puts "is-loading" on body,
+    which dims main to the opacity in app.css. Main is drawn over the body's --bg, so every text and background
+    pair is blended over --bg at that opacity, and each still meets 3 to 1 (main is inactive while the next page
+    loads, which WCAG 1.4.3 exempts from 4.5 to 1). The opacity is the lowest, in steps of 0.01 from 0.6, that
+    keeps the floor, so main is dimmed as much as the floor allows."""
+    css = (Path(__file__).resolve().parent.parent / "app/static/css/app.css").read_text(encoding="utf-8")
+    alpha = _busy_opacity(css)
+    assert 0.6 <= alpha < 1
+    assert re.search(r"body \{\n  margin: 0;\n  background: var\(--bg\);", css)
+    colors = _css_colors()
+    assert _dimmed_low(colors, alpha) == []
+    if alpha > 0.6:  # One step lower must fail, or 0.6 itself would do.
+        assert _dimmed_low(colors, round(alpha - 0.01, 2)) != []
     assert re.search(r"body\.is-loading, body\.is-loading a, body\.is-loading button, body\.is-loading select "
                      r"\{ cursor: progress; \}", css)
-    assert ".busy-cue {" in css and "color:" not in css[css.index(".busy-cue {"):].split("}")[0]
+    assert ".busy-cue" not in css  # No " Loading" text any more.
+
+
+def test_busy_trigger_gray_meets_4_5_to_1_outside_main():
+    """docs/PLAN.md 17.11, Part A: the clicked nav link turns gray in the header, which is not dimmed."""
+    colors = _css_colors()
+    low = [(a, b, round(_contrast(colors[a], colors[b]), 2)) for a, b in BUSY_TRIGGER_OUTSIDE_MAIN + BUSY_TRIGGER_IN_MAIN
+           if _contrast(colors[a], colors[b]) < 4.5]
+    assert low == []
+
+
+def test_busy_trigger_rules_gray_the_link_or_button_without_disabling_it():
+    """docs/PLAN.md 17.11, Part A: the gray from its own custom property, no underline or hover change, the
+    progress cursor, and a gray background with white text for a primary button."""
+    css = (Path(__file__).resolve().parent.parent / "app/static/css/app.css").read_text(encoding="utf-8")
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    found = re.findall(r"([^{}]*is-busy-trigger[^{}]*)\{([^}]*)\}", css)
+    rules = {selector.strip(): body.strip() for selector, body in found}
+    link = rules["body.is-loading a.is-busy-trigger,\nbody.is-loading a.is-busy-trigger:hover"]
+    assert "color: var(--busy-trigger)" in link and "text-decoration: none" in link and "cursor: progress" in link
+    button = rules["body.is-loading .button.is-busy-trigger,\nbody.is-loading .button.is-busy-trigger:hover"]
+    assert "color: var(--busy-trigger)" in button and "cursor: progress" in button
+    primary = rules["body.is-loading .button-primary.is-busy-trigger,\n"
+                    "body.is-loading .button-primary.is-busy-trigger:hover"]
+    assert "color: #ffffff" in primary and "background: var(--busy-trigger)" in primary
+    assert rules["body.is-loading .main-nav a.is-busy-trigger:not(.active):hover"] == "background: none;"
+    script = (Path(__file__).resolve().parent.parent / "app/static/js/busy.js").read_text(encoding="utf-8")
+    assert not re.search(r"\.disabled\b|\"disabled\"", script)  # The form still sends the button's name and value.
 
 
 @pytest.mark.parametrize("state", ["normal", "tables-failed"])

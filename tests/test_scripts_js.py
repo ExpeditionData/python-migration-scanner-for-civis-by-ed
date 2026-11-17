@@ -42,7 +42,8 @@ WORKING = "Working. This can take up to a minute."
 # "none" (window.sessionStorage is missing). "now" sets Date.now; the "advance" step moves it by "ms". The
 # "visibility" step sets document.hidden and fires visibilitychange. A "tick" runs the first waiting timer (an
 # interval stays waiting). Elements can nest ("children"), and each snapshot gives the text the script added
-# inside an element ("added") and how many " Loading" cues it holds ("cues"), and the body's class. A "submit" step
+# inside an element ("added"), how many elements it added there ("created"), whether the element has the busy
+# trigger class ("cues", 1 or 0), and the body's class. A "submit" step
 # can name its "submitter" button. The page's address is https://app.example.test plus "path".
 HARNESS = r"""
 const fs = require("fs");
@@ -183,7 +184,7 @@ function snapshot() {
     const added = el.children.filter((c) => c.created);
     out[name] = { text: el.textContent, hidden: el.hidden, disabled: el.disabled, className: el.className,
                   busy: el.getAttribute("aria-busy"), added: added.map((c) => c.textContent).join(""),
-                  cues: added.filter((c) => c.className === "busy-cue").length };
+                  created: added.length, cues: el.classList.contains("is-busy-trigger") ? 1 : 0 };
   }
   return { els: out, timers: timers.length, fetches: fetches.length, reloads,
            storage: Object.assign({}, stored), storageUses, bodyClass: body.className };
@@ -241,7 +242,7 @@ def run(script: str, elements: dict, steps: list, responses: list | None = None,
 
 # --- busy.js: the busy cue and the "Working" message (docs/PLAN.md 17.6, 17.8, and 17.9, Part D) ---------------
 
-LOADING = " Loading"
+TRIGGER = "is-busy-trigger"
 
 
 def busy_page(**changes) -> dict:
@@ -292,7 +293,13 @@ def busy(steps: list, **changes) -> dict:
 
 
 def cues(shot: dict) -> dict[str, int]:
+    """The elements that have the busy trigger class (docs/PLAN.md 17.11, Part A)."""
     return {name: el["cues"] for name, el in shot["els"].items() if el["cues"]}
+
+
+def nothing_added(shot: dict) -> bool:
+    """busy.js adds no element and no text anywhere (no " Loading" span since 17.11, Part A)."""
+    return all(el["created"] == 0 and el["added"] == "" for el in shot["els"].values())
 
 
 def loading(shot: dict) -> bool:
@@ -303,26 +310,29 @@ def loading(shot: dict) -> bool:
 def test_a_plain_click_on_an_app_link_shows_the_cue_at_once(link):
     out = busy([{"do": "click", "target": link}])
     shot = out["shots"][1]
-    assert cues(shot) == {link: 1} and shot["els"][link]["added"] == LOADING
+    assert cues(shot) == {link: 1} and TRIGGER in shot["els"][link]["className"].split() and nothing_added(shot)
+    assert shot["els"][link]["text"] == busy_page()[link]["text"]  # The label is unchanged.
     assert loading(shot) and shot["prevented"] is False  # The browser still follows the link.
     assert shot["els"]["region"]["hidden"] is True  # The "Working" message is only for data-busy.
     assert out["fetches"] == []
 
 
-def test_a_filter_form_shows_the_cue_next_to_its_button():
+def test_a_filter_form_shows_the_cue_on_its_button():
     out = busy([{"do": "submit", "target": "filters"}])  # No submitter: the form's own submit button is used.
     shot = out["shots"][1]
-    assert cues(shot) == {"actions": 1} and shot["els"]["actions"]["added"] == LOADING
+    assert cues(shot) == {"apply": 1} and nothing_added(shot)
+    assert shot["els"]["apply"]["disabled"] is False  # Not disabled: the form still sends the button's value.
     assert loading(shot) and shot["prevented"] is False
 
 
 @pytest.mark.parametrize("submitter", [None, "save"])
-def test_save_changes_shows_the_cue_next_to_its_button_outside_the_form(submitter):
+def test_save_changes_shows_the_cue_on_its_button_outside_the_form(submitter):
     step = {"do": "submit", "target": "checklist"}
     if submitter:
         step["submitter"] = submitter
     shot = busy([step])["shots"][1]
-    assert cues(shot) == {"head": 1} and loading(shot)  # Beside "Save changes", which sits in the page head.
+    assert cues(shot) == {"save": 1} and loading(shot) and nothing_added(shot)  # "Save changes" is in the page head.
+    assert shot["els"]["save"]["disabled"] is False
 
 
 @pytest.mark.parametrize("target, event", [
@@ -343,7 +353,7 @@ def test_save_changes_shows_the_cue_next_to_its_button_outside_the_form(submitte
 def test_no_cue_for_links_that_do_not_load_another_app_page_here(target, event):
     shot = busy([{"do": "click", "target": target, "event": event}])["shots"][1]
     assert cues(shot) == {} and shot["bodyClass"] == "" and shot["els"]["main"]["busy"] is None
-    assert shot["els"]["region"]["hidden"] is True
+    assert shot["els"]["region"]["hidden"] is True and nothing_added(shot)
 
 
 def test_no_cue_for_the_run_scan_form():
@@ -360,8 +370,8 @@ def test_no_cue_for_a_new_tab_click_on_a_data_busy_link():
                                           ("storage", "submit")])
 def test_data_busy_links_and_forms_get_the_cue_and_the_working_message(target, kind):
     shot = busy([{"do": kind, "target": target}])["shots"][1]
-    place = "storage" if target == "storage" else target  # The storage button's cue goes beside it, in its form.
-    assert cues(shot) == {place: 1} and loading(shot)
+    place = "storage_button" if target == "storage" else target  # The form's submit button turns gray.
+    assert cues(shot) == {place: 1} and loading(shot) and nothing_added(shot)
     assert (shot["els"]["region"]["text"], shot["els"]["region"]["hidden"]) == (WORKING, False)
     assert shot["els"][target]["busy"] == "true"
 
@@ -373,16 +383,15 @@ def test_coming_back_from_history_clears_the_cue_the_class_and_aria_busy():
     for shot in (after_link, after_form):
         assert cues(shot) == {} and shot["bodyClass"] == "" and shot["els"]["main"]["busy"] is None
         assert (shot["els"]["region"]["hidden"], shot["els"]["region"]["text"]) == (True, "")
-        assert shot["els"]["nav_setup"]["busy"] is None
-    assert cues(out["shots"][4]) == {"actions": 1}  # The cue can show again after coming back.
+        assert shot["els"]["nav_setup"]["busy"] is None and nothing_added(shot)
+    assert cues(out["shots"][4]) == {"apply": 1}  # The cue can show again after coming back.
 
 
 def test_a_second_click_while_the_cue_shows_adds_nothing():
     out = busy([{"do": "click", "target": "next_page"}, {"do": "click", "target": "next_page"},
                 {"do": "click", "target": "clear"}, {"do": "submit", "target": "filters"}])
     for shot in out["shots"][1:]:
-        assert cues(shot) == {"next_page": 1}
-    assert out["shots"][-1]["els"]["next_page"]["added"] == LOADING
+        assert cues(shot) == {"next_page": 1} and nothing_added(shot)
 
 
 def test_no_cue_while_the_checklist_has_unsaved_changes_except_for_saving_them():
@@ -393,7 +402,7 @@ def test_no_cue_while_the_checklist_has_unsaved_changes_except_for_saving_them()
     for step in ({"do": "click", "target": "nav_inventory"}, {"do": "submit", "target": "filters"}):
         assert cues(busy([step], checklist=dirty)["shots"][1]) == {}
     shot = busy([{"do": "submit", "target": "checklist", "submitter": "save"}], checklist=dirty)["shots"][1]
-    assert cues(shot) == {"head": 1}
+    assert cues(shot) == {"save": 1}
 
 
 def test_without_the_working_region_the_cue_still_shows():
@@ -408,7 +417,8 @@ def test_without_the_working_region_the_cue_still_shows():
 def test_busy_js_sets_text_only_and_no_inline_style():
     script = (JS / "busy.js").read_text(encoding="utf-8")
     assert not re.search(r"innerHTML|insertAdjacentHTML|document\.write|\.style\b|setAttribute\(\"style", script)
-    assert '" Loading"' in script and "textContent" in script
+    assert "textContent" in script and '"is-busy-trigger"' in script
+    assert "Loading" not in script and "createElement" not in script  # No " Loading" text (17.11, Part A).
 
 
 # --- run-scan.js ---------------------------------------------------------------------------------------
