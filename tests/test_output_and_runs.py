@@ -434,7 +434,8 @@ def test_final_log_line_counts_every_civis_api_call(tmp_path, log_stream, monkey
     counts = re.fullmatch(
         rf"RUN run_id={result.run_id} status=succeeded objects_total={DRY_RUN_OBJECTS} objects_scanned={DRY_RUN_OBJECTS} api_calls={sent} "
         rf"github_tarball_requests={tarballs} github_cache_peak_bytes=(\d+) github_cache_evictions=0 "
-        rf"civis_git_reads={reads} civis_git_failures={failures} notebook_links={links} notebook_link_retries=0",
+        rf"civis_git_reads={reads} civis_git_failures={failures} notebook_links={links} notebook_link_retries=0 "
+        rf"request_timeouts=0",
         final,
     )
     assert counts and tarballs > 0 and 0 < int(counts.group(1)) <= CACHE_MAX_BYTES
@@ -478,7 +479,7 @@ def test_final_log_line_counts_civis_git_reads_without_a_token(tmp_path, log_str
     assert final.endswith(
         f" api_calls={len(clients[0].calls)} github_tarball_requests=0 github_cache_peak_bytes=0 "
         f"github_cache_evictions=0 civis_git_reads={reads} civis_git_failures={failures} "
-        f"notebook_links={notebook_link_calls(clients[0])} notebook_link_retries=0"
+        f"notebook_links={notebook_link_calls(clients[0])} notebook_link_retries=0 request_timeouts=0"
     )
     assert result.api_calls == len(clients[0].calls)
 

@@ -116,11 +116,13 @@ def live_run() -> RunResult:
     import civis  # In the scanner image.
 
     from scanner.output import CivisRunOutputs, CivisSink
-    from scanner.ratelimit import civis_retrying
+    from scanner.ratelimit import civis_retrying, install_request_timeout
 
     # A shorter retries policy than civis-python's default (docs/PLAN.md 17.5): civis holds one lock for
-    # each whole request, retries included, so a long retry blocks every other API call in the scan. A
-    # request that gets no response still holds that lock with no time limit (civis sets no timeout).
+    # each whole request, retries included, so a long retry blocks every other API call in the scan. civis
+    # sets no request timeout, so every request gets one before the client is made (it downloads the API
+    # spec), and a request that gets no response raises instead of holding the lock (docs/PLAN.md 17.12).
+    install_request_timeout()
     client = civis.APIClient(retries=civis_retrying())
     sink = CivisSink(client, civis.io, config.database, config.schema, config.credential_id)
     outputs = CivisRunOutputs(client, civis.io, config.civis_job_id, config.civis_run_id)

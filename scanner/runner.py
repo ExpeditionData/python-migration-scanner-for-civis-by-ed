@@ -15,7 +15,7 @@ Steps:
    tarball requests, peak cache size, and cache evictions, the files read
    (and failed reads) through the Civis git endpoints, and the notebook links
    asked for right before downloads (and the second links after a refused
-   download).
+   download), and the Civis API requests that timed out.
 
 If the tables cannot be written, the scan keeps going, still saves the CSV
 report, and ends with status "tables_failed". Every API call to Civis goes
@@ -51,7 +51,7 @@ from scanner.inventory import build_inventory
 from scanner.inventory.users import scanning_user
 from scanner.output import ResultSink, SchemaNotDedicated, TableWriteError, report_csv
 from scanner.process import ObjectResult, ScanDeps, process_item
-from scanner.ratelimit import BudgetedClient, RequestBudget
+from scanner.ratelimit import BudgetedClient, RequestBudget, request_timeouts
 from scanner.retrieval.civis_git import CivisGitFiles
 from scanner.retrieval.github import GitHubRepos
 from scanner.retrieval.http import SafeHttp
@@ -192,6 +192,7 @@ def _run_scan(
     state: _FailState,
 ) -> RunResult:
     step("schema_check")
+    timeouts_before = request_timeouts()  # This run's share of the process's timed-out requests.
     started = now()
     run_id = config.run_id or new_run_id(started)
     # Before anything is created or written (tables, rows, retention deletes, the CSV): the results schema
@@ -346,7 +347,7 @@ def _run_scan(
         github_tarball_requests=repos.downloads, github_cache_peak_bytes=repos.peak_cache_bytes,
         github_cache_evictions=repos.evictions, civis_git_reads=civis_git.reads,
         civis_git_failures=civis_git.failures, notebook_links=notebook_links.links,
-        notebook_link_retries=notebook_links.retries,
+        notebook_link_retries=notebook_links.retries, request_timeouts=request_timeouts() - timeouts_before,
     )
 
     result.status = final

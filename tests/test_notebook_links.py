@@ -170,7 +170,7 @@ def test_dry_run_scans_every_notebook_when_the_code_scan_starts_after_the_links_
     assert len(inventory_links) == len(PYTHON_NOTEBOOKS)
     assert all(check_link(url, clock.now())[0] == 403 for url in inventory_links)  # They had expired.
     final = log_stream.getvalue().splitlines()[-1]
-    assert final.endswith(" notebook_links=4 notebook_link_retries=0")
+    assert final.endswith(" notebook_links=4 notebook_link_retries=0 request_timeouts=0")
 
 
 def test_the_old_behavior_fails_the_dry_run_test():
@@ -363,7 +363,7 @@ def test_run_line_counts_and_order(log_stream):
         "RUN run_id=run-1 status=succeeded objects_total=3 objects_scanned=3 api_calls=12 civis_git_reads=0 "
         "civis_git_failures=0 notebook_links=5 notebook_link_retries=1"
     ]
-    assert scan_log.RUN_COUNTS[-2:] == ("notebook_links", "notebook_link_retries")
+    assert scan_log.RUN_COUNTS[-3:] == ("notebook_links", "notebook_link_retries", "request_timeouts")
 
 
 def test_a_resumed_run_counts_its_own_link_calls(tmp_path, log_stream):
@@ -380,4 +380,4 @@ def test_a_resumed_run_counts_its_own_link_calls(tmp_path, log_stream):
         conn.close()
     dry_run(tmp_path, now=NOW, run_id=run_id)
     final = log_stream.getvalue().splitlines()[-1]
-    assert final.endswith(f" notebook_links={len(PYTHON_NOTEBOOKS - done)} notebook_link_retries=0")
+    assert final.endswith(f" notebook_links={len(PYTHON_NOTEBOOKS - done)} notebook_link_retries=0 request_timeouts=0")

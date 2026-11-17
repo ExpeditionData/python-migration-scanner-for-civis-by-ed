@@ -20,13 +20,14 @@ Line formats (parsed by the web app to show progress):
     USERS source=active status=404
     CHECKPOINT objects_written=500
     OUTPUT_FAILED error=CivisAPIError
+    REQUEST_TIMEOUT installed=yes connect=15 read=120
     LIST_FAILED type=custom_script rows_read=150 error=CivisAPIError status=503
     FATAL error=KeyError step=code_and_logs
     FATAL error=CivisAPIError status=404 step=inventory_users
     FATAL error=SchemaNotDedicated reason=results_schema_holds_other_tables_or_views other_objects=3
     TABLE_WRITE_FAILED table=findings error=CivisAPIError status=403
     RUN run_id=run-20261013T120000Z-a1b2c3 status=running
-    RUN run_id=run-20261013T120000Z-a1b2c3 status=succeeded objects_total=2000 objects_scanned=2000 api_calls=6120 github_tarball_requests=14 github_cache_peak_bytes=52428800 github_cache_evictions=0 civis_git_reads=37 civis_git_failures=2 notebook_links=41 notebook_link_retries=1
+    RUN run_id=run-20261013T120000Z-a1b2c3 status=succeeded objects_total=2000 objects_scanned=2000 api_calls=6120 github_tarball_requests=14 github_cache_peak_bytes=52428800 github_cache_evictions=0 civis_git_reads=37 civis_git_failures=2 notebook_links=41 notebook_link_retries=1 request_timeouts=0
 
 INVENTORY: one line per listed type (the six script, notebook, and Service
 lists, then workflows), logged after every list is read and before any detail
@@ -58,8 +59,14 @@ failure also has a CIVIS_GIT_FAILED line. notebook_links counts the
 notebooks.get calls made right before notebook downloads, retries included, and
 notebook_link_retries the second links asked for after S3 refused a download
 with HTTP 403 or 400 (scanner/retrieval/notebooks.py, docs/PLAN.md 17.9). Each
-notebooks.get call is also counted in api_calls. Like the other counts, a
-resumed run counts only its own calls.
+notebooks.get call is also counted in api_calls. request_timeouts counts Civis
+API requests that ended in a timeout (scanner/ratelimit.py,
+install_request_timeout; docs/PLAN.md 17.12). Like the other counts, a resumed
+run counts only its own calls.
+
+REQUEST_TIMEOUT: logged once by a live scan before the client is made, with
+the connect and read timeouts in seconds, or installed=no when this civis
+version has no open_session to wrap.
 """
 
 from __future__ import annotations
@@ -175,7 +182,7 @@ def table_write_failed(table: str, exc: BaseException) -> None:
 
 RUN_COUNTS = ("objects_total", "objects_scanned", "api_calls", "github_tarball_requests",
               "github_cache_peak_bytes", "github_cache_evictions", "civis_git_reads", "civis_git_failures",
-              "notebook_links", "notebook_link_retries")
+              "notebook_links", "notebook_link_retries", "request_timeouts")
 
 
 def run_status(run_id: str, status: str, **counts: int) -> None:
@@ -223,6 +230,16 @@ def list_failed(object_type: ObjectType | str, rows_read: int, exc: BaseExceptio
         "LIST_FAILED type=%s rows_read=%d error=%s%s",
         _object_type(object_type), _count(rows_read, "rows_read"), _error_name(exc), suffix,
     )
+
+
+def request_timeout(installed: bool, connect: int | None = None, read: int | None = None) -> None:
+    """Whether every Civis API request has a timeout, and its connect and read seconds."""
+    if installed is True:
+        _logger.info("REQUEST_TIMEOUT installed=yes connect=%d read=%d", _count(connect, "connect"), _count(read, "read"))
+    elif installed is False:
+        _logger.info("REQUEST_TIMEOUT installed=no")
+    else:
+        raise ValueError("installed must be True or False")
 
 
 def output_failed(exc: BaseException) -> None:

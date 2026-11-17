@@ -37,7 +37,7 @@ OTHER = "other"
 # Line types the scanner writes (scanner/scan_log.py). Any other log line is counted as "other".
 SCANNER_PREFIXES = (
     "RUN", "PHASE", "PROGRESS", "CHECKPOINT", "FINDINGS", "OBJECT_ERROR", "CIVIS_GIT_FAILED", "PARSE_ERROR",
-    "TABLE_WRITE_FAILED", "OUTPUT_FAILED", "FATAL", "USERS", "INVENTORY", "LIST_FAILED",
+    "TABLE_WRITE_FAILED", "OUTPUT_FAILED", "FATAL", "USERS", "INVENTORY", "LIST_FAILED", "REQUEST_TIMEOUT",
 )
 ERROR_LINES = (
     "OBJECT_ERROR", "CIVIS_GIT_FAILED", "PARSE_ERROR", "TABLE_WRITE_FAILED", "OUTPUT_FAILED", "FATAL", "LIST_FAILED",
@@ -46,6 +46,7 @@ ERROR_LINES = (
 RUN_COUNTS = (
     "objects_total", "objects_scanned", "api_calls", "github_tarball_requests", "github_cache_peak_bytes",
     "github_cache_evictions", "civis_git_reads", "civis_git_failures", "notebook_links", "notebook_link_retries",
+    "request_timeouts",
 )
 SCAN_STATUSES = ("running", "succeeded", "tables_failed", "failed")
 FINAL_STATUSES = ("succeeded", "tables_failed", "failed")  # The default scan is the newest with one of these.

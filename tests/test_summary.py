@@ -79,7 +79,7 @@ def test_run_line_includes_the_notebook_link_counts():
             "notebook_links=58 notebook_link_retries=2")
     counts = summary.count_log([line])
     assert counts.run_counts["notebook_links"] == 58 and counts.run_counts["notebook_link_retries"] == 2
-    assert summary.RUN_COUNTS[-2:] == ("notebook_links", "notebook_link_retries")
+    assert summary.RUN_COUNTS[-3:] == ("notebook_links", "notebook_link_retries", "request_timeouts")
     try:
         from scanner.scan_log import RUN_COUNTS
     except ImportError:  # pragma: no cover - the scanner package is in every test image.

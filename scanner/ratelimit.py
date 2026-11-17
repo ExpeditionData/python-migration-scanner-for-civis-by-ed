@@ -13,16 +13,21 @@ than 20 percent of the user's calls remain, the scanner slows to half speed
 until the headroom comes back.
 
 civis-python's own retry still applies on top of this, with the shorter policy
-in ``civis_retrying`` (docs/PLAN.md 17.5).
+in ``civis_retrying`` (docs/PLAN.md 17.5), and every Civis API request has a
+connect and read timeout (``install_request_timeout``, docs/PLAN.md 17.12).
 """
 
 from __future__ import annotations
 
+import functools
+import importlib
 import threading
 import time
 from collections import deque
 from collections.abc import Callable, Iterator
 from typing import Any
+
+from scanner import scan_log
 
 DEFAULT_REQUESTS = 500
 DEFAULT_WINDOW_SECONDS = 300.0
@@ -49,8 +54,10 @@ def civis_retrying() -> Any:
     waits at least the Retry-After header, and raises the last error when the
     retries run out.
 
-    Not handled here: civis sets no request timeout, so a request that never gets a
-    response holds the lock with no time limit. No change for that in v0.1.0-rc6.
+    civis sets no request timeout, so before docs/PLAN.md 17.12 a request that never
+    got a response held the lock with no time limit. install_request_timeout gives
+    every Civis API request a connect and read timeout; see its docstring for the
+    longest one request can hold the lock now.
 
     tenacity is a civis dependency in the scanner image (requirements-scanner.txt).
     It is imported here so the module loads without it.
@@ -63,6 +70,111 @@ def civis_retrying() -> Any:
         retry_error_callback=lambda retry_state: retry_state.outcome.result(),
         reraise=True,
     )
+
+
+# A timeout on every Civis API request (docs/PLAN.md 17.12): (connect, read) for requests.
+REQUEST_CONNECT_TIMEOUT_SECONDS = 15
+REQUEST_READ_TIMEOUT_SECONDS = 120
+# civis modules that call open_session by name: Endpoint._make_request (every API call) in civis.base, and
+# the API spec download when the client is made in civis.resources._resources (imported there by name).
+_SESSION_MODULES = ("civis.base", "civis.resources._resources")
+_WRAPPED = "_pmsc_request_timeout"
+
+
+class _Count:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.value = 0
+
+    def add(self) -> None:
+        with self._lock:
+            self.value += 1
+
+
+_request_timeouts = _Count()
+
+
+def request_timeouts() -> int:
+    """Civis API requests that ended in a timeout in this process (the RUN line counts this scan's share)."""
+    return _request_timeouts.value
+
+
+def install_request_timeout() -> bool:
+    """Give every civis-python API request a timeout. Returns True when installed.
+
+    civis 2.10 makes a new requests session for each request with ``civis.base.open_session`` and sends it
+    with ``sess.send(prepared)`` and no timeout (``Endpoint._make_request``, through
+    ``civis._retries.retry_request``); the API spec download when the client is made does the same, with
+    ``open_session`` imported by name into ``civis.resources._resources``. This replaces ``open_session``
+    in those two modules with a wrapper that returns the same session with a ``send`` that sets
+    ``timeout=(REQUEST_CONNECT_TIMEOUT_SECONDS, REQUEST_READ_TIMEOUT_SECONDS)`` when the caller gave none
+    (a caller's own timeout is kept), and counts requests that end in a timeout (``request_timeouts``)
+    before raising the error again. requests is never patched globally: SafeHttp and civis.io's own file
+    transfers keep their own timeouts. Calling it again wraps nothing twice. If either module has no
+    ``open_session`` (another civis version), nothing is installed. Logs ``REQUEST_TIMEOUT installed=yes
+    connect=15 read=120`` or ``REQUEST_TIMEOUT installed=no``.
+
+    What a timeout does: requests raises ``ConnectTimeout`` (no connection within 15 seconds) or
+    ``ReadTimeout`` (no byte from the server for 120 seconds) out of the API call. civis's retry policy
+    retries only on status codes, so a timeout is not retried and raises at once, and civis's lock is
+    released. A timeout while the response body is being read surfaces from requests as a
+    ``ConnectionError`` caused by urllib3's ``ReadTimeoutError``; it is counted too.
+
+    The longest one request can hold civis's lock: civis_retrying checks its 120 seconds after each try.
+    A try that answers with a retried status (for example 503) just before 120 seconds, a wait of at most
+    30 seconds, and one more try of at most 15 + 120 seconds give about 285 seconds (4 minutes 45 seconds).
+    Two limits remain: the read timeout is the time between bytes, so a server that keeps sending slowly
+    can take longer, and civis waits at least a ``Retry-After`` header before a retry, whatever it says.
+    """
+    modules = []
+    for name in _SESSION_MODULES:
+        try:
+            module = importlib.import_module(name)
+        except ImportError:
+            module = None
+        if module is None or not callable(getattr(module, "open_session", None)):
+            scan_log.request_timeout(installed=False)
+            return False
+        modules.append(module)
+    for module in modules:
+        if not getattr(module.open_session, _WRAPPED, False):
+            module.open_session = _open_session_with_timeout(module.open_session)
+    scan_log.request_timeout(installed=True, connect=REQUEST_CONNECT_TIMEOUT_SECONDS,
+                             read=REQUEST_READ_TIMEOUT_SECONDS)
+    return True
+
+
+def _timed_out(exc: BaseException) -> bool:
+    """requests' Timeout (ConnectTimeout, ReadTimeout), or its ConnectionError for a timeout while the body is
+    read. Matched by class name, so this module imports no HTTP client (only SafeHttp does)."""
+    classes = {(cls.__module__, cls.__name__) for cls in type(exc).__mro__}
+    if ("requests.exceptions", "Timeout") in classes:
+        return True
+    return ("requests.exceptions", "ConnectionError") in classes and any(
+        type(arg).__name__ == "ReadTimeoutError" for arg in exc.args)
+
+
+def _open_session_with_timeout(open_session: Callable) -> Callable:
+    @functools.wraps(open_session)
+    def open_session_with_timeout(*args: Any, **kwargs: Any) -> Any:
+        session = open_session(*args, **kwargs)
+        send = session.send
+
+        def send_with_timeout(request: Any, **send_kwargs: Any) -> Any:
+            if send_kwargs.get("timeout") is None:
+                send_kwargs["timeout"] = (REQUEST_CONNECT_TIMEOUT_SECONDS, REQUEST_READ_TIMEOUT_SECONDS)
+            try:
+                return send(request, **send_kwargs)
+            except Exception as exc:
+                if _timed_out(exc):
+                    _request_timeouts.add()
+                raise
+
+        session.send = send_with_timeout
+        return session
+
+    setattr(open_session_with_timeout, _WRAPPED, True)
+    return open_session_with_timeout
 
 
 class RequestBudget:
