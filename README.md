@@ -122,7 +122,14 @@ You need:
 4. **A GitHub token is optional.** The normal setup has no GitHub token. Without one, the
    scanner reads:
    - inline code: Python script source, container commands, template code,
-     and inline workflow tasks
+     and inline workflow tasks. In a docker command (of a container script, a
+     template, or a workflow task), Python run with `python -c "..."` or from
+     a heredoc on `python` (for example `python - <<EOF`) is checked with the
+     Python rules too, as are the same forms in notebook shell lines and
+     Dockerfiles. Python piped in from another command, `bash -c` holding a
+     `python -c`, and a script run by name (`python run.py`) are not read
+     this way; a script file is read from its repository only when a token is
+     attached.
    - notebook files
    - the file set in Civis for each git-backed Python script and workflow,
      through the Civis API. Civis reads the file from the repository, so the
@@ -467,6 +474,14 @@ checked it), and both pages can be filtered by template ID. The Overview says
 how many templates, used by how many custom scripts, have findings. Civis
 also lists each custom script under its backing script's type; the scan
 counts it once, as a custom script.
+
+**If a list stops partway.** The scan first lists every object type from
+Civis. If Civis stops returning one type's list partway (for example with an
+HTTP 503), the scan keeps the rows it read, goes on with the other types, and
+still ends as succeeded. The Overview then shows a warning under "By object
+type" for that type, saying how many rows were read. Objects after that point
+were not found or scanned, so run a new scan to check them. If every list
+fails, the scan stops and Scan history shows it as failed.
 
 **Affected and Advisory.** A finding is "Affected in February" when its
 object runs on a Civis default image with a blank tag, `latest`, the current

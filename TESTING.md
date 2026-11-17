@@ -91,7 +91,10 @@ Item 5.6 is not part of this run. It waits for the first release tag after
 
 Before item 1.1, make sure the test organization has at least one of each of
 these, so every check below has something to find. Each Python object should
-contain one known pattern, such as `client.users.list_me()`.
+contain one known pattern, such as `client.users.list_me()`. In a container
+script, the pattern can be in Python run from its docker command, for example
+`python -c "import civis; civis.APIClient().users.list_me()"` (docs/PLAN.md
+17.12).
 
 - a Python script, a container script, a custom script (from a Python
   template), a notebook, a Service with a git repository, and a workflow with
@@ -343,8 +346,11 @@ Only for troubleshooting, or if item 2.1 failed.
 - **Expected:** Status `succeeded`; Overview counts match the summary.
 - **Record:** status; minutes from start to finish; `lookback_days`;
   `objects_total`, `objects_scanned`, `api_calls`, `civis_git_reads`,
-  `civis_git_failures`; the summary's `inventory` lines (listed, kept,
-  outside_window, template_copies, and not_python per type); objects scanned,
+  `civis_git_failures`, `request_timeouts`; the summary's `inventory` lines
+  (listed, kept, outside_window, template_copies, and not_python per type)
+  and `list_failed` lines (`none`, or the rows read for each type whose list
+  stopped partway; the Overview then shows a warning for that type,
+  docs/PLAN.md 17.12); objects scanned,
   partly scanned, and not scanned; affected and advisory counts; total
   findings; the Overview's "templates, used by custom scripts, have findings"
   line.
@@ -371,8 +377,9 @@ Only for troubleshooting, or if item 2.1 failed.
 - **Steps:** The test summary's `log_errors` and `log_other_lines` lines count
   these for you. Scanner lines start with `RUN`, `PHASE`, `PROGRESS`,
   `CHECKPOINT`, `FINDINGS`, `OBJECT_ERROR`, `CIVIS_GIT_FAILED`,
-  `PARSE_ERROR`, `TABLE_WRITE_FAILED`, `OUTPUT_FAILED`, `FATAL`, `USERS`, or
-  `INVENTORY`.
+  `PARSE_ERROR`, `TABLE_WRITE_FAILED`, `OUTPUT_FAILED`, `FATAL`, `USERS`,
+  `INVENTORY`, `LIST_FAILED`, or `REQUEST_TIMEOUT` (one line near the top:
+  `REQUEST_TIMEOUT installed=yes connect=15 read=120`).
   If `log_other_lines` is not 0, scan the run log without copying it to see
   what kind of lines they are. The summary's `users_list` line says which user
   list the scan used (`all`, or `active` or `none` with an HTTP status), and
@@ -381,7 +388,7 @@ Only for troubleshooting, or if item 2.1 failed.
   "pip" lines.
 - **Record:** `log_other_lines` and what kind of lines they are in general
   terms, and the count of each error type in `OBJECT_ERROR`,
-  `CIVIS_GIT_FAILED`, and `PARSE_ERROR` lines (for example
+  `CIVIS_GIT_FAILED`, `PARSE_ERROR`, and `LIST_FAILED` lines (for example
   `CivisAPIError status=403: 2`), from the summary.
 
 ### 3.7 First page loads after a scan
@@ -486,7 +493,11 @@ Only for troubleshooting, or if item 2.1 failed.
 - **Expected:** Each appears as archived, lists the workflow, and has its
   finding. The archived custom script appears as a custom script (not as a
   Python script) with its template's finding (docs/PLAN.md 17.8). This
-  confirms the job type matching.
+  confirms the job type matching. The archived container script's finding
+  comes from the Python in its docker command (`python -c "..."`), with the
+  label "docker command" and the line where that Python sits (docs/PLAN.md
+  17.12). On `v0.1.0-rc10`, both test container scripts had 0 findings,
+  because the docker command was read as shell only.
 - **Record:** pass or fail per script type.
 
 ### 4.7 dbt default image (PLAN.md 13.4)
@@ -693,8 +704,9 @@ Item  Result (pass/fail/skipped)  Counts or note
       updated on its own at first: yes/no   stop line appeared: yes/no
       frame showed "Cookie expired.": yes/no   whole-page reload brought current counts: yes/no
 3.4   status=  minutes=  lookback_days=  objects_total=  objects_scanned=  api_calls=
-      civis_git_reads=  civis_git_failures=
+      civis_git_reads=  civis_git_failures=  request_timeouts=
       inventory (from the summary, per type): listed=  kept=  outside_window=  template_copies=  not_python=
+      list_failed (from the summary): none, or type=rows read
       scanned=  partly scanned=  not scanned=  affected=  advisory=  findings=
       objects saved on the current default tag or its major tag counted as Affected: yes/no
       templates with findings=  custom scripts using them=
@@ -707,7 +719,7 @@ Item  Result (pass/fail/skipped)  Counts or note
 4.3   missing schema state (Setup line 9, Overview):   restored:
 4.4   per table rows before/after:
 4.5   runs before=  after=
-4.6   python=  container=  custom=
+4.6   python=  container=  custom=   container finding from python -c in the docker command: yes/no
 4.7   image and tag:
 4.8   scan 1 (no token): python git_backed=  read_through_civis=  civis_read_failed=
                          workflow git_backed=  civis_read_failed=

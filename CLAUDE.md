@@ -196,6 +196,9 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   (docs/PLAN.md 17.10). Post-test build part 1 (the busy cue's look,
   "Canceled" in UI text, the Findings sideways scroll at phone width, and
   the CSV link for a run left running) is done (docs/PLAN.md 17.11).
+  Post-test build part 2 (Python in shell commands, one type's failed list,
+  a timeout on Civis requests, and the Inventory progress wording) is done
+  (docs/PLAN.md 17.12).
   Implementation choices not in the approved plan are in docs/PLAN.md
   sections 10 to 17.
 - **App flow.** `app/__init__.create_app` -> `app/services.py` (Civis or local
@@ -273,7 +276,21 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   Contrast is checked by `tests/test_app.py`.
 - **Scanner flow.** `scanner/__main__.py` -> `runner.run_scan` -> inventory ->
   `process.process_item` per object (retrieval, engine, logs) ->
-  `checkpoint.Checkpointer` -> `output` sinks. Every Civis API call goes
+  `checkpoint.Checkpointer` -> `output` sinks. The engine also scans Python
+  passed inline to an interpreter in shell text (`engine.python_in_shell`,
+  docs/PLAN.md 17.12): `python`, `python3`, or `python3.N` (a path or `env`
+  in front, options before `-c`) with `-c <code>`, split with `shlex`, and a
+  heredoc on the interpreter's stdin (`python - <<EOF`, `python3 <<'PY'`,
+  `<<-END`), whose body is not also checked as shell. It applies to
+  `scan_shell` (container, template, and workflow task docker commands,
+  notebook shell cell magics), notebook `!` lines, and Dockerfile RUN lines.
+  Lines map to the shell text (quoted multi-line `-c` counts from the line
+  where the quote opens), labels are the unit's, code that does not parse
+  uses the regex fallback (partial, `PARSE_ERROR`), and a rule matched as
+  Python and shell on one line is reported once. Not covered: piped code,
+  `bash -c` holding `python -c`, here-strings, `%%script python3`, and
+  `python script.py`; a line `shlex` cannot split gets the shell rules only.
+  Every Civis API call goes
   through `ratelimit.BudgetedClient`; every other HTTP call goes through
   `retrieval/http.SafeHttp` and its host allow list. `retrieval/civis_git.CivisGitFiles`
   reads an item's own git file through the Civis API: a git-backed workflow's
@@ -297,9 +314,10 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   `objects_scanned`, `api_calls`, `github_tarball_requests`,
   `github_cache_peak_bytes`, `github_cache_evictions`, `civis_git_reads`,
   `civis_git_failures`, `notebook_links` (`notebooks.get` calls for
-  downloads, retries included), and `notebook_link_retries` (second links
-  after a refused download), so calls per object, memory use, Civis git
-  reads, and notebook links can be measured in a live test. Failed Civis git reads also get a
+  downloads, retries included), `notebook_link_retries` (second links
+  after a refused download), and `request_timeouts` (Civis API requests that
+  timed out), so calls per object, memory use, Civis git reads, notebook
+  links, and timeouts can be measured in a live test. Failed Civis git reads also get a
   `CIVIS_GIT_FAILED` line. The GitHub file cache is capped at 1 GB of text
   (`CACHE_MAX_BYTES`) with least-recently-used eviction.
 - **Scanner users, hidden objects, retries, FATAL (docs/PLAN.md 17.5).**
@@ -314,12 +332,28 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   tries or 120 seconds, waits up to 30 seconds; tenacity is pinned in
   `requirements-scanner.txt`). civis 2.10 holds one class-level lock for each
   whole request, retries included, so a slow call blocks every other API call
-  in the scan, and a request with no response holds it with no time limit
-  (civis sets no timeout; not handled yet). `run_scan` tracks the step and
+  in the scan. civis sets no request timeout, so `live_run` first calls
+  `ratelimit.install_request_timeout()` (docs/PLAN.md 17.12): it wraps
+  `open_session` in `civis.base` and `civis.resources._resources` so every
+  session's `send` gets `timeout=(15, 120)` (connect, read) when the caller
+  gave none, counts timed-out requests (`request_timeouts`), and logs
+  `REQUEST_TIMEOUT installed=yes connect=15 read=120` (or `installed=no`
+  when civis has no `open_session`). requests is never patched globally. A
+  timeout raises at once (civis retries only on status codes), so one
+  request holds the lock about 285 seconds at most (a `Retry-After` header
+  or a server that keeps sending slowly can make it longer). A list call
+  that fails keeps the rows read (`base.ListFailed`), logs `LIST_FAILED
+  type=<type> rows_read=N error=<type> [status=N]`, adds a coverage row with
+  `row_kind` `list_failed` (rows read in `found_count`, a fixed note from
+  `common/models.list_failed_note`; the Overview shows one warning per row,
+  and the test summary adds `list_failed:` lines), and the scan goes on
+  (docs/PLAN.md 17.12). `run_scan` tracks the step and
   logs `FATAL error=<type> [status=N] step=<step>` (steps in
-  `scan_log.FATAL_STEPS`), then appends a final "failed" `scan_runs` row if
-  the "running" row was written and the tables are usable, and raises
-  `ScanFailed`. `SchemaNotDedicated` still writes nothing.
+  `scan_log.FATAL_STEPS`; a list step only when all seven lists failed, with
+  the first failure's error and step), then appends a final "failed"
+  `scan_runs` row if the "running" row was written and the tables are
+  usable, and raises `ScanFailed`. `SchemaNotDedicated` still writes
+  nothing.
 - **Inventory order and the window (docs/PLAN.md 17.6).** `build_inventory`
   lists every type first (all pages; no early stop, because `updated_at` does
   not change on a run), then chooses rows: a Python, container, or dbt row
@@ -426,12 +460,14 @@ app on 127.0.0.1 only:
 Open http://127.0.0.1:8050. Add `--state no-scan` (or `first-scan-running`, `first-scan-cancelled`,
 `failed`, `tables-failed`, `schema-missing`, `no-job-id`, `job-unreadable`,
 `database-unrecognized`, `schema-refused`, `tables-missing`,
-`setup-failures`, `not-scanner-job`, or `schema-shared`) to see the empty and
+`setup-failures`, `not-scanner-job`, `schema-shared`, or `list-failed`) to see the empty and
 error states. `not-scanner-job` points SCANNER_JOB_ID at another job, and
 `schema-shared` has a results schema that holds other tables. `schema-missing`,
 `schema-refused`, and `tables-missing` look like a new install with the "Set
 up results storage" button (`schema-refused` shows the statement for a
-database admin); `setup-failures` makes several Setup page lines fail. Local
+database admin); `setup-failures` makes several Setup page lines fail.
+`list-failed` gives every scan a made-up `list_failed` coverage row (custom
+scripts, 150 rows, HTTP 503), so the Overview shows its warning. Local
 preview refuses to start if `CIVIS_API_KEY` is set.
 
 ## Testing commands
@@ -445,6 +481,8 @@ Run the full suite on both Python versions before every commit:
 
 - `tests/test_security.py` proves the SECURITY.md requirements: no secret or
   personal data from logs, code, or notebook output reaches any output,
+  no text from Python run with `python -c` or a heredoc in a docker command
+  (parsed or not) reaches any output (docs/PLAN.md 17.12),
   no notebook link (host, bucket, query string, or signature) reaches a log
   line, table row, CSV line, or exception text, malicious schema names are
   rejected, keys in exceptions are redacted, and values from Civis render as
@@ -465,10 +503,29 @@ Run the full suite on both Python versions before every commit:
   `scanner/synthetic/synthetic_instance.json`. Like Civis in the live test,
   its `users.list` refuses `account_status` "all" and "inactive" with HTTP
   404 (`users_list_errors`), so the dry run and the preview use the active
-  list; tests set `users_list_errors` to `{}` for the "all" shape.
-- `tests/test_fatal.py` covers the FATAL line and the final "failed" row, and
-  `tests/test_retries.py` drives the retries policy through civis-python's
-  own `retry_request` (it skips on civis 2.7.1).
+  list; tests set `users_list_errors` to `{}` for the "all" shape. Its
+  `list_errors` setting (keyed by object type, `{"status": N, "after": N}`)
+  makes one type's list return some rows and then fail.
+- `tests/test_fatal.py` covers the FATAL line and the final "failed" row
+  (including every list failing, and one failed list no longer stopping the
+  scan), and `tests/test_retries.py` drives the retries policy through
+  civis-python's own `retry_request` (it skips on civis 2.7.1).
+- `tests/test_shell_python.py` covers Python in shell text (docs/PLAN.md
+  17.12): each `-c` and heredoc form, quoted multi-line `-c`, separators, a
+  line `shlex` cannot split, the regex fallback, the dedupe, negatives,
+  Dockerfiles, notebooks, and synthetic container script 212 and workflow
+  601's container task.
+- `tests/test_list_failed.py` covers a list that fails on the first page or
+  partway (rows kept, `LIST_FAILED`, the `list_failed` row and note, other
+  types scanned, status succeeded), the custom and workflow lists, the test
+  summary lines, and no exception text in any output.
+- `tests/test_request_timeout.py` runs civis 2.10's own client with
+  `requests.adapters.HTTPAdapter.send` stubbed (the bundled API spec for
+  `/endpoints`, a made-up host): every request carries the timeout, a
+  caller's own is kept, a timeout raises, is counted, and releases civis's
+  lock, a missing `open_session` installs nothing, a second call wraps
+  nothing twice, and the RUN line and test summary carry `request_timeouts`.
+  It skips on civis 2.7.1.
 - Every rule needs a positive and a negative fixture in `tests/test_rules.py`.
   A test fails if a rule has none.
 - `tests/test_self_scan.py` runs the tool's own rules over this repo.
@@ -513,8 +570,9 @@ Run the full suite on both Python versions before every commit:
   the header and nav), the trigger CSS rules, `data-no-busy` on every
   download link, no "cancelled" in any page's shown text in any preview
   state, every table and its `.sr-only` text inside a `.table-wrap`, the
-  preview's canceled scan's CSV link and no-report page, and local preview
-  mode, and the templates display and filter.
+  preview's canceled scan's CSV link and no-report page, the Overview's
+  list warning in the `list-failed` state (escaped, from `list_failed` rows
+  only), and local preview mode, and the templates display and filter.
 - `tests/test_run_labels.py` covers the run labels (docs/PLAN.md 17.9): the
   same after the oldest runs are removed, a resumed scan's first Civis run
   ID, the "Scan <run ID>" fallback, the preview's four scans (Civis runs 501
