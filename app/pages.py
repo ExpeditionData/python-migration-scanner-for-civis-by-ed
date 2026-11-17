@@ -206,7 +206,7 @@ def _empty_state(situation: views.Situation) -> dict | None:
                         "the scan again."}
     if situation.last_outcome == "cancelled":
         return {"title": "No completed scan yet",
-                "body": "The last scan was cancelled before it finished. Run the scan again."}
+                "body": "The last scan was canceled before it finished. Run the scan again."}
     if situation.runs or situation.scans:
         # A scan exists but none completed, and it ended some other way (Civis lists the run in another final
         # state, or the scan has no final status row). "No scan yet" is only for when there is no scan at all.

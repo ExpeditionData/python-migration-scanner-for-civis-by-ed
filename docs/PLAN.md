@@ -1390,4 +1390,4 @@ TESTING.md changes "canceled" in prose only. Its Order step 2 and item 1.10 alre
 
 #### Not changed
 
-- UI text (for example the Scan history status label "Cancelled") waits for the next tagged build. No code, tests, or SECURITY.md.
+- UI text (for example the Scan history status label "Cancelled") waited for the next tagged build: 17.11, Part B changed it to "Canceled". No code, tests, or SECURITY.md.

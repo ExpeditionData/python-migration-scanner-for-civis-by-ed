@@ -21,7 +21,7 @@ from app.views import ScanRun, Situation  # noqa: E402
 
 SECRET = "empty-states-test-secret-key-long-enough-0001"  # pragma: allowlist secret  gitleaks:allow
 WHEN = "2026-11-10T12:00:00Z"
-CANCELLED = "The last scan was cancelled before it finished. Run the scan again."
+CANCELLED = "The last scan was canceled before it finished. Run the scan again."
 FAILED = "The last scan failed before it finished."
 OTHER = "No scan has finished with results to show yet."
 

@@ -598,7 +598,7 @@ def _latest(facts: SetupFacts) -> Line:
         "running": ("review", "A scan is running.", None),
         "succeeded": ("pass", "The newest scan succeeded.", None),
         "failed": ("fail", "The newest scan failed.", "Read the scanner job's run log in Civis, then run the scan again."),
-        "cancelled": ("warning", "The newest scan was cancelled.", "Run a new scan, or resume it (README)."),
+        "cancelled": ("warning", "The newest scan was canceled.", "Run a new scan, or resume it (README)."),
         "tables_failed": ("fail", "The newest scan could not save its tables (CSV report only).",
                           "Check line 9, then run the scan again."),
     }

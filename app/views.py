@@ -449,7 +449,7 @@ def _status_label(run: JobRun | None, scan: ScanRun | None) -> str:
         if run.state == "running":
             return "In progress"
         if run.state == "cancelled":
-            return "Cancelled"
+            return "Canceled"
         if scan is not None and scan.status == "tables_failed":
             return "Tables not saved (CSV report only)"
         if run.state == "failed":

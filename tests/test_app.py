@@ -27,6 +27,7 @@ from app import local as local_mode
 from app import views
 from app.backends.base import JobRun, LogLine, Progress, ResultsUnavailable, normalize_row
 from app.backends.cache import CachedResults
+from app.backends.local_backend import STATES as LOCAL_STATES
 from app.backends.civis_backend import CivisJobs, CivisResults
 from app.security import generate_csrf_token
 from app.services import Services, local_services
@@ -328,7 +329,7 @@ def test_checklist_save_rejects_values_that_are_not_allowed(app, monkeypatch):
 @pytest.mark.parametrize("state, expected", [
     ("no-scan", "No scan yet"),
     ("first-scan-running", "The first scan is running"),
-    ("first-scan-cancelled", "No completed scan yet The last scan was cancelled before it finished. Run the scan again."),
+    ("first-scan-cancelled", "No completed scan yet The last scan was canceled before it finished. Run the scan again."),
     ("schema-missing", "The results schema does not exist yet"),
     ("failed", "The last scan failed before it finished."),
     ("tables-failed", "could not save its results tables"),
@@ -1227,3 +1228,42 @@ def test_the_help_styles_live_in_app_css():
     assert ".page-help > summary { cursor: pointer; font-weight: 700; color: var(--primary); }" in css
     assert ".page-help { font-size: 14px; color: var(--text); padding: 12px 18px; }" in css
     test_text_contrast_is_at_least_4_5_to_1()  # --text and --primary on --surface are in the checked pairs.
+
+
+# --- "Canceled" in shown text (docs/PLAN.md 17.11, Part B) ---------------------------------------------------
+
+
+def _shown_text(body: str) -> str:
+    """The text a person sees on the page: tags removed, and the test summary's text box left out, because its
+    keys and fixed labels are values from an allow list (app/summary.py), not sentences."""
+    body = re.sub(r"<textarea\b.*?</textarea>", " ", body, flags=re.S)
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", body)))
+
+
+@pytest.mark.parametrize("state", LOCAL_STATES)
+def test_no_page_shows_the_british_spelling(preview, monkeypatch, state):
+    """American English in every page in every preview state. "cancelled" stays only as a value (Civis's run state,
+    latest_state, the preview state's name), never as text a person reads."""
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    client = make_app(preview, state).test_client()
+    for url in PAGES + ["/setup", "/setup/summary"]:
+        response = client.get(url)
+        assert response.status_code == 200, (state, url)
+        assert "ancelled" not in _shown_text(response.get_data(as_text=True)), (state, url)
+
+
+def test_a_canceled_scan_is_labeled_canceled(preview, monkeypatch):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    client = make_app(preview, "first-scan-cancelled").test_client()
+    assert "Canceled" in text_of(client.get("/scan"))
+    setup = text_of(client.get("/setup"))
+    assert "The newest scan was canceled." in setup
+
+
+def test_canceled_status_label_and_unchanged_values():
+    """The label is set in app/views.py; the run state and Setup's latest_state values keep Civis's spelling."""
+    from app import setup
+
+    run = JobRun(1, "cancelled", "2026-10-14T12:00:00Z", "2026-10-14T12:00:00Z", "2026-10-14T12:10:00Z")
+    assert views._status_label(run, None) == "Canceled"
+    assert "cancelled" in setup.LATEST_STATES and "cancelled" in LOCAL_STATES[3]
