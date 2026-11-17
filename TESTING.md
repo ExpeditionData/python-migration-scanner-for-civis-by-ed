@@ -116,22 +116,29 @@ finish the step the way the interface allows and record the difference.
 ### 1.1 Before you start
 
 - **Steps:** Follow README "Before you start": confirm the Robot user (or a
-  dedicated service account) and choose the results schema name. Do not
-  create the schema: the app does that in item 1.9. Do not attach a GitHub
-  token yet: the first scan runs without one on purpose (item 4.8). The
-  GitHub Custom Credential can be created now or at item 4.8.
+  dedicated service account) and choose the results schema name. Find the
+  results database's name or ID and the ID of the Robot user's database
+  credential. Do not create the schema: the app does that in item 1.9. Do not
+  set a GitHub credential yet: the first scan runs without one on purpose
+  (item 4.8). The GitHub Custom Credential can be created now or at item 4.8.
 - **Expected:** Each step works as written.
 - **Record:** pass or fail per step; Robot user or dedicated service account.
 
-### 1.2 Create the scanner job
+### 1.2 Install script, check mode
 
-- **Steps:** Follow README "Create the scanner job", steps 1 to 7. Add only
-  the required parameters (`RESULTS_DB` and `RESULTS_SCHEMA`), not the
-  optional ones.
-- **Expected:** The job saves with its two parameters. **GitHub Repository
-  URL** accepts the typed public URL (the help article describes picking a
-  repository from a list).
-- **Record:** pass or fail per step; whether the URL could be typed (yes or no).
+- **Steps:** Follow README "Install", steps 1 to 5. Set `GITHUB_CREDENTIAL`
+  to `None`, `LOOKBACK_DAYS` to `30` (the value the first live test used), and
+  `RETENTION_DAYS` to `None`.
+- **Expected:** Every `CHECK` line says `pass`: `settings` (with
+  `mode=check plan=install`), `running_user`, `results_credential`,
+  `results_database`, `results_schema`, and `github_credential` (`pass (none
+  set)`). Two `PLAN` lines name the scanner job's and the Service's fields,
+  with `profile=without_token`. The last line starts with "Nothing changed."
+  Civis shows no new scanner job or Service.
+- **Record:** pass or fail for each `CHECK` line, by its label; whether
+  `RESULTS_DATABASE` was a name or an ID. If a `CHECK` line failed, its
+  label and the `reason=` or `error=` text (fixed labels and error types
+  only).
 
 ### 1.3 Labels to confirm
 
@@ -140,55 +147,75 @@ finish the step the way the interface allows and record the difference.
 
   | # | README text | What to find |
   |---|---|---|
-  | a | Git credential | The container script field for a git credential. |
-  | b | Disk Space | The container script field for disk space, and its unit. |
-  | c | Parameter Name and Type | The two field labels in **Set Parameters**. Also confirm the type list offers Database, String, Integer, and Custom Credential. |
+  | a | removed | The container script page is no longer used for setup; the first live test found no git credential field (docs/PLAN.md 17.10). |
+  | b | removed | The install script sets Disk Space. |
+  | c | removed | The install script sets the parameters. |
   | d | Share the credential with the Robot user | How a Custom Credential is shared with, or created as, another user. |
-  | e | Archive for Services | How a Service is archived. |
+  | e | removed | The first live test confirmed how a Service is archived (docs/PLAN.md 17.10). |
+  | f | Python (New Script) | The script type to choose for the install script. |
+  | g | The credential list shows each credential's ID | Where Civis shows a credential's ID. |
+  | h | Sharing settings | The control on a script's and a Service's page that opens its sharing. |
 
 - **Expected:** The labels match the README.
-- **Record:** for each, "matches" or the label the interface shows. Civis
-  interface labels are not client data.
+- **Record:** for each row that is not removed, "matches" or the label the
+  interface shows. Civis interface labels are not client data.
 
 ### 1.4 Scanner resources
 
-- **Steps:** Use the README values (CPU `1000`, Memory `4096`, Disk Space `4`).
+- **Steps:** After item 1.5, read the scanner job's **CPU (m)**, **Memory
+  (MB)**, and **Disk Space (GB)** on its page (do not save the page). After
+  item 4.8 adds the token with the install script's update, read them again.
   After the first scan (item 3.4) and the second scan (item 5.2), check each
-  run for memory or disk errors. Read the GitHub counts on the last line of
-  the run log of the first scan with the token attached (the second scan,
-  item 4.8), or from the test summary's `run_line` for that scan (item 5.7).
-  The first scan has no token, so its GitHub counts are zero.
-- **Expected:** No out-of-memory or disk-full failure. `github_cache_peak_bytes`
-  is at most 1073741824 (the 1 GB cache cap).
-- **Record:** pass or fail; peak memory if Civis shows it;
-  `github_tarball_requests`, `github_cache_peak_bytes`, and
-  `github_cache_evictions`.
+  run for memory or disk errors, and read its peak memory and CPU if Civis
+  shows them. Read the GitHub counts on the last line of the run log of the
+  first scan with the token attached (the second scan, item 4.8), or from the
+  test summary's `run_line` for that scan (item 5.7). The first scan has no
+  token, so its GitHub counts are zero.
+- **Expected:** Without the token: `500`, `2048`, and `1`. With it: `1000`,
+  `4096`, and `4`. No out-of-memory or disk-full failure. Peak memory stays
+  under 2048 MB without the token and under 4096 MB with it.
+  `github_cache_peak_bytes` is at most 1073741824 (the 1 GB cache cap).
+- **Record:** pass or fail; the three values for each profile; peak memory
+  and CPU per scan if Civis shows them; `github_tarball_requests`,
+  `github_cache_peak_bytes`, and `github_cache_evictions`.
 
-### 1.5 Create the Service
+### 1.5 Install script, install mode
 
-- **Steps:** Follow README "Create the Service", steps 1 to 9. The
-  environment variables are `SCANNER_JOB_ID` and `CIVIS_SERVICE_HEALTH_PATH`;
-  leave out the three optional ones (`CIVIS_FRAME_ANCESTORS_REPORT_ONLY`,
-  `CIVIS_PLATFORM_URL`, and `CIVIS_FRAME_ANCESTORS`). Setup on `v0.1.0-rc5`
-  set `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` to `true` and then `false`, the
-  setup step at that release; `false` and unset mean the same.
+- **Steps:** Follow README "Install", steps 6 and 7.
+- **Expected:** `WRITE scanner_job: created`, `WRITE scanner_job: patched`,
+  `WRITE service: created`, and `WRITE service: patched`, in that order. Every
+  `RESULT` line says `pass`: for the scanner job `repository_set`,
+  `tag_set`, `image_set`, `resources_set` (`profile=without_token`), and
+  `params` (`names=RESULTS_DB,RESULTS_SCHEMA,LOOKBACK_DAYS`); for the Service
+  `repository_set`, `tag_set`, `image_set`, `env_set`, `on_demand`, and
+  `credentials_none`. `RESULT scanner_job results_db_shape` is `object`. One
+  `KEEP IN CIVIS:` line, then the `NEXT` lines. Civis lists one new scanner
+  job and one new Service, with the names in README "What the install script
+  sets", and the scanner job's page shows **Branch** as the release tag and
+  **Repository** blank.
+- **Record:** pass or fail for each `RESULT` line, by its label; the field
+  names on each `other_fields_changed` line (or `none`); the
+  `results_db_shape` value; whether the `KEEP IN CIVIS:` line was printed (yes
+  or no; never record the IDs); minutes the script ran. If a step failed, the
+  `WRITE` line's error type and whether the `RECOVER` lines were clear.
+
+### 1.6 Start Deployment, and nothing installed at start
+
+- **Steps:** Follow README "Install", step 9. Then open the Service's
+  deployment log.
 - **Expected:** The deployment starts and stays running. Civis's health check
-  uses `/healthz`.
-- **Record:** pass or fail per step; minutes from **Start Deployment** to running.
-
-### 1.6 Nothing is installed at start
-
-- **Steps:** Open the Service's deployment log.
-- **Expected:** A gunicorn start ("Listening at: http://0.0.0.0:3838", "Using
-  worker: gthread", and two "Booting worker" lines) and no "pip",
-  "Collecting", or "Downloading" lines.
-- **Record:** pass or fail.
+  uses `/healthz`. The log shows a gunicorn start ("Listening at:
+  http://0.0.0.0:3838", "Using worker: gthread", and two "Booting worker"
+  lines) and no "pip", "Collecting", or "Downloading" lines.
+- **Record:** pass or fail; minutes from **Start Deployment** to running.
 
 ### 1.7 Sharing
 
-- **Steps:** Check the Service's and the scanner job's sharing.
-- **Expected:** Only Civis admins (and the Robot user) have access. The default
-  group was removed from the Service.
+- **Steps:** Follow README "Install", step 8, for the scanner job and the
+  Service, before item 1.6.
+- **Expected:** Only Civis admins (and the Robot user) have access. The
+  default group was removed from both objects. Sharing the scanner job did not
+  change its repository: the Setup page's line 2 passes in item 1.10.
 - **Record:** pass or fail for each object. The user and group counts come
   from the Setup page's line 6 (item 1.10) and the test summary.
 
@@ -230,23 +257,26 @@ finish the step the way the interface allows and record the difference.
 
 ### 1.10 Setup page
 
-- **Steps:** Open the **Setup** page. Do not copy or record the user and group
-  names that line 6 lists. After item 2.1, open the Setup page again.
-- **Expected:** Lines 1 to 5, 7, and 9 pass; line 9 says the schema holds only
-  this tool's five tables (it is dedicated), and the test summary shows
-  `results_schema_dedicated: yes` (line 7 is "review" instead if
-  Civis added the deploying user's GitHub token to the Service as
-  `REPO_HTTP_TOKEN`); line 6 (sharing) is "review";
-  line 8 (frame rule) is a pass (a warning only while
-  `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` is `true`, item 2.2); line 10 (latest
-  scan) is "review" before the first scan.
+- **Steps:** Follow README "Set up results storage and check the setup",
+  step 4: open the **Setup** page. Do not copy or record the user and group
+  names that line 6 lists. After item 2.1, open the Setup page again. Then
+  follow step 6: archive the install script's Python script.
+- **Expected:** Lines 1 to 5, 7, and 9 pass. Line 2 shows "Resource profile:
+  without_token (500 CPU, 2048 MB, 1 GB)" under it. Line 4 shows the
+  `RESULTS_DB` value shape `object`, the same as item 1.5. Line 9 says the
+  schema holds only this tool's five tables (it is dedicated), and the test
+  summary shows `results_schema_dedicated: yes`. Line 7 is "review" instead
+  of a pass if Civis added the deploying user's GitHub token to the Service as
+  `REPO_HTTP_TOKEN`. Line 6 (sharing) is "review". Line 8 (frame rule) is a
+  pass (a warning only while `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` is `true`,
+  item 2.2). Line 10 (latest scan) is "review" before the first scan.
 - **Record:** the result of each line (1 to 10), first visit and after item
-  2.1; the `RESULTS_DB` value shape shown under line 4; the Service lookup
-  method shown under line 7; the user and group counts in line 6; whether line
-  7 reports the deploying user's GitHub token (yes or no; the summary's
-  `repo_http_token_present`); whether line 9 shows the schema is dedicated
-  (yes or no). For any
-  line that is not as expected, its reason in general terms.
+  2.1; the resource profile shown under line 2; the `RESULTS_DB` value shape
+  shown under line 4; the Service lookup method shown under line 7; the user
+  and group counts in line 6; whether line 7 reports the deploying user's
+  GitHub token (yes or no; the summary's `repo_http_token_present`); whether
+  line 9 shows the schema is dedicated (yes or no). For any line that is not
+  as expected, its reason in general terms.
 
 ## 2. Frame rule (PLAN.md 11.3)
 
@@ -257,7 +287,7 @@ finish the step the way the interface allows and record the difference.
   preview pane, open the browser's developer console, and reload the page.
 - **Expected:** The app shows, and the console has no Content Security Policy
   errors from the app. The Setup page's line 8 is a pass. This follows README
-  "Create the Service", step 10.
+  "Install", step 10.
 - **Record:** pass or fail; the number of Content Security Policy errors from
   the app. If there is a `frame-ancestors` error, record the parent address it
   names. Civis host names are fine to record; replace any part that names the
@@ -453,6 +483,10 @@ Only for troubleshooting, or if item 2.1 failed.
   app's Setup page (it reads the job's settings at once), then the Overview
   page. **Do not click Set up results storage**, which would create that
   schema. Then set the parameter back, save, and open the Setup page again.
+  The install script keeps `RESULTS_SCHEMA` as it is, so this item edits the
+  job's page by hand. A save of that page can clear the job's repository, so
+  afterward run the install script's update with the same tag (README "Update
+  to a new release") and check that Setup lines 1 and 2 pass.
 - **Expected:** The Setup page's line 9 fails with "The results schema does
   not exist." The Overview page says "The results schema does not exist yet",
   with **Run scan** off. The other worker process may show the old schema for
@@ -477,11 +511,12 @@ Only for troubleshooting, or if item 2.1 failed.
 
 ### 4.5 `RETENTION_DAYS` (PLAN.md 11.2)
 
-- **Steps:** Do item 5.1 first. On a later day than an earlier scan, add the
-  `RETENTION_DAYS` parameter (Integer, not required) to the scanner job, set
-  it to `1`, and click **Run scan** in the app. Read `runs_in_scan_runs` from
-  the test summary before and after; it replaces a manual count of runs in
-  `scan_runs`. Then clear `RETENTION_DAYS`.
+- **Steps:** Do item 5.1 first. On a later day than an earlier scan, run the
+  install script with `MODE` `"update"`, the same tag, and `RETENTION_DAYS`
+  set to `1` (README "Update to a new release"), and click **Run scan** in the
+  app. Read `runs_in_scan_runs` from the test summary before and after; it
+  replaces a manual count of runs in `scan_runs`. Then run the update again
+  with `RETENTION_DAYS` set to `"clear"`.
 - **Expected:** Scans started more than one day earlier are deleted from all
   five tables; the newest scan is kept; checklist statuses set in item 5.1 are
   still shown in the app.
@@ -543,10 +578,11 @@ Only for troubleshooting, or if item 2.1 failed.
      tag was read at the branch's newest commit, so for workflows the number
      read is `git_backed` minus `civis_read_failed`. Workflows that
      only run other jobs have no row here; they are in the `RUN` line counts.
-  3. Create the GitHub Custom Credential if you have not, add the `GITHUB`
-     parameter to the scanner job if it does not have it, attach the
-     credential to it (README "Before you start", item 4), signed in as the
-     Robot user, and save.
+  3. Create the GitHub Custom Credential if you have not (README "Before you
+     start", item 4). Then, signed in as the Robot user, run the install
+     script with `MODE` `"update"`, the same tag, and `GITHUB_CREDENTIAL` set
+     to the credential's ID (README "Update to a new release"). Do not save
+     the scanner job's page. Read the job's resources for item 1.4.
   4. The second scan (item 5.2) runs with the token. Repeat steps 1 and 2 for
      it, from the summary only. For Python scripts, the number read from
      GitHub is `git_backed` minus `read_through_civis` minus
@@ -688,18 +724,20 @@ Prepared objects by type: python_script=  container_script=  custom_script=
 
 Item  Result (pass/fail/skipped)  Counts or note
 1.1   Robot user or service account:
-1.2   URL typed: yes/no
-1.3   a=  b=  c=  d=  e=   (matches, or the label shown)
-1.4   peak memory (scan 1, scan 2):   from scan 2: github_tarball_requests=  github_cache_peak_bytes=  github_cache_evictions=
-1.5   minutes to start:
-1.6
+1.2   CHECK lines (label=pass/fail):   RESULTS_DATABASE given as: name/ID
+1.3   a=removed  b=removed  c=removed  d=  e=removed  f=  g=  h=   (matches, or the label shown)
+1.4   without token: cpu=  memory=  disk=   with token: cpu=  memory=  disk=
+      peak memory and CPU (scan 1, scan 2):   from scan 2: github_tarball_requests=  github_cache_peak_bytes=  github_cache_evictions=
+1.5   RESULT lines (label=pass/fail):   other_fields_changed (job, Service):   results_db_shape=
+      KEEP IN CIVIS line printed: yes/no   minutes:
+1.6   minutes to start:
 1.7   Service:  job:
 1.8   heading (if different):
 1.9   first click said the schema already existed: yes/no   outcome (a/b/c):   b or c: error type=  user name shown: yes/no  admin statement:  second click:
       table step failed (step, error type):
 1.10  first visit: 1=  2=  3=  4=  5=  6=  7=  8=  9=  10=
       after 2.1:   1=  2=  3=  4=  5=  6=  7=  8=  9=  10=
-      RESULTS_DB shape:   Service lookup:   line 6 job users=  groups=  Service users=  groups=
+      line 2 profile:   RESULTS_DB shape:   Service lookup:   line 6 job users=  groups=  Service users=  groups=
       repo_http_token_present: yes/no   line 9 dedicated: yes/no
 2.1   CSP errors from the app:   parent address (if any):
 2.2   done/skipped   report-only warnings:   parent address (if any):

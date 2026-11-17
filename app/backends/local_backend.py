@@ -63,8 +63,9 @@ def preview_job(job_id: int, state: str = "normal") -> dict:
         "id": job_id, "name": "Example scanner job", "author": dict(PREVIEW_ROBOT), "running_as": dict(PREVIEW_ROBOT),
         "docker_image_name": image[0], "docker_image_tag": image[1], "repo_http_uri": release.REPOSITORY_URL,
         "repo_ref": PREVIEW_TAG, "git_credential_id": None, "docker_command": release.SCANNER_COMMAND,
-        "required_resources": {"cpu": release.SCANNER_CPU, "memory": release.SCANNER_MEMORY_MB,
-                               "disk_space": float(release.SCANNER_DISK_GB)},
+        "required_resources": {"cpu": release.PROFILE_WITHOUT_TOKEN.cpu,
+                               "memory": release.PROFILE_WITHOUT_TOKEN.memory_mb,
+                               "disk_space": float(release.PROFILE_WITHOUT_TOKEN.disk_gb)},
         "params": [
             {"name": "RESULTS_DB", "type": "database", "required": True},
             {"name": "RESULTS_SCHEMA", "type": "string", "required": True},
@@ -91,7 +92,7 @@ def preview_service(service_id: int, state: str = "normal") -> dict:
         "id": service_id, "name": "Example scanner app", "user": dict(PREVIEW_ROBOT),
         "docker_image_name": image[0], "docker_image_tag": image[1], "git_repo_url": release.REPOSITORY_URL,
         "git_repo_ref": PREVIEW_TAG, "credentials": [],
-        "environment_variables": {"SCANNER_JOB_ID": "9100", "CIVIS_SERVICE_HEALTH_PATH": "/healthz"},
+        "environment_variables": {"SCANNER_JOB_ID": "9100", "CIVIS_SERVICE_HEALTH_PATH": release.HEALTH_PATH},
     }
 
 

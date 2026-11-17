@@ -621,7 +621,7 @@ def test_readme_optional_parameter_defaults_match_the_scanner():
     for name, default in (("LOOKBACK_DAYS", scanner_config.DEFAULT_LOOKBACK_DAYS),
                           ("MAX_CONCURRENCY", scanner_config.DEFAULT_MAX_CONCURRENCY),
                           ("REQUEST_BUDGET", scanner_config.DEFAULT_REQUEST_BUDGET)):
-        row = next(line for line in readme.splitlines() if line.startswith(f"   | `{name}` |"))
+        row = next(line for line in readme.splitlines() if line.startswith(f"| `{name}` | Integer |"))
         assert f"| `{default}` |" in row, row
 
 

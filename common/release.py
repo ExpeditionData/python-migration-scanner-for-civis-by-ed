@@ -40,10 +40,6 @@ PROFILE_WITH_TOKEN = ResourceProfile("with_token", cpu=1000, memory_mb=4096, dis
 PROFILE_WITHOUT_TOKEN = ResourceProfile("without_token", cpu=500, memory_mb=2048, disk_gb=1)
 MEMORY_PER_EXTRA_THREAD_MB = 512  # For each MAX_CONCURRENCY thread above the default of 4, in both profiles.
 DEFAULT_THREADS = 4
-# Kept until the Setup page uses the profiles: the profile with a token.
-SCANNER_CPU = PROFILE_WITH_TOKEN.cpu
-SCANNER_MEMORY_MB = PROFILE_WITH_TOKEN.memory_mb
-SCANNER_DISK_GB = PROFILE_WITH_TOKEN.disk_gb
 
 
 def resource_profile(github_attached: bool) -> ResourceProfile:

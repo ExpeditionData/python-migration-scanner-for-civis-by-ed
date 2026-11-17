@@ -43,6 +43,9 @@ statement below to the code and tests that implement it. By design:
   environment. The tool sends no telemetry and no data to Expedition Data LLC.
 - **Read-only on your objects.** The tool reads your Civis objects and does not
   modify them. The web app starts runs of the scanner job you created.
+- **One install script.** An admin runs it by hand to create and update the
+  scanner job and the Service. It changes only those two objects, and only
+  the fields it lists.
 - **Locations, not code.** For each finding, the tool records the object ID,
   rule ID, file name, and line number, not code, log text, or notebook output.
 
@@ -71,11 +74,11 @@ for your review.
   - Use a fine-grained token with read-only "Contents" permission.
   - Limit it to the repositories your Civis objects use.
   - Give it an expiration date.
-  - Attach it to the scanner job only, never to the Service.
+  - Set it in the install script, which attaches it to the scanner job only,
+    never to the Service.
 - **Retention.** All scan runs are kept by default. To delete old runs
-  automatically, set the scanner job's `RETENTION_DAYS` parameter (see
-  [Settings the Civis forms cannot set](#settings-the-civis-forms-cannot-set)
-  for what to check after a save on the job's page). To delete runs
+  automatically, set `RETENTION_DAYS` in the install script and run an update
+  (see [Update to a new release](#update-to-a-new-release)). To delete runs
   by hand, use the SQL in [SECURITY.md](SECURITY.md#keeping-and-deleting-results).
 - **Downloads.** "Download CSV" in the web app saves the full report to the
   viewer's computer, outside Civis. Decide whether your admins should use it.
@@ -89,8 +92,22 @@ for your review.
 
 Point both parts at a **release tag** of this repository, never at `main`. In
 the steps below, replace `<release tag>` with the newest release listed on
-this repository's Releases page, for example `v1.0.0`. Use the same tag for
-both parts.
+this repository's Releases page, for example `v1.0.0`. The install script
+puts the same tag on both parts.
+
+An install script creates and updates the scanner job and the Service for
+you, through the Civis API. You paste it into a Civis Python script, set a
+few values at its top, and run it. It is the only part of the tool that
+creates or changes a script or a Service in Civis, and it changes only these
+two objects (see [SECURITY.md](SECURITY.md#the-install-script)).
+
+**Do not save the scanner job's page in Civis.** The page's **Repository**
+field cannot show this repository's address, and a save can clear it. Make
+every change to the scanner job, and to the Service fields the script sets,
+with the install script (see
+[Update to a new release](#update-to-a-new-release)). The Service's optional
+environment variables (step 10 of [Install](#install)) are the only settings
+you change on a page. Sharing an object does not save its page.
 
 ### Before you start
 
@@ -104,6 +121,8 @@ You need:
    API key belongs to the Service's owner, and scans started from the app run
    as that user, so the Robot user should own the Service too, and the
    database credential you choose for the results should be the Robot user's.
+   The install script makes the user who runs it the owner of both objects,
+   so run it as the Robot user.
 
    **If you have no Robot user**, use a dedicated service account, not a
    personal account. If a person's account is deactivated, the Service stops
@@ -163,111 +182,141 @@ You need:
    - Create the credential while signed in as the Robot user, or share it
      with the Robot user (label to confirm), so scans that run as the Robot
      user can use it.
-   - Attach it to the scanner job only, as described below. Never attach it to
-     the Service.
+   - Set the credential's ID as `GITHUB_CREDENTIAL` in the install script
+     (step 4 of [Install](#install)), instead of attaching the credential by
+     hand. The script checks that it is a Custom credential, attaches it to
+     the scanner job only, and gives the job more resources for the GitHub
+     cache. It never attaches it to the Service.
 
-### Settings the Civis forms cannot set
+### Install
 
-In a live test, two settings could not be made in the Civis web forms. Set
-them through the Civis API instead, for example with civis-python in a Civis
-notebook. Each call updates the object, so make it as the Robot user if you
-can (see "Who the job runs as" below).
-
-- **The scanner job's repository.** The job's **Repository** field is a
-  dropdown that lists only repositories from a GitHub account connected to
-  your Civis profile. A typed URL does not stay. The Civis API accepts this
-  repository's public URL with no GitHub connection: call
-  `scripts.patch_containers` with the job's ID, `repo_http_uri` set to
-  `https://github.com/ExpeditionData/python-migration-scanner-for-civis-by-ed.git`,
-  and `repo_ref` set to `<release tag>`. After that, the job's page shows
-  **Repository** blank, because the dropdown cannot show a URL that is not in
-  its list, and **Branch** shows the tag.
-
-  Saving the job's page after that was not tested. If a save clears the
-  repository, the app's Setup page fails line 1 or 2 and **Run scan** does not
-  start the job. Set the repository again through the API.
-- **The Service's On Demand schedule.** The Service form has no On Demand or
-  schedule setting. Call `services.patch` with the Service's ID and
-  `schedule` set to a runtime plan (`runtime_plan`) of `on_demand`. The
-  Service's **Repository** field does show a URL set through the API, so if
-  the Service form does not keep the typed URL, set it with the same
-  `services.patch` call (`git_repo_url` and `git_repo_ref`).
-
-### Create the scanner job
-
-1. Sign in as the Robot user if you can, and make every later change to the
-   job the same way (see "Who the job runs as" below). Otherwise, create the
-   job yourself and transfer ownership of it to the Robot user afterward
-   (Transfer Ownership). If Civis runs a job as the user who last updated it,
-   a job you created or edited yourself runs as you, not the Robot user; see
-   "Who the job runs as".
+1. Sign in to Civis as the Robot user. The install script makes the user who
+   runs it the owner of the scanner job and the Service, and an update
+   changes only objects that user owns.
 2. From the **Code** menu, select **Scripts**, click **New Script**, and choose
-   **Container**.
-3. Fill in the script settings:
+   **Python** (label to confirm).
+3. Open the install script at your release tag:
+   `https://github.com/ExpeditionData/python-migration-scanner-for-civis-by-ed/blob/<release tag>/install/civis_install.py`.
+   Copy the whole file and paste it as the Python script's code. Read the
+   comment at its top: it says what the script does and what it cannot do.
+   Always use the copy from the tag you install.
+4. Set the values at the top of the script, above the line "Do not change
+   anything below this line":
 
-   | Field | Value |
+   | Setting | Value |
    |---|---|
-   | **Image** (Docker section) | `civisanalytics/datascience-python` |
-   | **Tag** (Docker section) | `9.1.1` |
-   | **Repository** (**GIT CONNECTION** section) | Leave as it is. The field does not keep a typed URL, so step 6 sets `https://github.com/ExpeditionData/python-migration-scanner-for-civis-by-ed.git` through the Civis API (see [Settings the Civis forms cannot set](#settings-the-civis-forms-cannot-set)). |
-   | **Branch** (**GIT CONNECTION** section) | Leave as it is. Step 6 sets `<release tag>` with the repository. |
-   | **Command** | `cd /app && python -m scanner` |
-   | **CPU (m)** | `1000` (one core) |
-   | **Memory (MB)** | `4096` |
-   | **Disk Space (GB)** | `4` |
+   | `MODE` | `"check"` |
+   | `TAG` | `"<release tag>"`, the tag the file came from |
+   | `RESULTS_DATABASE` | The results database's name in quotes, or its ID |
+   | `RESULTS_CREDENTIAL` | The ID of the Robot user's database credential for that database (Civis's credential list shows each credential's ID; label to confirm) |
+   | `RESULTS_SCHEMA` | The results schema name you chose, in quotes |
+   | `GITHUB_CREDENTIAL` | `None` (no token, the normal setup), or your Custom credential's ID |
+   | `LOOKBACK_DAYS` | `None` (400 days), or a whole number from 1 to 3650 |
+   | `RETENTION_DAYS` | `None` (keep every scan), or a number of days |
 
-   Type the command exactly as shown, with no period at the end. The page has
-   no git credential field, and none is needed: the repository is public.
+   Leave `JOB_ID`, `SERVICE_ID`, and `INSTALL_SERVICE_ONLY` as they are.
+5. Run the script with `MODE` `"check"`. It reads the values and your Civis,
+   and changes nothing. Every `CHECK` line should say `pass`, the `PLAN`
+   lines say what install will create, and the last line says "Nothing
+   changed." If a `CHECK` line says `fail`, fix the value it names and run
+   it again.
+6. Set `MODE` to `"install"` and run the script again. It creates the scanner
+   job, then the Service, reads both back, and prints one `RESULT` line per
+   setting. Every `RESULT` line should say `pass`. If a step fails, the
+   `RECOVER` lines say what was created and what to do.
+7. Note the two IDs on the line that starts with `KEEP IN CIVIS:`. You need
+   them for every update. They stay in this script's run log in Civis, and
+   each object's ID is also the number at the end of its page's address. Do
+   not send them to anyone who supports your setup.
+8. Share both objects with Civis admins only. Civis shares a new job and a
+   new Service with the default group of the user who creates them, so on
+   each object's page, open its sharing settings (label to confirm), and
+   remove that group and everyone else who is not a Civis admin. Adding Civis
+   admins is optional. The Setup page's sharing line (step 4 of
+   [Set up results storage and check the setup](#set-up-results-storage-and-check-the-setup))
+   shows who has access. Do not schedule the scanner job.
+9. On the Service's page, click **Start Deployment** and wait for the app to
+   show in Civis's preview pane on that page (the "PREVIEW" label above the
+   app is Civis's). The Service is On Demand: it sleeps when no one uses it
+   and takes about a minute to wake when someone opens it.
+10. Check the frame rule. With the browser's developer console open, reload
+    the Service's page in Civis. The app shows in the preview pane, and the
+    console has no Content Security Policy errors from the app. If the pane is
+    blank and the console names a `frame-ancestors` error with another parent
+    address, add that address to the Service's `CIVIS_FRAME_ANCESTORS`
+    environment variable and click **Update Deployment**. To troubleshoot
+    further, set `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` to `true` and click
+    **Update Deployment**: the browser then reports a wrong rule as a console
+    warning (Chrome, Edge, or Firefox; Safari ignores it) and shows the app.
+    Set it back to `false` (or remove it) and click **Update Deployment** once
+    the app shows, because while it is `true` other websites could embed the
+    app. Changing the Service's variables on its page is fine: in a live
+    test, its **Repository** field showed this repository's address. Only the
+    scanner job's page must not be saved.
 
-   The image tag is pinned on purpose. Do not leave it blank or set it to
-   `latest`. See [Pinned Docker images](#pinned-docker-images) to confirm the
-   image has not changed.
+If the script stops after it created the scanner job but before the Service
+was finished, its `RECOVER` lines say so. To create only the Service, set
+`JOB_ID` to the scanner job's ID, set `INSTALL_SERVICE_ONLY` to `True`, and
+run `MODE` `"install"` again.
 
-4. Click **Set Parameters** and add these parameters. For each, fill in
-   **Parameter Name** and **Type** (both marked `*` on the form), and tick
-   **Make Required** for each parameter marked "Yes" below (`RESULTS_DB` and
-   `RESULTS_SCHEMA`). The **Input Display Name** and **Input Helper Text** are
-   up to you. The Database type shows two dropdowns (the database and the
-   credential), and the String type shows a text field. The Integer and
-   Custom Credential types (labels to confirm) are named as in Civis's help;
-   a live test set those parameters through the Civis API.
+### What the install script sets
 
-   | Parameter Name | Type | Required | Meaning |
-   |---|---|---|---|
-   | `RESULTS_DB` | Database | Yes | Database and credential for the result tables. Choose the Robot user's credential. The web app reads this setting from the job too. |
-   | `RESULTS_SCHEMA` | String | Yes | The results schema name you chose. Letters, numbers, and underscores only. The web app reads this setting from the job too. |
-   | `GITHUB` | Custom Credential | No | Optional, and not part of the normal setup. A GitHub token for your own repositories. Adds the rest of each git-backed repository and the code of git-backed container scripts, Services, and dbt scripts. |
+You can compare these with the objects' pages in Civis. "Install" means the
+script sets the field when it creates the object; "update" means `MODE`
+`"update"` sets it again.
 
-   **Optional parameters (add only to change the default).** Leave these out
-   unless you need a different value. When a parameter does not exist, the
-   scanner uses its default.
+| Object | Field on the Civis page | Value | When |
+|---|---|---|---|
+| Scanner job | Name | `Python Migration Scanner: scanner job` | install |
+| Scanner job | **Image** (Docker section) | `civisanalytics/datascience-python` | install |
+| Scanner job | **Tag** (Docker section) | `9.1.1` | install, update |
+| Scanner job | **Repository** (**GIT CONNECTION** section) | `https://github.com/ExpeditionData/python-migration-scanner-for-civis-by-ed.git`. The page shows the field blank, because its dropdown cannot show an address that is not in its list. | install, update |
+| Scanner job | **Branch** (**GIT CONNECTION** section) | `<release tag>` | install, update |
+| Scanner job | **Command** | `cd /app && python -m scanner` | install |
+| Scanner job | **CPU (m)**, **Memory (MB)**, **Disk Space (GB)** | Without a GitHub token: `500`, `2048`, `1`. With one: `1000`, `4096`, `4` (room for the GitHub file cache). Memory gets 512 MB more for each `MAX_CONCURRENCY` thread above 4. | install, update |
+| Scanner job | Parameters `RESULTS_DB` (Database, required) and `RESULTS_SCHEMA` (String, required) | The database, the credential, and the schema from the script | install; an update keeps them exactly as they are |
+| Scanner job | Parameters `GITHUB` (Custom Credential), `LOOKBACK_DAYS` and `RETENTION_DAYS` (Integer), not required | Only when the script's setting has a value. In an update, `"clear"` removes `GITHUB` or `RETENTION_DAYS`. | install, update |
+| Scanner job | Parameter `RUN_ID` | Removed, if an earlier release left it | update |
+| Scanner job | Git credential | Not set: the repository is public | never |
+| Service | Name | `Python Migration Scanner: web app` | install |
+| Service | **Image Name** and **Tag** (Docker section) | `civisanalytics/civis-services-flask`, `0.1.0` | install; update sets the tag |
+| Service | **Repository** | `https://github.com/ExpeditionData/python-migration-scanner-for-civis-by-ed.git` | install, update |
+| Service | **Initial Branch or Tag** | `<release tag>` | install, update |
+| Service | **Path/Directory** | Blank | never |
+| Service | **ENVIRONMENT VARIABLES** | `SCANNER_JOB_ID` (the scanner job's ID) and `CIVIS_SERVICE_HEALTH_PATH` (`/healthz`); install also adds `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` (`false`). An update keeps every other variable as it is. | install, update |
+| Service | Schedule | On Demand. The form has no such setting. | install, update |
+| Service | **CREDENTIALS** | None | install, update |
+| Service | Resources | Not set: Civis's defaults | never |
 
-   | Parameter Name | Type | Default | Meaning |
-   |---|---|---|---|
-   | `LOOKBACK_DAYS` | Integer | `400` | Check only scripts that ran or changed in this many days, and read their most recent run log (1 to 3,650). |
-   | `MAX_CONCURRENCY` | Integer | `4` | Worker threads (1 to 16). For each thread above 4, add 512 MB to **Memory**. |
-   | `REQUEST_BUDGET` | Integer | `500` | Civis API requests per 5 minutes (10 to 1,000). Civis allows 1,000 per user, shared with the web app and any other jobs that run as the Robot user. |
-   | `RETENTION_DAYS` | Integer | blank (keep every scan) | A number deletes scans older than that many days. Blank or 0 keeps every scan. The newest scan is not deleted. |
+The environment variables are not secrets, and anyone who can read the
+Service can see them, so never put a token or password there. The optional
+ones are `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` (default `false`; for
+troubleshooting only, see step 10 of [Install](#install)),
+`CIVIS_PLATFORM_URL` (only if your Civis web interface is not at
+`https://platform.civisanalytics.com`), and `CIVIS_FRAME_ANCESTORS` (only if
+Civis shows Services from a different address). If the deploying user's Civis
+profile has GitHub credentials, Civis adds their token to the Service as
+`REPO_HTTP_TOKEN`; the app does not read it, and to keep it out, deploy as a
+user with no GitHub credentials. The app uses no service tokens.
 
-   Click **Add** after each parameter, then **Save**. The names must match
-   exactly; `DATABASE` is reserved by Civis, which is why the database
-   parameter is `RESULTS_DB`. The app's Setup page flags any other parameter
-   name, to catch typos.
+**What the parameters mean.** The app reads `RESULTS_DB` and `RESULTS_SCHEMA`
+from the scanner job too, so the Service needs no copy of them. The image tag
+is pinned on purpose; see [Pinned Docker images](#pinned-docker-images) to
+confirm the image has not changed.
 
-5. Set the parameter values on the script page: choose the database and its
-   credential for `RESULTS_DB`, type the schema name for `RESULTS_SCHEMA`, and,
-   if you made one, choose the GitHub credential for `GITHUB`. Save the script.
-   The page then shows the values as `RESULTS_DB`, `RESULTS_DB_credential`,
-   and `RESULTS_SCHEMA`.
-6. Note the job's ID: it is the number at the end of the script page's address
-   (`.../spa/#/scripts/containers/<ID>`). Then set the job's repository and
-   release tag through the Civis API, as described in
-   [Settings the Civis forms cannot set](#settings-the-civis-forms-cannot-set).
-   Do this after step 5, so the page is not saved after the repository is set.
-7. Share the job with Civis admins only. Civis shares a new job with the
-   default group of the user who creates it, so remove that group and everyone
-   else who is not a Civis admin. Adding Civis admins is optional. Do not
-   schedule the job.
+| Parameter | Type | Default | Meaning |
+|---|---|---|---|
+| `RESULTS_DB` | Database | none (required) | Database and credential for the result tables. |
+| `RESULTS_SCHEMA` | String | none (required) | The results schema name. Letters, numbers, and underscores only. |
+| `GITHUB` | Custom Credential | none | Optional, and not part of the normal setup. A GitHub token for your own repositories. |
+| `LOOKBACK_DAYS` | Integer | `400` | Check only scripts that ran or changed in this many days, and read their most recent run log (1 to 3,650). |
+| `MAX_CONCURRENCY` | Integer | `4` | Worker threads (1 to 16). The install script does not set it. |
+| `REQUEST_BUDGET` | Integer | `500` | Civis API requests per 5 minutes (10 to 1,000). Civis allows 1,000 per user, shared with the web app and any other jobs that run as the Robot user. The install script does not set it. |
+| `RETENTION_DAYS` | Integer | blank (keep every scan) | A number deletes scans older than that many days. Blank or 0 keeps every scan. The newest scan is not deleted. |
+
+The defaults of `MAX_CONCURRENCY` and `REQUEST_BUDGET` fit most organizations.
+An update keeps them if the job already has them. The app's Setup page flags
+any parameter name not in this table, to catch typos.
 
 **Which scripts a scan checks (`LOOKBACK_DAYS`).** A scan lists every script
 the scanning user can see. It then checks only the Python, container, custom,
@@ -282,141 +331,32 @@ changed in the last 400 days were left out") but not checked.
   very likely unused. 400 days, not 365, keeps jobs that run once a year, such
   as year-end or fiscal-year jobs, even when a yearly run happens a few weeks
   late.
-- **To change it,** add the `LOOKBACK_DAYS` parameter to the scanner job
-  (Integer, not required) and save the job (see
-  [Settings the Civis forms cannot set](#settings-the-civis-forms-cannot-set)
-  for what to check after a save on the job's page). The value can be the parameter's
-  default or the value saved on the job; when both are set, the job's saved
-  value is used. Use any whole number from 1 to 3650. Civis starts the job
+- **To change it,** set `LOOKBACK_DAYS` in the install script to any whole
+  number from 1 to 3650 and run `MODE` `"update"` with the tag you have (see
+  [Update to a new release](#update-to-a-new-release)). Civis starts the job
   with its saved parameters, so **Run scan** always uses that value; the app
   cannot pass a different window. The Overview shows, next to **Run scan**,
   which window the next scan will use.
 - **A full audit.** Once before the February 2027 update, consider one scan
   with `LOOKBACK_DAYS` set to `3650`. It checks every script, at the cost of a
-  much longer scan. Then set it back. Both changes save the job's page (see
-  [Settings the Civis forms cannot set](#settings-the-civis-forms-cannot-set)).
+  much longer scan. Then set it back. Both changes are an update with the
+  install script.
 
-**Who the job runs as.** The scan sees only what the user it runs as can see.
-Civis's help describes that user two ways: as the user who runs the script, and
-as the user who last updated it. Civis does not show who started a job run.
-The app's Scan history page does: its line "Started ... as <user>" names the
-user the scan ran as. In a live test, every scan was started with **Run scan**
-in the app, the job was last updated as the Robot user, and that line named
-the Robot user. That test did not separate the two descriptions, so set
-things up so both give the same answer:
+### Who the job runs as
 
-- Create and edit the scanner job while signed in as the Robot user.
+The scan sees only what the user it runs as can see. Civis's help describes
+that user two ways: as the user who runs the script, and as the user who last
+updated it. Civis does not show who started a job run. The app's Scan history
+page does: its line "Started ... as <user>" names the user the scan ran as. In
+a live test, every scan was started with **Run scan** in the app, the job was
+last updated as the Robot user, and that line named the Robot user. That test
+did not separate the two descriptions, so set things up so both give the same
+answer:
+
+- The install script creates and updates the scanner job, so run it signed in
+  as the Robot user, every time.
 - Start scans with **Run scan** in the web app, which starts them through the
   Service's owner (the Robot user). Do not start the job from its own page.
-
-**Resuming a stopped scan.** A scan can stop partway: it was canceled, it
-failed (for example on a Civis error), or it hit the 5-day limit for
-container scripts. Nobody needs to edit the scanner job to pick it up. Each
-time the scanner starts, it looks at the newest scan in the results tables
-and resumes it when all of these are true:
-
-- The newest scan did not finish (Scan history shows it as Canceled, Failed,
-  or Did not finish). An older stopped scan is never resumed.
-- Its last Civis run ended less than 24 hours ago.
-- It was resumed fewer than 2 times before.
-- The tool's version, and the scanner job's `LOOKBACK_DAYS` and `GITHUB`
-  settings, are the same as when it started.
-- It had not saved its results yet.
-- None of its Civis runs is still queued or running.
-
-Otherwise **Run scan** starts a new scan. A resumed scan keeps its run ID and
-its label (the Civis run that started it), skips the objects it already
-finished, and keeps the rows it already saved. It checks the same scripts as
-before, because its `LOOKBACK_DAYS` window is measured from its first start.
-There is no button to start a new scan instead while a resume applies;
-waiting until the 24 hours pass does that.
-
-How to tell what happens:
-
-- **Before you click.** While **Run scan** would resume the stopped scan, the
-  Overview says so under **Run scan**, with the time (in your local time)
-  after which **Run scan** starts a new scan instead. The app cannot see
-  whether the scan already saved its results, so in rare cases the scanner
-  starts a new scan although the Overview showed the line.
-- **While it runs.** The progress card starts with "Resuming Civis run <ID>."
-- **Afterward.** Scan history shows the scan once, with "Resumed 1 time" (or
-  2 times) under its label. Near the top of the scanner's run log, one line
-  says what the scanner decided: `RESUME decision=resume ...`, or
-  `RESUME decision=new reason=<reason>` with a fixed reason such as
-  `too_old` or `settings_changed`.
-
-**`RUN_ID` from an earlier release.** The scanner no longer uses a `RUN_ID`
-parameter. If the scanner job still has one, remove it (see
-[Settings the Civis forms cannot set](#settings-the-civis-forms-cannot-set)
-for what to check after a save on the job's page). Until then, the scanner
-ignores it and logs `RUN_ID_IGNORED`, and line 4 on the Setup page shows
-"review".
-
-### Create the Service
-
-1. Sign in as the Robot user if you can, so the Robot user owns the Service.
-   The app uses its owner's Civis API key for everything it does.
-2. From the **Publish** menu, click **Service Deployment**.
-3. In the **Docker** section:
-   - **Image Name:** `civisanalytics/civis-services-flask`
-   - **Tag:** `0.1.0`
-4. Set the repository fields:
-   - **Repository:** `https://github.com/ExpeditionData/python-migration-scanner-for-civis-by-ed.git`.
-     The field's hint says the list of repositories is in your Civis profile
-     (**Manage repositories**). If the field does not keep the typed URL, set
-     it through the Civis API (see
-     [Settings the Civis forms cannot set](#settings-the-civis-forms-cannot-set)).
-   - **Initial Branch or Tag:** `<release tag>` (the same tag as the scanner job)
-   - **Path/Directory:** leave blank.
-5. Under **ENVIRONMENT VARIABLES**, add these variables, each with a **Name**
-   and a **Value**, then click **Save**. They are not secrets, and anyone who
-   can read the Service can see them, so never put a token or password here.
-
-   | Name | Value |
-   |---|---|
-   | `SCANNER_JOB_ID` | The scanner job's ID from step 6 above. The app reads the results database, credential, and schema from the job's `RESULTS_DB` and `RESULTS_SCHEMA` parameters. |
-   | `CIVIS_SERVICE_HEALTH_PATH` | `/healthz` |
-   | `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` | Optional (default `false`). Leave it out. For troubleshooting only: if the app does not show inside Civis, set it to `true`, then back to `false` (step 10). |
-   | `CIVIS_PLATFORM_URL` | Optional. Leave it out unless your Civis web interface is not at `https://platform.civisanalytics.com`. |
-   | `CIVIS_FRAME_ANCESTORS` | Optional. Leave it out unless Civis shows Services from a different address. |
-
-6. Do not attach any credentials in the **CREDENTIALS** section (**Add
-   Credential**). Credentials attached to a Service become environment
-   variables inside the app. The app needs none, and the GitHub token must
-   never be attached here. If the deploying user's Civis profile has GitHub
-   credentials, Civis adds their token to the Service as `REPO_HTTP_TOKEN`;
-   the app does not read it, and to keep it out, deploy as a user with no
-   GitHub credentials. The app uses no service tokens, so leave **SECURITY AND
-   ACCESS** as it is.
-7. Leave the resources at their defaults: **Replicas** `1`, **CPU (m)** `800`,
-   and **Memory (MB)** `3000`, with **Partition Label** and **EC2 Instance
-   Type** as they are. **Advanced** holds only **PERMISSION SET**; leave it as
-   it is. The form has no On Demand or schedule setting. After **Start
-   Deployment** (step 8), set the Service to On Demand through the Civis API
-   (see
-   [Settings the Civis forms cannot set](#settings-the-civis-forms-cannot-set)).
-   The Service sleeps when no one uses it and takes about a minute to wake
-   when someone opens it.
-8. Click **Start Deployment** and wait for the app to show in Civis's preview
-   pane on the Service's page (the "PREVIEW" label above the app is Civis's).
-9. **Share the Service with Civis admins only.** On the Service's page in
-   Civis, open its sharing settings (label to confirm). Civis shares a new
-   Service with the default group of the user who creates it, so remove that
-   group and everyone else who is not a Civis admin. Adding Civis admins is
-   optional. The Setup page's sharing line (step 4 of
-   [Set up results storage and check the setup](#set-up-results-storage-and-check-the-setup))
-   shows who has access.
-10. Check the frame rule. With the browser's developer console open, reload
-    the Service's page in Civis. The app shows in the preview pane, and the
-    console has no Content Security Policy errors from the app. If the pane is
-    blank and the console names a `frame-ancestors` error with another parent
-    address, add that address to `CIVIS_FRAME_ANCESTORS` and click **Update
-    Deployment**. To troubleshoot further, set
-    `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` to `true` and click **Update
-    Deployment**: the browser then reports a wrong rule as a console warning
-    (Chrome, Edge, or Firefox; Safari ignores it) and shows the app. Set it
-    back to `false` (or remove it) and click **Update Deployment** once the app
-    shows, because while it is `true` other websites could embed the app.
 
 ### Set up results storage and check the setup
 
@@ -447,7 +387,9 @@ ignores it and logs `RUN_ID_IGNORED`, and line 4 on the Setup page shows
 5. If you need help, click **Build test summary** on the Setup page, copy the
    text, and send it to whoever supports your setup. It holds counts, fixed
    labels, and error types only. Do not send the Setup page itself, which can
-   list user and group names.
+   list user and group names, and do not send the install script's output.
+6. Archive the install script's Python script in Civis. For each update, you
+   paste a new copy from the new tag.
 
 #### Read access to the result tables
 
@@ -515,6 +457,47 @@ saves it on new objects that do not choose one. A patch tag such as `9.1.1`
 names a fixed image, so its findings are Advisory. The Findings page's "How
 to read this page" explains impact, confidence, and status.
 
+**Resuming a stopped scan.** A scan can stop partway: it was canceled, it
+failed (for example on a Civis error), or it hit the 5-day limit for
+container scripts. Nobody needs to edit the scanner job to pick it up. Each
+time the scanner starts, it looks at the newest scan in the results tables
+and resumes it when all of these are true:
+
+- The newest scan did not finish (Scan history shows it as Canceled, Failed,
+  or Did not finish). An older stopped scan is never resumed.
+- Its last Civis run ended less than 24 hours ago.
+- It was resumed fewer than 2 times before.
+- The tool's version, and the scanner job's `LOOKBACK_DAYS` and `GITHUB`
+  settings, are the same as when it started.
+- It had not saved its results yet.
+- None of its Civis runs is still queued or running.
+
+Otherwise **Run scan** starts a new scan. A resumed scan keeps its run ID and
+its label (the Civis run that started it), skips the objects it already
+finished, and keeps the rows it already saved. It checks the same scripts as
+before, because its `LOOKBACK_DAYS` window is measured from its first start.
+There is no button to start a new scan instead while a resume applies;
+waiting until the 24 hours pass does that.
+
+How to tell what happens:
+
+- **Before you click.** While **Run scan** would resume the stopped scan, the
+  Overview says so under **Run scan**, with the time (in your local time)
+  after which **Run scan** starts a new scan instead. The app cannot see
+  whether the scan already saved its results, so in rare cases the scanner
+  starts a new scan although the Overview showed the line.
+- **While it runs.** The progress card starts with "Resuming Civis run <ID>."
+- **Afterward.** Scan history shows the scan once, with "Resumed 1 time" (or
+  2 times) under its label. Near the top of the scanner's run log, one line
+  says what the scanner decided: `RESUME decision=resume ...`, or
+  `RESUME decision=new reason=<reason>` with a fixed reason such as
+  `too_old` or `settings_changed`.
+
+**`RUN_ID` from an earlier release.** The scanner no longer uses a `RUN_ID`
+parameter. An update with the install script removes it and prints
+`run_id_removed=yes`. Until then, the scanner ignores it and logs
+`RUN_ID_IGNORED`, and line 4 on the Setup page shows "review".
+
 **If progress stops updating.** Live progress updates on its own for a few
 minutes after the Civis page loads. Then Civis's session for the page
 expires: Civis's proxy in front of the Service uses a cookie that lasts about
@@ -547,24 +530,41 @@ share it with whoever supports your setup.
 
 ### Update to a new release
 
-1. Read the release notes for the new tag. They say whether a parameter or an
-   environment variable was added or changed.
-2. Sign in as the Robot user if you can, since changing the tag also updates
-   the job (see "Who the job runs as"). On the scanner job, change **Branch**
-   to the new tag and save, or set `repo_ref` to the new tag through the Civis
-   API. See
-   [Settings the Civis forms cannot set](#settings-the-civis-forms-cannot-set)
-   for what to check after a save on the job's page. The next scan uses the
-   new tag.
-3. On the Service, change **Initial Branch or Tag** to the same tag, save, and
-   click **Update Deployment**.
-4. Open the app's **Setup** page and check that every line still passes. Line 7
+An update changes only the fields listed in
+[What the install script sets](#what-the-install-script-sets), on the two
+objects whose IDs you give it. It keeps `RESULTS_DB` and `RESULTS_SCHEMA`
+exactly as they are. Do not change the tag on the scanner job's page.
+
+1. Read the release notes for the new tag. They say whether a setting, a
+   parameter, or an environment variable was added or changed.
+2. Sign in to Civis as the Robot user. Create a new Python script, as in
+   steps 2 and 3 of [Install](#install), and paste the install script from
+   the **new** tag.
+3. Set `MODE` to `"check"`, `TAG` to the new tag, and `JOB_ID` and
+   `SERVICE_ID` to the IDs from the `KEEP IN CIVIS:` line. Leave
+   `RESULTS_DATABASE`, `RESULTS_CREDENTIAL`, and `RESULTS_SCHEMA` as `None`.
+   `GITHUB_CREDENTIAL`, `LOOKBACK_DAYS`, and `RETENTION_DAYS` set to `None`
+   leave the job's values as they are; set one only to change it
+   (`"clear"` removes `GITHUB_CREDENTIAL` or `RETENTION_DAYS`).
+4. Run the script. Every `CHECK` line should say `pass`. The `CHECK
+   scanner_job` and `CHECK service` lines confirm that both objects are this
+   tool's and that you own them. The `PLAN` lines list the fields the update
+   will change, and the last line says "Nothing changed."
+5. Set `MODE` to `"update"` and run it again. Every `RESULT` line should say
+   `pass`, including `results_kept`. `run_id_removed` says `yes` if an earlier
+   release left a `RUN_ID` parameter, and `no_parameter` if not.
+   `other_fields_changed` lists any other field Civis changed, by name only.
+6. On the Service's page, click **Update Deployment**.
+7. Open the app's **Setup** page and check that every line still passes. Line 7
    compares the Service's tag with the scanner job's. It is "review" instead
    of a pass if Civis added the deploying user's GitHub token to the Service
-   as `REPO_HTTP_TOKEN` (step 6 of "Create the Service").
-5. Run a new scan. Earlier scans and checklist statuses are kept.
+   as `REPO_HTTP_TOKEN` (see
+   [What the install script sets](#what-the-install-script-sets)).
+8. Archive the install script's Python script in Civis.
+9. Run a new scan. Earlier scans and checklist statuses are kept.
 
-Always change both parts to the same tag.
+To add or remove a GitHub token, or to change `LOOKBACK_DAYS` or
+`RETENTION_DAYS`, run the same steps with the tag you already have.
 
 ### Remove the tool
 
@@ -578,6 +578,8 @@ Always change both parts to the same tag.
    database user owns the schema), or ask a database admin.
 4. If you made a GitHub token, delete the Custom Credential in Civis and revoke
    the token in GitHub.
+5. Archive any copy of the install script's Python script that is still in
+   Civis.
 
 ## Pinned Docker images
 

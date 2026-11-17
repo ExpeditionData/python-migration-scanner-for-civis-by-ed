@@ -691,14 +691,22 @@ def test_settings_from_env():
 
 
 def test_the_service_has_no_results_settings_of_its_own():
-    """The results database, credential, and schema come from the scanner job only (docs/PLAN.md 17.2)."""
+    """The results database, credential, and schema come from the scanner job only (docs/PLAN.md 17.2).
+
+    The install script has a RESULTS_DATABASE setting of its own, which it writes into the scanner job's
+    RESULTS_DB parameter (docs/PLAN.md 17.14), so the docs may name it; no Service row in the README does."""
     removed = ("RESULTS_DATABASE", "RESULTS_CREDENTIAL_ID")
     root = Path(__file__).resolve().parent.parent
-    for path in [*(root / "app").rglob("*.py"), root / "README.md", root / "TESTING.md", root / ".env.example"]:
+    for path in [*(root / "app").rglob("*.py"), root / ".env.example"]:
         if not path.exists():  # .dockerignore keeps .env files out of the test images.
             continue
         text = path.read_text(encoding="utf-8")
         assert not any(name in text for name in removed), path.name
+    for path in (root / "README.md", root / "TESTING.md"):
+        text = path.read_text(encoding="utf-8")
+        assert "RESULTS_CREDENTIAL_ID" not in text, path.name
+        service_rows = [line for line in text.splitlines() if line.startswith("| Service |")]
+        assert not any("RESULTS_" in line for line in service_rows), path.name
     assert not hasattr(Settings(), "results_schema")
 
 
@@ -1502,7 +1510,7 @@ def test_setup_line_4_reviews_a_left_over_run_id(preview, monkeypatch):
     monkeypatch.delenv("FLASK_DEBUG", raising=False)
     page = text_of(make_app(preview, "setup-failures").test_client().get("/setup"))
     assert "RUN_ID is no longer used. The scanner resumes a stopped scan by itself." in page
-    assert "Remove RUN_ID from the scanner job (see README, Create the scanner job)." in page
+    assert 'Run the install script with MODE "update", which removes RUN_ID (README "Update to a new release", step 5).' in page
     normal = text_of(make_app(preview).test_client().get("/setup"))
     assert "RUN_ID" not in normal
 

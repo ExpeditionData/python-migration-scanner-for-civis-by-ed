@@ -120,7 +120,7 @@ def scanner_job(**changes: Any) -> dict:
         "docker_image_name": "civisanalytics/datascience-python", "docker_image_tag": "9.1.1",
         "repo_http_uri": REPO, "repo_ref": "v0.1.0-rc3", "git_credential_id": None,
         "docker_command": "cd /app && python -m scanner",
-        "required_resources": {"cpu": 1000, "memory": 4096, "disk_space": 4.0},
+        "required_resources": {"cpu": 500, "memory": 2048, "disk_space": 1.0},  # The profile without a token.
         "params": [
             {"name": "RESULTS_DB", "type": "database", "required": True},
             {"name": "RESULTS_SCHEMA", "type": "string", "required": True},

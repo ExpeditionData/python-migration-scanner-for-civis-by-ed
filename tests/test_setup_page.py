@@ -104,9 +104,13 @@ def test_the_pinned_images_come_from_the_requirements_files():
     ({"docker_command": "python -m scanner"}, "fail", "Command is not"),
     ({"docker_command": "cd /app  &&  python -m scanner"}, "fail", "Command is not"),
     ({"docker_command": "  cd /app && python -m scanner  "}, "pass", ""),
-    ({"required_resources": {"cpu": 500, "memory": 4096, "disk_space": 4}}, "fail", "CPU is below 1000"),
+    # The job has no GITHUB value, so the profile without a token applies: CPU 500, memory 2048, disk 1.
+    ({"required_resources": {"cpu": 400, "memory": 2048, "disk_space": 1}}, "fail", "CPU is below 500"),
     ({"required_resources": {"cpu": 2000, "memory": 8192, "disk_space": 10}}, "warning", "Memory is larger than"),
-    ({"required_resources": {"cpu": 1000, "memory": 4096, "disk_space": 2}}, "fail", "Disk Space is below 4"),
+    ({"required_resources": {"cpu": 1000, "memory": 4096, "disk_space": 4}}, "warning",
+     "CPU is larger than 500 (more than needed)"),
+    ({"required_resources": {"cpu": 500, "memory": 2048, "disk_space": 0.5}}, "fail", "Disk Space is below 1"),
+    ({"required_resources": {"cpu": 500, "memory": 1024, "disk_space": 1}}, "fail", "Memory is below 2048 MB"),
     ({"required_resources": None}, "fail", "CPU is below"),
 ])
 def test_job_settings_line(changes, result, words):
@@ -119,7 +123,30 @@ def test_more_threads_need_more_memory():
     job["arguments"]["MAX_CONCURRENCY"] = "8"
     job["params"].append({"name": "MAX_CONCURRENCY", "type": "integer"})
     line = lines_for(job)["job_settings"]
-    assert line.result == "fail" and "Memory is below 6144 MB" in line.reason
+    assert line.result == "fail" and "Memory is below 4096 MB" in line.reason  # 2048 + 4 threads x 512 MB.
+
+
+def test_a_job_with_a_github_value_is_checked_against_the_token_profile():
+    job = scanner_job()
+    job["params"].append({"name": "GITHUB", "type": "credential_custom"})
+    job["arguments"]["GITHUB"] = 51
+    line = lines_for(job)["job_settings"]
+    assert line.result == "fail"
+    assert "CPU is below 1000" in line.reason and "Memory is below 4096 MB" in line.reason
+    assert "Disk Space is below 4" in line.reason
+    assert "Resource profile: with_token (1000 CPU, 4096 MB, 4 GB)" in line.details
+    job["required_resources"] = {"cpu": 1000, "memory": 4096, "disk_space": 4.0}
+    line = lines_for(job)["job_settings"]
+    assert line.result == "pass" and "Resource profile: with_token (1000 CPU, 4096 MB, 4 GB)" in line.details
+    job["arguments"]["MAX_CONCURRENCY"] = "8"
+    assert "Memory is below 6144 MB" in lines_for(job)["job_settings"].reason
+
+
+def test_the_job_settings_fix_points_to_the_install_scripts_update():
+    line = lines_for(scanner_job(docker_image_tag="latest"))["job_settings"]
+    assert line.fix.startswith('Run the install script with MODE "update", signed in as the Robot user (README '
+                               '"Update to a new release", step 5).')
+    assert "Resource profile: without_token (500 CPU, 2048 MB, 1 GB)" in line.details
 
 
 def test_git_credential_line():
@@ -178,11 +205,11 @@ def test_run_id_review_says_to_remove_it_and_a_job_without_it_passes():
     job = scanner_job()
     job["params"].append({"name": "RUN_ID", "type": "string"})
     line = lines_for(job)["job_parameters"]
-    assert line.fix == "Remove RUN_ID from the scanner job (see README, Create the scanner job)."
+    assert line.fix == 'Run the install script with MODE "update", which removes RUN_ID (README "Update to a new release", step 5).'
     assert "Parameter names not in the README" not in " ".join(line.details)  # Not also flagged as a typo.
     job["params"].append({"name": "RESULTS_SHEMA", "type": "string"})
     both = lines_for(job)["job_parameters"]
-    assert both.fix.endswith("steps 4 and 5. Remove RUN_ID from the scanner job (see README, Create the scanner job).")
+    assert both.fix.endswith("keeps RESULTS_DB and RESULTS_SCHEMA. " + 'Run the install script with MODE "update", which removes RUN_ID (README "Update to a new release", step 5).')
 
 
 def test_parameters_line_names_unknown_parameters_and_the_shape_in_details_only():
@@ -322,7 +349,7 @@ def test_password_count_never_holds_names_or_values():
 def test_frame_rule_line():
     assert lines_for()["frame_rule"].result == "pass"
     line = lines_for(report_only=True)["frame_rule"]
-    assert line.result == "warning" and "README \"Create the Service\", step 10" in line.fix
+    assert line.result == "warning" and "README \"Install\", step 10" in line.fix
 
 
 @pytest.mark.parametrize("storage, result, words", [

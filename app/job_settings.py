@@ -1,7 +1,7 @@
 """The app's database settings, read from the scanner job's own parameters.
 
-The admin sets the results database, credential, and schema once, on the
-scanner job (README, "Create the scanner job"). The app reads them from the
+The install script sets the results database, credential, and schema once,
+on the scanner job (README "What the install script sets"). The app reads them from the
 job with ``scripts.get_containers(SCANNER_JOB_ID)`` (app/backends/civis_backend.py),
 so the Service needs no copy of them. This module only parses the job's
 settings; it calls nothing.

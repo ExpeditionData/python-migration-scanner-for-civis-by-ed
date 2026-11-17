@@ -28,6 +28,9 @@ environment:
 - **The scanner** runs as a Civis container script.
 - **The web app** runs as a Civis Service.
 
+An admin creates and updates both with the install script, run by hand as a
+Civis Python script (see "The install script" below).
+
 By design, the tool sends no data to Expedition Data LLC or to any other third
 party. It has no telemetry, no usage tracking, and no external logging.
 
@@ -218,7 +221,8 @@ all of it as sensitive.
   - Give it **read-only "Contents"** permission and no other permissions.
   - Limit it to **only the repositories** your Civis objects use.
   - Set an **expiration date**.
-  - Store it as a Civis credential and attach it to the **scanner job only**.
+  - Store it as a Civis Custom credential and set its ID in the install
+    script, which checks its type and attaches it to the **scanner job only**.
     Never attach it to the Service. The web app does not need it and does not
     read it (`test_app_never_reads_a_github_token` in
     [tests/test_security.py](tests/test_security.py)).

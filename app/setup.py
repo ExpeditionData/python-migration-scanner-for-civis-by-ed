@@ -42,7 +42,8 @@ README_PARAMETERS = (DATABASE_PARAMETER, SCHEMA_PARAMETER) + OPTIONAL_PARAMETERS
 # (common/resume.py, docs/PLAN.md 17.13). On the job, with any value or none, line 4 is "review".
 RETIRED_RUN_ID = "RUN_ID"
 RUN_ID_REASON = "RUN_ID is no longer used. The scanner resumes a stopped scan by itself."
-RUN_ID_FIX = "Remove RUN_ID from the scanner job (see README, Create the scanner job)."
+RUN_ID_FIX = ("Run the install script with MODE \"update\", which removes RUN_ID (README \"Update to a new "
+              "release\", step 5).")
 TOKEN_PARAMETER = OPTIONAL_PARAMETERS[0]  # The optional GitHub token parameter. The app never reads its value.
 MAX_SERVICES = 1000
 # Civis puts the deploying user's GitHub token into a Service under this name when that user's Civis profile has
@@ -193,8 +194,8 @@ def _job_found(facts: SetupFacts) -> Line:
     title = "Scanner job found and readable"
     if facts.settings is None:
         return Line(1, "job_found", title, "fail", "SCANNER_JOB_ID is not set on this Service.",
-                    "Add SCANNER_JOB_ID with the scanner job's ID (README, \"Create the Service\", step 5), then "
-                    "click Update Deployment.")
+                    "Run the install script with MODE \"update\", which sets SCANNER_JOB_ID (README \"Update to a "
+                    "new release\", step 5), then click Update Deployment.")
     if facts.settings.problem == "job_unreadable":
         return Line(1, "job_found", title, "fail",
                     f"Civis did not return the scanner job (error type: {facts.settings.error_type}).",
@@ -204,8 +205,8 @@ def _job_found(facts: SetupFacts) -> Line:
         return Line(1, "job_found", title, "fail",
                     f"Job {facts.job_id} is not this tool's scanner job: its {', '.join(mismatches)} differ from the "
                     "README. Run scan is off, and the app uses none of its settings.",
-                    "Set SCANNER_JOB_ID to the scanner job's ID (README \"Create the Service\", step 5), or fix the "
-                    "job as line 2 says.")
+                    "Run the install script with MODE \"update\" and the scanner job's ID in JOB_ID, which sets "
+                    "SCANNER_JOB_ID (README \"Update to a new release\", step 3), or fix the job as line 2 says.")
     return Line(1, "job_found", title, "pass", f"The scanner job ({facts.job_id}) was read.")
 
 
@@ -249,31 +250,35 @@ def _job_settings(job: dict) -> Line:
     if "command" in mismatches:
         issues.append(("fail", f"Command is not {release.SCANNER_COMMAND}"))
     resources = job.get("required_resources") or {}
-    threads = _threads(job)
-    memory_needed = release.SCANNER_MEMORY_MB + release.MEMORY_PER_EXTRA_THREAD_MB * max(0, threads - release.DEFAULT_THREADS)
+    # The profile the install script sets: with a GitHub token when the job's GITHUB parameter has a value.
+    profile = release.resource_profile(parameter_value(job, TOKEN_PARAMETER) is not None)
+    memory_needed = release.memory_needed(profile, _threads(job))
     for label, key, expected, unit in (
-        ("CPU", "cpu", release.SCANNER_CPU, ""), ("Memory", "memory", memory_needed, " MB"),
-        ("Disk Space", "disk_space", release.SCANNER_DISK_GB, " GB"),
+        ("CPU", "cpu", profile.cpu, ""), ("Memory", "memory", memory_needed, " MB"),
+        ("Disk Space", "disk_space", profile.disk_gb, " GB"),
     ):
         value = _number(resources.get(key) if isinstance(resources, dict) else None)
         if value is None or value < expected:
             issues.append(("fail", f"{label} is below {expected}{unit}"))
         elif value > expected:
             issues.append(("warning", f"{label} is larger than {expected}{unit} (more than needed)"))
+    details = (f"Resource profile: {profile.name} ({profile.cpu} CPU, {memory_needed} MB, {profile.disk_gb} GB)",)
     if not issues:
         return Line(2, "job_settings", title, "pass",
-                    "Image, repository, release tag, command, CPU, memory, and disk match the README.")
+                    "Image, repository, release tag, command, CPU, memory, and disk match the README.", details=details)
     result = _worst([r for r, _ in issues])
     return Line(2, "job_settings", title, result, _sentence([text for _, text in issues]),
-                "Change these on the scanner job to the values in README \"Create the scanner job\", step 3, "
-                "signed in as the Robot user.")
+                "Run the install script with MODE \"update\", signed in as the Robot user (README \"Update to a new "
+                "release\", step 5). Do not change these on the scanner job's page.", details)
 
 
 def _git_credential(job: dict) -> Line:
     title = "Scanner job git credential is blank"
     if job.get("git_credential_id"):
         return Line(3, "job_git_credential", title, "warning", "A git credential is set on the scanner job.",
-                    "Clear it. The repository is public and needs none (README \"Create the scanner job\", step 3).")
+                    "Clear it. The repository is public and needs none (README \"What the install script sets\"). "
+                    "Then run the install script with MODE \"update\" (README \"Update to a new release\", step 5), "
+                    "because a save of the job's page can clear its repository.")
     return Line(3, "job_git_credential", title, "pass", "No git credential is set.")
 
 
@@ -325,7 +330,8 @@ def _parameters(job: dict, settings: JobSettings | None) -> Line:
     if not issues:
         return Line(4, "job_parameters", title, "review", RUN_ID_REASON, RUN_ID_FIX, tuple(details))
     reason = _sentence([text for _, text in issues])
-    fix = "Fix the parameters on the scanner job as in README \"Create the scanner job\", steps 4 and 5."
+    fix = ("Compare them with README \"What the install script sets\". The install script's MODE \"update\" sets "
+           "the optional ones (README \"Update to a new release\", step 3) and keeps RESULTS_DB and RESULTS_SCHEMA.")
     if run_id_left:
         reason, fix = f"{reason} {RUN_ID_REASON}", f"{fix} {RUN_ID_FIX}"
     return Line(4, "job_parameters", title, _worst([r for r, _ in issues] + (["review"] if run_id_left else [])),
@@ -474,8 +480,7 @@ def _sharing(facts: SetupFacts) -> Line:
         details.append(f"{name} users: " + (", ".join(users) or "none"))
         details.append(f"{name} groups: " + (", ".join(groups) or "none"))
     return Line(6, "sharing", title, "review", ". ".join(parts) + ".",
-                "Keep only Civis admins (README \"Create the scanner job\", step 7, and \"Create the Service\", "
-                "step 9).", tuple(details))
+                "Keep only Civis admins (README \"Install\", step 8).", tuple(details))
 
 
 def _service(facts: SetupFacts) -> Line:
@@ -498,8 +503,8 @@ def _service_line(facts: SetupFacts) -> Line:
     passwords = facts.password_env_count
     password_issue = (("fail", f"{_plural(passwords, 'environment variable')} in the app end in _PASSWORD")
                       if passwords else None)
-    fix = ("Use the same release tag on the Service as on the scanner job, the image in README \"Create the Service\", "
-           "step 3, and attach no credentials (step 6).")
+    fix = ("Run the install script with MODE \"update\" (README \"Update to a new release\", step 5). It puts the "
+           "scanner job's release tag and the README image on the Service and attaches no credentials.")
     if facts.service_method != "single_match" or facts.service is None:
         if facts.service_method == "list_failed":
             reason = "The Services this user can see could not be listed."
@@ -510,7 +515,8 @@ def _service_line(facts: SetupFacts) -> Line:
         if password_issue:
             return Line(7, "service", title, "fail", reason + " " + _sentence([password_issue[1]]), fix)
         return Line(7, "service", title, "review", reason,
-                    "Check the Service by hand against README \"Create the Service\", or archive extra copies.")
+                    "Check the Service by hand against README \"What the install script sets\", or archive extra "
+                    "copies.")
     if facts.service.error or not isinstance(facts.service.value, dict):
         return Line(7, "service", title, "review",
                     f"The Service could not be read (error type: {facts.service.error or 'Exception'}).", fix)
@@ -545,7 +551,7 @@ def _frame_rule(facts: SetupFacts) -> Line:
         return Line(8, "frame_rule", title, "warning",
                     "CIVIS_FRAME_ANCESTORS_REPORT_ONLY is true, so other websites could embed the app.",
                     "Once the app shows correctly inside Civis, set it to false and click Update Deployment "
-                    "(README \"Create the Service\", step 10).")
+                    "(README \"Install\", step 10).")
     return Line(8, "frame_rule", title, "pass", "The frame rule is enforced.")
 
 
