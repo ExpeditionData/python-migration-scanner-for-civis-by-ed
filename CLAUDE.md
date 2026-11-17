@@ -615,9 +615,10 @@ Run the full suite on both Python versions before every commit:
   an active run), and dry runs that resume a canceled and a failed scan
   (finished objects skipped, the first Civis run's label kept), start a new
   scan after a resumed one finishes, refuse a third resume, start a new scan
-  on a failed or timed-out read, unusable tables, or another job's run,
-  charge the read to the budget, ignore `RUN_ID` with `RUN_ID_IGNORED`, and
-  keep names and Civis text out of the `RESUME` line. The synthetic
+  on a failed or timed-out read or unusable tables, start a new scan when
+  another job's newest scan is in any state (running, failed, or finished)
+  and never read that job's run, charge the read to the budget, ignore
+  `RUN_ID` with `RUN_ID_IGNORED`, and keep names and Civis text out of the `RESUME` line. The synthetic
   `scripts.get_containers_runs` answers from `container_runs`
   (`"<job ID>/<run ID>": {state, finished_at}`; 404 when missing, `_error`
   for a status or timeout).

@@ -381,6 +381,51 @@ def test_a_run_of_another_job_is_not_read(tmp_path, log_stream, monkeypatch):
     assert calls == [] and resume_lines(log_stream)[-1] == "RESUME decision=new reason=run_state_unknown"
 
 
+@pytest.mark.parametrize("answer", ["missing", "ended_an_hour_earlier"])
+@pytest.mark.parametrize("newest, reason, ended_state", [
+    ("running", "run_state_unknown", "cancelled"),
+    ("failed", "run_state_unknown", "failed"),
+    ("succeeded", "last_scan_finished", "failed"),
+])
+def test_another_jobs_newest_scan_always_starts_a_new_scan(tmp_path, log_stream, monkeypatch, newest, reason,
+                                                           ended_state, answer):
+    """A new scanner job on a reused results schema: whatever state the old job's newest scan is in, and
+    whatever Civis would answer for its run, the old job's run is never read, a new scan starts, and nothing
+    stops with FATAL."""
+    import scanner.runner as runner
+
+    def broken(*args):
+        raise KeyError(MARK)
+
+    if newest == "running":
+        stopped_scan(tmp_path)
+    elif newest == "failed":  # The FATAL from test_the_runner_resumes_a_failed_scan.
+        with monkeypatch.context() as patch:
+            patch.setattr(runner, "_summary_rows", broken)
+            with pytest.raises(runner.ScanFailed):
+                scan(tmp_path, 11)
+    else:
+        scan(tmp_path, 11)
+    old = table(tmp_path, "SELECT run_id, status FROM scan_runs ORDER BY rowid")
+    assert old[-1][1] == newest
+    start = NOW + timedelta(hours=2)
+    # The old scan's Civis run (old job, run 11): missing (404) or ended an hour before the next start.
+    runs = {} if answer == "missing" else {
+        "11": {"state": ended_state, "finished_at": stamp(start - timedelta(hours=1))}}
+    calls = []
+    original = FakeClient._scripts__get_containers_runs
+    monkeypatch.setattr(FakeClient, "_scripts__get_containers_runs",
+                        lambda self, *args: calls.append(args) or original(self, *args))
+    before = len(lines(log_stream))
+    result = dry_run(tmp_path, now=start, data=synthetic(**runs), civis_job_id=JOB + 1, civis_run_id=12,
+                     checkpoint_objects=5)
+    logged = lines(log_stream)[before:]
+    assert calls == []
+    assert [line for line in logged if line.startswith("RESUME")] == [f"RESUME decision=new reason={reason}"]
+    assert result.run_id != old[-1][0] and result.status == "succeeded" and result.skipped_as_done == 0
+    assert not [line for line in logged if line.startswith("FATAL")]
+
+
 def test_the_civis_read_is_one_budgeted_call(tmp_path, log_stream, monkeypatch):
     stopped_scan(tmp_path)
     calls, clients = [], []
