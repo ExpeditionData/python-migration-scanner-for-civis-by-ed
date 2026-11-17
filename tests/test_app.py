@@ -123,7 +123,7 @@ def test_static_assets_are_vendored(app):
 
 def test_overview_numbers(app):
     page = text_of(app.test_client().get("/"))
-    assert "Python objects found 102" in page
+    assert "Python objects found 103" in page
     assert "Checklist progress" in page and "Most common issues" in page
     assert "Last scan: October 7, 2026" in page and "Civis run 503." in page
     assert "A scan is running." in page
@@ -172,7 +172,7 @@ def test_overview_counts_partly_scanned_objects(app):
 
 def test_scan_page_progress_and_history(app):
     page = text_of(app.test_client().get("/scan"))
-    assert "Scanning code and logs: 40 of 102 objects" in page
+    assert "Scanning code and logs: 40 of 103 objects" in page
     assert "1. Inventory" in page and "2. Code and log scan" in page and "3. Save results" in page
     for status in ("In progress", "Completed", "Failed"):
         assert status in page
@@ -184,14 +184,14 @@ def test_scan_status_api(app):
     response = app.test_client().get("/api/scan-status")
     data = response.get_json()
     assert response.mimetype == "application/json"
-    assert data["state"] == "running" and data["percent"] == 39 and data["can_start"] is False
+    assert data["state"] == "running" and data["percent"] == 38 and data["can_start"] is False
     assert [s["state"] for s in data["steps"]] == ["Done", "Running", "Waiting"]
 
 
 def test_inventory_filters_reasons_and_workflows(app):
     client = app.test_client()
     everything = text_of(client.get("/inventory"))
-    assert "Showing 1 to 50 of 102 objects" in everything
+    assert "Showing 1 to 50 of 103 objects" in everything
     partial = text_of(client.get("/inventory?status=partial"))
     assert "Scanned the code preview instead." in partial
     # The preview uses the normal setup, with no GitHub token.
@@ -206,8 +206,8 @@ def test_inventory_filters_reasons_and_workflows(app):
     assert "Example nightly pipeline" in run_by
     assert "No objects match" in text_of(client.get("/inventory?q=zzzz-no-match"))
     page_two = text_of(client.get("/inventory?page=2"))
-    assert "Showing 51 to 100 of 102 objects" in page_two
-    assert "Showing 101 to 102 of 102 objects" in text_of(client.get("/inventory?page=3"))
+    assert "Showing 51 to 100 of 103 objects" in page_two
+    assert "Showing 101 to 103 of 103 objects" in text_of(client.get("/inventory?page=3"))
 
 
 def test_findings_filters_show_location_never_code(app):

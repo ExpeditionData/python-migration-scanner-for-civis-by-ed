@@ -9,12 +9,15 @@ Python code is parsed with the ast module. If a file does not parse (for
 example Python 2 code), the rule's regex fallback runs instead and confidence
 drops one level. Shell text (container commands, notebook ! and % lines,
 Dockerfile RUN lines), requirements files, and pyproject.toml are checked with
-regex and install-requirement rules. Log text is checked with log patterns.
+regex and install-requirement rules. Python passed inline to a Python
+interpreter in shell text is also checked with the Python rules (see
+``python_in_shell``). Log text is checked with log patterns.
 """
 
 from __future__ import annotations
 
 import ast
+import io
 import json
 import re
 import shlex
@@ -584,10 +587,39 @@ class Engine:
     # -- Shell, requirements, pyproject, Dockerfile --------------------------
 
     def scan_shell(self, text: str, label: str, first_line: int = 1) -> ScanResult:
+        """Shell rules on each logical line, and the Python rules on Python passed to an interpreter.
+
+        The body of a heredoc on a Python interpreter's stdin is Python, so its lines are not also
+        checked as shell lines.
+        """
+        units, python_lines = python_in_shell(text)
         matches = []
-        for number, line in _logical_lines(text, first_line):
-            matches.extend(self._shell_line(line, label, number))
-        return ScanResult(matches)
+        for offset, _end, line in _logical_spans(text):
+            if offset not in python_lines:
+                matches.extend(self._shell_line(line, label, first_line + offset))
+        result = ScanResult()
+        for unit in units:
+            result.extend(self._scan_python_unit(unit, label, first_line))
+        result.matches = _dedupe(matches + result.matches)
+        return result
+
+    def _scan_python_unit(self, unit: "PythonUnit", label: str, first_line: int) -> ScanResult:
+        """Scan Python found in shell text, with line numbers moved to the shell text's lines."""
+        found = self.scan_python(unit.code, label)
+        shift = first_line + unit.offset - 1
+        found.matches = [
+            Match(m.rule_id, m.file, None if m.line_number is None else m.line_number + shift, m.confidence, m.source)
+            for m in found.matches
+        ]
+        return found
+
+    def _shell_line_result(self, line: str, label: str, number: int) -> ScanResult:
+        """One shell line (a notebook ! line): shell rules and any ``python -c`` code on it."""
+        result = ScanResult()
+        for unit in python_on_line(line):
+            result.extend(self._scan_python_unit(unit, label, number))
+        result.matches = _dedupe(self._shell_line(line, label, number) + result.matches)
+        return result
 
     def _shell_line(self, line: str, label: str, number: int) -> list[Match]:
         matches = []
@@ -645,12 +677,29 @@ class Engine:
         return ScanResult(_dedupe(matches))
 
     def scan_dockerfile(self, text: str, label: str) -> ScanResult:
+        """RUN lines as shell, plus Python passed to an interpreter on them (``-c`` or a heredoc)."""
+        lines = text.splitlines()
         matches = []
-        for number, line in _logical_lines(text, 1):
+        result = ScanResult()
+        python_lines: set[int] = set()
+        for offset, end, line in _logical_spans(text):
+            if offset in python_lines:
+                continue
             stripped = line.lstrip()
             if stripped[:4].upper() == "RUN " or stripped[:4].upper() == "RUN\t":
-                matches.extend(self._shell_line(stripped[4:], label, number))
-        return ScanResult(matches)
+                command = stripped[4:]
+                matches.extend(self._shell_line(command, label, offset + 1))
+                parsed = _parse_commands(command)
+                if parsed is None:
+                    continue
+                codes, heredocs = parsed
+                # The joined RUN line is one line, so its -c code sits on the RUN line.
+                units = [PythonUnit(offset, code) for _code_offset, code in codes]
+                _read_heredocs(lines, end + 1, heredocs, units, python_lines)
+                for unit in units:
+                    result.extend(self._scan_python_unit(unit, label, 1))
+        result.matches = _dedupe(matches + result.matches)
+        return result
 
     # -- Notebooks ------------------------------------------------------------
 
@@ -685,7 +734,7 @@ class Engine:
                 if python_text.strip():
                     result.extend(self.scan_python(python_text, cell_label, extra_aliases=aliases))
                 for number, line in shell_lines:
-                    result.matches.extend(self._shell_line(line, cell_label, number))
+                    result.extend(self._shell_line_result(line, cell_label, number))
             output_text = _cell_output_text(cell.get("outputs"))
             if output_text:
                 result.matches.extend(
@@ -780,23 +829,295 @@ def _dedupe(matches: list[Match]) -> list[Match]:
     return result
 
 
-def _logical_lines(text: str, first_line: int) -> list[tuple[int, str]]:
-    """Join backslash-continued lines. Returns (starting line number, joined text)."""
+def _logical_spans(text: str) -> list[tuple[int, int, str]]:
+    """Join backslash-continued lines. Returns (first line offset, last line offset, joined text), from 0."""
     result = []
     buffer: list[str] = []
-    start = first_line
+    start = 0
+    offset = 0
     for offset, raw in enumerate(text.splitlines()):
         if not buffer:
-            start = first_line + offset
+            start = offset
         if raw.rstrip().endswith("\\"):
             buffer.append(raw.rstrip()[:-1])
             continue
         buffer.append(raw)
-        result.append((start, " ".join(buffer)))
+        result.append((start, offset, " ".join(buffer)))
         buffer = []
     if buffer:
-        result.append((start, " ".join(buffer)))
+        result.append((start, offset, " ".join(buffer)))
     return result
+
+
+def _logical_lines(text: str, first_line: int) -> list[tuple[int, str]]:
+    """Join backslash-continued lines. Returns (starting line number, joined text)."""
+    return [(first_line + start, line) for start, _end, line in _logical_spans(text)]
+
+
+# ---------------------------------------------------------------------------
+# Python passed inline to a Python interpreter in shell text (python_in_shell)
+# ---------------------------------------------------------------------------
+
+# Most physical lines one command may span while a quote is open or a line ends with a backslash.
+MAX_COMMAND_LINES = 200
+
+_INTERPRETER = re.compile(r"^python(?:3(?:\.\d+)?)?$")
+_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_COMMAND_PREFIXES = {"!", "{", "if", "then", "elif", "else", "while", "until", "do", "exec", "time", "nohup"}
+_PUNCTUATION = set("();<>|&")
+# Interpreter options that take a value: single letters (-W default, -Wdefault) and long options.
+_VALUE_FLAGS = "WX"
+_LONG_VALUE_OPTIONS = {"--check-hash-based-pycs"}
+
+
+@dataclass(frozen=True)
+class PythonUnit:
+    offset: int  # Line in the shell text (from 0) where the code's first line sits.
+    code: str  # In memory only.
+
+
+@dataclass(frozen=True)
+class _Heredoc:
+    delimiter: str
+    strip_tabs: bool  # <<- strips leading tabs from the body and the delimiter line.
+    python: bool  # On a Python interpreter's stdin.
+
+
+def python_in_shell(text: str) -> tuple[list[PythonUnit], set[int]]:
+    """Python passed inline to an interpreter in shell text, and the line offsets of Python heredocs.
+
+    Used for docker commands (container, template, and workflow task), notebook ! lines and shell cell
+    magics, and Dockerfile RUN lines. Covered:
+
+    - ``-c <code>`` after an interpreter word: ``python``, ``python3``, or ``python3.N``, with or without a
+      path (``/usr/bin/python3``) or ``env`` in front (``/usr/bin/env python3``), with any interpreter
+      options before ``-c`` (``-u``, ``-B``, ``-W <value>``, ``-uc <code>``). The interpreter must start a
+      command: at the start of a line, or after ``&&``, ``||``, ``;``, ``|``, ``&``, or ``(``. Variable
+      assignments (``FOO=1``) and a few shell words (``then``, ``do``, ``exec``, ``time``, and others) may
+      come before it. The logical line is split with ``shlex`` (punctuation_chars on). Code inside quotes
+      that spans lines is counted from the line where the quote opens.
+    - A heredoc on the interpreter's stdin: ``python - <<EOF``, ``python3 <<'PY'``,
+      ``python3 -u - <<-END``, through the line that ends it. The body is Python, and its lines are not
+      also checked as shell lines.
+
+    Not covered: code piped in from another command (``cat job.py | python -``), ``bash -c`` holding a
+    ``python -c`` (the outer quotes make it one word), a here-string (``python3 <<< "..."``), the
+    ``%%script python3`` cell magic, and ``python script.py`` (a file, already covered through the
+    repository when one is attached). A line ``shlex`` cannot split (for example a quote that never
+    closes) is checked with the shell rules only, as before. A quoted ``;`` or ``&&`` is read as a
+    separator, because ``shlex`` does not tell them apart.
+
+    The returned offsets (from 0) are each Python heredoc's body and the line that ends it, which are
+    not shell lines. Nothing here keeps or returns text other than the Python code itself, held in memory.
+    """
+    lines = text.splitlines()
+    units: list[PythonUnit] = []
+    python_lines: set[int] = set()
+    index = 0
+    while index < len(lines):
+        group = _command_group(lines, index)
+        parsed = _parse_commands(group[1]) if group is not None else None
+        if group is None or parsed is None:
+            index += 1  # A line shlex cannot split: the shell rules only.
+            continue
+        end, _text = group
+        codes, heredocs = parsed
+        units.extend(PythonUnit(index + offset, code) for offset, code in codes)
+        index = _read_heredocs(lines, end + 1, heredocs, units, python_lines)
+    return units, python_lines
+
+
+def python_on_line(line: str) -> list[PythonUnit]:
+    """``-c`` code on one shell line (a notebook ! line), all of it on that line."""
+    parsed = _parse_commands(line)
+    if parsed is None:
+        return []
+    return [PythonUnit(0, code) for _offset, code in parsed[0]]
+
+
+def _command_group(lines: list[str], start: int) -> tuple[int, str] | None:
+    """The lines from ``start`` that make one shell input line: (last line index, text).
+
+    Lines join while a quote is open or a line ends with a backslash outside quotes (the backslash is
+    dropped and the line break kept, so the text has one line per physical line). None when a quote
+    does not close within MAX_COMMAND_LINES lines or by the end of the text.
+    """
+    state: str | None = None
+    parts = []
+    for index in range(start, min(len(lines), start + MAX_COMMAND_LINES)):
+        line = lines[index]
+        state, escaped_end = _quote_state(line, state)
+        if escaped_end:
+            line = line.rstrip()[:-1]
+        parts.append(line)
+        if state is None and not escaped_end:
+            return index, "\n".join(parts)
+    return None
+
+
+def _quote_state(line: str, state: str | None) -> tuple[str | None, bool]:
+    """The quote still open at the end of ``line``, and whether it ends with a backslash outside quotes.
+
+    Follows shlex's posix rules: nothing is escaped inside single quotes, a backslash escapes the next
+    character elsewhere, and ``#`` outside quotes starts a comment.
+    """
+    text = line.rstrip()
+    escaped_end = False
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if state == "'":
+            if ch == "'":
+                state = None
+        elif state == '"':
+            if ch == "\\":
+                i += 1
+            elif ch == '"':
+                state = None
+        elif ch == "\\":
+            escaped_end = i == len(text) - 1
+            i += 1
+        elif ch in "'\"":
+            state = ch
+        elif ch == "#":
+            break
+        i += 1
+    return state, escaped_end and state is None
+
+
+def _tokens(text: str) -> list[tuple[str, int]] | None:
+    """shlex tokens, each with the line (from 0) where it ends. None when shlex cannot split the text."""
+    stream = io.StringIO(text)
+    lexer = shlex.shlex(stream, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    tokens = []
+    try:
+        while (token := lexer.get_token()) is not None:
+            # The stream is one character past the token (the character that ended it), on the same line.
+            position = max(stream.tell() - 1, 0)
+            tokens.append((token, text.count("\n", 0, position)))
+    except ValueError:
+        return None
+    return tokens
+
+
+def _parse_commands(text: str) -> tuple[list[tuple[int, str]], list[_Heredoc]] | None:
+    """``-c`` code (line offset where it starts, code) and the heredocs, in order, of one shell input line."""
+    tokens = _tokens(text)
+    if tokens is None:
+        return None
+    codes: list[tuple[int, str]] = []
+    heredocs: list[_Heredoc] = []
+    command: list[tuple[str, int]] = []
+    for token, line in tokens + [(";", 0)]:
+        if _is_separator(token):
+            _read_command(command, codes, heredocs)
+            command = []
+        else:
+            command.append((token, line))
+    return codes, heredocs
+
+
+def _read_command(command: list[tuple[str, int]], codes: list[tuple[int, str]], heredocs: list[_Heredoc]) -> None:
+    words = [word for word, _line in command]
+    k = 0
+    while k < len(words) and (words[k] in _COMMAND_PREFIXES or _ASSIGNMENT.match(words[k])):
+        k += 1
+    if k < len(words) and PurePosixPath(words[k]).name == "env":
+        k += 1
+        while k < len(words) and (words[k].startswith("-") or _ASSIGNMENT.match(words[k])):
+            k += 1
+    mode = None
+    if k < len(words) and _INTERPRETER.match(PurePosixPath(words[k]).name):
+        mode, code_index, skip = _interpreter_mode(words, k + 1)
+        if mode == "code":
+            word, end_line = command[code_index]
+            code = word[skip:]
+            # The word ends on end_line, so it starts as many lines up as it has line breaks.
+            codes.append((end_line - word.count("\n") + word[:skip].count("\n"), code))
+    found = []
+    for k, word in enumerate(words[:-1]):
+        if word != "<<":
+            continue
+        delimiter, strip_tabs = words[k + 1], False
+        if delimiter == "-" and k + 2 < len(words):
+            delimiter, strip_tabs = words[k + 2], True
+        elif delimiter.startswith("-") and len(delimiter) > 1:
+            delimiter, strip_tabs = delimiter[1:], True
+        found.append([delimiter, strip_tabs])
+    for position, (delimiter, strip_tabs) in enumerate(found):
+        # Only the last heredoc reaches the interpreter's stdin.
+        heredocs.append(_Heredoc(delimiter, strip_tabs, mode == "stdin" and position == len(found) - 1))
+
+
+def _is_separator(token: str) -> bool:
+    """A run of shell punctuation that ends a command (;, &&, ||, |, &, parentheses), not a redirect."""
+    return bool(token) and set(token) <= _PUNCTUATION and not set(token) & {"<", ">"}
+
+
+def _is_redirect(word: str) -> bool:
+    return bool(word) and set(word) <= _PUNCTUATION and bool(set(word) & {"<", ">"})
+
+
+def _interpreter_mode(words: list[str], k: int) -> tuple[str | None, int, int]:
+    """What the interpreter runs: ("code", word index, characters to skip), ("stdin", 0, 0), or (None, 0, 0)."""
+    while k < len(words):
+        word = words[k]
+        if _is_redirect(word):
+            k += 2  # The operator and its target (a heredoc's delimiter).
+            if word == "<<" and k - 1 < len(words) and words[k - 1] == "-":
+                k += 1
+            continue
+        if word.isdigit() and k + 1 < len(words) and _is_redirect(words[k + 1]):
+            k += 1  # A file descriptor number, as in 2>&1.
+            continue
+        if word == "-":
+            return "stdin", 0, 0
+        if word == "--" or not word.startswith("-"):
+            return None, 0, 0  # A script file.
+        if word.startswith("--"):
+            k += 2 if word in _LONG_VALUE_OPTIONS else 1
+            continue
+        flags = word[1:]
+        for position, flag in enumerate(flags):
+            if flag == "c":
+                if flags[position + 1 :]:
+                    return "code", k, position + 2
+                if k + 1 < len(words) and not _is_redirect(words[k + 1]):
+                    return "code", k + 1, 0
+                return None, 0, 0
+            if flag == "m":
+                return None, 0, 0  # A module.
+            if flag in _VALUE_FLAGS:
+                if not flags[position + 1 :]:
+                    k += 1  # The value is the next word.
+                break
+        k += 1
+    return "stdin", 0, 0
+
+
+def _read_heredocs(
+    lines: list[str], index: int, heredocs: list[_Heredoc], units: list[PythonUnit], python_lines: set[int]
+) -> int:
+    """Read each heredoc's body from ``index``; keep Python bodies as units. Returns the next line index."""
+    for doc in heredocs:
+        start = index
+        while index < len(lines) and _heredoc_end(lines[index], doc.strip_tabs) != doc.delimiter:
+            index += 1
+        if doc.python:
+            body = lines[start:index]
+            if doc.strip_tabs:
+                body = [line.lstrip("\t") for line in body]
+            if any(line.strip() for line in body):
+                units.append(PythonUnit(start, "\n".join(body)))
+            python_lines.update(range(start, min(index + 1, len(lines))))
+        index = min(index + 1, len(lines))
+    return index
+
+
+def _heredoc_end(line: str, strip_tabs: bool) -> str:
+    line = line.rstrip()
+    return line.lstrip("\t") if strip_tabs else line
 
 
 def _find_line(lines: list[str], needle: str, key: bool = False) -> int | None:

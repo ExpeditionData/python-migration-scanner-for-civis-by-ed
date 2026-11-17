@@ -591,6 +591,22 @@
       "docker_image_tag": "9",
       "docker_command": "pip install pandas==2.2.3 && python run.py",
       "updated_at": "2026-07-01T09:00:00Z"
+    },
+    {
+      "id": 212,
+      "name": "Example container with inline Python",
+      "type": "Container",
+      "archived": false,
+      "hidden": false,
+      "author": {
+        "id": 2,
+        "name": "Example Analyst",
+        "username": "example_analyst"
+      },
+      "docker_image_name": "civisanalytics/datascience-python",
+      "docker_image_tag": "",
+      "docker_command": "python3 -c \"import civis; civis.APIClient().users.list_me()\" && python3 - <<'PY'\nfrom civis.parallel import make_backend_factory\nPY\n",
+      "updated_at": "2026-07-01T09:00:00Z"
     }
   ],
   "templates": {
@@ -1099,7 +1115,7 @@
         ]
       },
       "last_execution_id": 8801,
-      "definition": "version: '2.0'\ndaily:\n  tasks:\n    extract:\n      action: civis.run_job\n      input:\n        job_id: 105\n      on-success:\n        - transform\n    transform:\n      action: civis.run_job\n      input:\n        job_id: '201'\n    inline_step:\n      action: civis.scripts.python3\n      input:\n        name: inline step\n        source: |\n          import civis\n          import civis.parallel\n    archived_custom_step:\n      action: civis.run_job\n      input:\n        job_id: 311\n    sql_step:\n      action: civis.run_job\n      input:\n        job_id: 777\n    dynamic_step:\n      action: civis.run_job\n      input:\n        job_id: <% $.job_to_run %>\n    unreadable_step:\n      action: civis.run_job\n      input:\n        job_id: 888\n"
+      "definition": "version: '2.0'\ndaily:\n  tasks:\n    extract:\n      action: civis.run_job\n      input:\n        job_id: 105\n      on-success:\n        - transform\n    transform:\n      action: civis.run_job\n      input:\n        job_id: '201'\n    inline_step:\n      action: civis.scripts.python3\n      input:\n        name: inline step\n        source: |\n          import civis\n          import civis.parallel\n    inline_container_step:\n      action: civis.scripts.containers\n      input:\n        name: inline container step\n        docker_image_name: civisanalytics/datascience-python\n        docker_command: |\n          python -u -c \"import civis\n          civis.APIClient().users.list_me()\"\n          python3 <<EOF\n          import civis\n          print(civis.APIClient().default_credential)\n          EOF\n    archived_custom_step:\n      action: civis.run_job\n      input:\n        job_id: 311\n    sql_step:\n      action: civis.run_job\n      input:\n        job_id: 777\n    dynamic_step:\n      action: civis.run_job\n      input:\n        job_id: <% $.job_to_run %>\n    unreadable_step:\n      action: civis.run_job\n      input:\n        job_id: 888\n"
     },
     {
       "id": 602,

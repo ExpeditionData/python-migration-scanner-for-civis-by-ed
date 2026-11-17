@@ -45,7 +45,7 @@ def test_inventoried_ids_by_type(built):
         ids.setdefault(it.obj.object_type, set()).add(it.obj.object_id)
     assert ids == {
         ObjectType.PYTHON_SCRIPT: {101, 102, 105, 106, 107, 108, 109, 110, 111, 112, 114},
-        ObjectType.CONTAINER_SCRIPT: {201, 202, 203, 204, 205, 206, 208, 209},
+        ObjectType.CONTAINER_SCRIPT: {201, 202, 203, 204, 205, 206, 208, 209, 212},
         ObjectType.CUSTOM_SCRIPT: {301, 302, 304, 306, 309, 311},  # 311 is archived, run by 601.
         ObjectType.DBT_SCRIPT: {231, 233},  # 233 is saved on the current default tag (docs/PLAN.md 17.8).
         ObjectType.NOTEBOOK: {401, 403, 404, 405},
@@ -243,7 +243,7 @@ def test_code_is_kept_in_memory_only(built):
     assert "notebook_url" not in item(built, 401).code  # Asked for right before the download (docs/PLAN.md 17.9).
     assert item(built, 501).code["deployment_id"] == 7001
     inline = item(built, 601).code["inline_tasks"]
-    assert [t.action for t in inline] == ["civis.scripts.python3"]
+    assert [t.action for t in inline] == ["civis.scripts.python3", "civis.scripts.containers"]
     for it in built[1].items:
         row = it.obj.to_row()
         assert not set(row) & {"code", "source", "docker_command", "code_preview", "notebook_url", "definition"}
@@ -432,7 +432,7 @@ def test_git_backed_workflow_is_parsed_from_its_git_file():
 def test_git_backed_workflow_falls_back_to_its_saved_definition():
     _, inventory, reader = git_inventory(git_workflow_data(file_error=403))
     workflow = inventory.by_id()[601]
-    assert [t.task for t in workflow.code["inline_tasks"]] == ["inline_step"]
+    assert [t.task for t in workflow.code["inline_tasks"]] == ["inline_step", "inline_container_step"]
     assert workflow.obj.scan_status is ScanStatus.PARTIAL
     assert workflow.obj.scan_note == (
         "The workflow's own file could not be read through Civis (HTTP 403). " + SAVED_COPY_NOTE
@@ -645,7 +645,7 @@ def test_one_inventory_line_per_listed_type_before_any_detail_call(scanner_log):
     inventory_lines = [line for line in lines if line.startswith("INVENTORY ")]
     assert inventory_lines == [
         "INVENTORY type=python_script listed=12 kept=10 outside_window=1 template_copies=1 not_python=0",
-        "INVENTORY type=container_script listed=11 kept=8 outside_window=1 template_copies=2 not_python=0",
+        "INVENTORY type=container_script listed=12 kept=9 outside_window=1 template_copies=2 not_python=0",
         "INVENTORY type=custom_script listed=8 kept=6 outside_window=1 template_copies=0 not_python=1",
         "INVENTORY type=dbt_script listed=4 kept=3 outside_window=0 template_copies=1 not_python=0",
         "INVENTORY type=notebook listed=5 kept=4 outside_window=0 template_copies=0 not_python=1",
@@ -658,7 +658,7 @@ def test_one_inventory_line_per_listed_type_before_any_detail_call(scanner_log):
     last_list = max(i for i, n in enumerate(names) if n in lists)
     first_detail = min(i for i, n in enumerate(names) if n not in lists)
     assert last_list < first_detail and names.count("workflows.list") == 1
-    assert lines.index(inventory_lines[-1]) < lines.index("PROGRESS phase=inventory objects_done=0 objects_total=41")
+    assert lines.index(inventory_lines[-1]) < lines.index("PROGRESS phase=inventory objects_done=0 objects_total=42")
 
 
 def test_inventory_progress_every_50_objects_or_30_seconds(scanner_log):
@@ -670,14 +670,14 @@ def test_inventory_progress_every_50_objects_or_30_seconds(scanner_log):
         })
     build_inventory(FakeClient(data), cutoff=CUTOFF, clock=lambda: 0.0)
     progress = [line for line in scanner_log.getvalue().splitlines() if line.startswith("PROGRESS phase=inventory")]
-    assert progress == [f"PROGRESS phase=inventory objects_done={n} objects_total=161" for n in (0, 50, 100, 150, 161)]
+    assert progress == [f"PROGRESS phase=inventory objects_done={n} objects_total=162" for n in (0, 50, 100, 150, 162)]
 
     scanner_log.truncate(0)
     scanner_log.seek(0)
     ticks = iter(range(0, 100_000, 31))  # Each check of the clock is 31 seconds after the last.
     build_inventory(FakeClient.from_fixture("synthetic_instance.json"), cutoff=CUTOFF, clock=lambda: next(ticks))
     progress = [line for line in scanner_log.getvalue().splitlines() if line.startswith("PROGRESS phase=inventory")]
-    assert len(progress) == 1 + 41 + 1 and progress[-1] == "PROGRESS phase=inventory objects_done=41 objects_total=41"
+    assert len(progress) == 1 + 42 + 1 and progress[-1] == "PROGRESS phase=inventory objects_done=42 objects_total=42"
 
 
 def test_the_inventory_line_takes_counts_only():

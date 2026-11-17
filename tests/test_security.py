@@ -149,6 +149,41 @@ def test_git_files_read_through_civis_never_reach_any_output(tmp_path, scanner_l
     assert "CIVIS_GIT_FAILED object_type=python_script object_id=111 error=FakeAPIError status=403" in scanner_log.getvalue()
 
 
+def test_python_inside_shell_commands_never_reaches_any_output(tmp_path, scanner_log):
+    """docs/PLAN.md 17.12, Part A: Python run with ``python -c`` and a heredoc in a docker command is scanned
+    in memory only. No text from it reaches a log line, a table row, or a CSV line, whether it parses or not."""
+    from scanner.__main__ import dry_run
+    from scanner.synthetic import FakeClient as SyntheticClient
+
+    marker_c, marker_heredoc, marker_broken = "zq-inline-c-marker-4417", "zq-heredoc-marker-8823", "zq-broken-marker-1290"
+    data = copy.deepcopy(SyntheticClient.from_fixture("synthetic_instance.json").data)
+    container = next(c for c in data["containers"] if c["id"] == 212)
+    container["docker_command"] = (
+        f"python3 -c \"import civis; token = '{marker_c} {FAKE_PASSWORD}'; civis.APIClient().users.list_me()\" "
+        f"&& python3 - <<'PY'\n"
+        f"from civis.parallel import make_backend_factory\n"
+        f"EMAIL = '{marker_heredoc} {FAKE_EMAIL}'\n"
+        f"PY\n"
+        f"python3 -c \"print '{marker_broken}'; civis.APIClient().users.list_me()\"\n"
+    )
+    dry_run(tmp_path, data=data)
+    conn = sqlite3.connect(tmp_path / "results.sqlite")
+    try:
+        rules_found = {r[0] for r in conn.execute("SELECT rule_id FROM findings WHERE object_id = 212")}
+    finally:
+        conn.close()
+    assert rules_found == {"CV3-RENAME-USERS-LIST-ME", "CV3-PARALLEL"}  # The code was read and scanned.
+    assert "PARSE_ERROR object_type=container_script object_id=212 error=SyntaxError" in scanner_log.getvalue()
+    outputs = {
+        "log": scanner_log.getvalue(),
+        "tables": (tmp_path / "results.sqlite").read_bytes().decode("utf-8", errors="replace"),
+        "csv": "".join(path.read_text(encoding="utf-8-sig") for path in tmp_path.glob("*.csv")),
+    }
+    for where, text in outputs.items():
+        for marker in (marker_c, marker_heredoc, marker_broken, FAKE_PASSWORD, FAKE_EMAIL, "make_backend_factory"):
+            assert marker not in text, (where, marker)
+
+
 def test_notebook_links_never_reach_any_output(tmp_path, scanner_log, monkeypatch):
     """docs/PLAN.md 17.9: the fresh notebook link asked for before each download, and the second link after a
     refused download, stay in memory. No link, host, bucket, query string, or signature reaches a log line, a

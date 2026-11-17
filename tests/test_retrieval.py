@@ -603,7 +603,14 @@ def test_inline_code_and_log_findings(scanned):
     assert rules(scanned[105]) == {("PY315-STRPTIME-NO-YEAR", "log")}
     assert ("CV3-UNPINNED-INSTALL", "code") in rules(scanned[201])
     assert ("CV3-FEATURE-FLAGS", "code") in rules(scanned[302])
-    assert rules(scanned[601]) == {("CV3-PARALLEL", "code")}
+    # 601's inline container task runs Python with -c and a heredoc in its docker command.
+    assert rules(scanned[601]) == {
+        ("CV3-PARALLEL", "code"), ("CV3-RENAME-USERS-LIST-ME", "code"), ("CV3-DEFAULT-CREDENTIAL", "code")
+    }
+    # 212's docker command runs Python with -c and a heredoc on the interpreter's stdin.
+    assert {(f.rule_id, f.file, f.line_number) for f in scanned[212].findings} == {
+        ("CV3-RENAME-USERS-LIST-ME", "docker command", 1), ("CV3-PARALLEL", "docker command", 2)
+    }
 
 
 def test_git_backed_python_script_reads_the_repo_not_saved_source(scanned):
