@@ -492,6 +492,10 @@ the same thing: once the cookie has expired, any click in the app shows
 To get the CSV report, click **Download CSV** in the app (on the Overview or
 Findings page, or beside a scan on the Scan history page).
 
+A scan that stopped before it finished may still have saved its report. Scan
+history shows its CSV link once Civis shows the run as ended. If the scan
+stopped before saving a report, the link opens a page that says so.
+
 The CSV report starts with two notice lines: line 1 is the disclaimer and line
 2 is the non-affiliation statement. The column names are on line 3. When you
 load the file with code, skip the first two lines, for example

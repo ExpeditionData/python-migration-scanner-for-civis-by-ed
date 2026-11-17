@@ -419,6 +419,10 @@ def history(situation: Situation, counts: dict[str, dict]) -> list[dict]:
         label = _status_label(run, scan)
         data = counts.get(scan.run_id) if scan else None
         shows = scan is not None and scan.status == "succeeded" and data is not None
+        # A scan left with only a "running" row after its Civis run ended (failed or canceled) may have attached its
+        # CSV before it stopped (docs/PLAN.md 17.7.5). Only Civis knows, so the link shows and the download route
+        # checks the run's outputs when it is clicked (docs/PLAN.md 17.11, Part D). No API call here.
+        left_behind = scan is not None and scan.status == "running" and run is not None and not run.active
         return {
             "run": scan.label if scan else f"Civis run {run.id}",
             "started": when(started),
@@ -428,7 +432,7 @@ def history(situation: Situation, counts: dict[str, dict]) -> list[dict]:
             "advisory": number(data["advisory"]) if shows else "n/a",
             "fixed": number(fixed_since.get(scan.run_id)) if shows and scan.run_id in fixed_since else "n/a",
             "civis_run_id": run.id if run else scan.civis_run_id if scan else None,
-            "has_report": shows or (scan is not None and scan.status == "tables_failed"),
+            "has_report": shows or (scan is not None and scan.status == "tables_failed") or left_behind,
         }
 
     for run in situation.runs:

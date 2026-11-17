@@ -548,9 +548,10 @@ def download(civis_run_id: int):
     try:
         report = jobs.report(civis_run_id)
     except Exception:
-        report = None
+        abort(404)  # The run's outputs could not be read, for example a run of another job.
     if report is None:
-        abort(404)
+        # The run has no CSV output: a scan that stopped before it saved one (docs/PLAN.md 17.11, Part D).
+        return error_page("No CSV report", NO_REPORT, 404)
     kind, target = report
     if kind == "file":
         path = Path(target)
@@ -667,17 +668,22 @@ def _progress(run) -> Progress | None:
     return progress
 
 
+NO_REPORT = "This scan has no CSV report. It stopped before saving one."
+
+
+def error_page(title: str, body: str, status: int):
+    """The app's normal error page with a fixed title and sentence."""
+    return render_template("error.html", title=title, body=body, viewer=viewer_name(),
+                           disclaimer=DISCLAIMER, non_affiliation=NON_AFFILIATION, version=__version__,
+                           banners=[], active=None), status
+
+
 @bp.app_errorhandler(404)
 def not_found(_error):
-    return render_template("error.html", title="Page not found",
-                           body="That page or report could not be found.", viewer=viewer_name(),
-                           disclaimer=DISCLAIMER, non_affiliation=NON_AFFILIATION, version=__version__,
-                           banners=[], active=None), 404
+    return error_page("Page not found", "That page or report could not be found.", 404)
 
 
 @bp.app_errorhandler(400)
 def bad_request(_error):
-    return render_template("error.html", title="The request could not be accepted",
-                           body="The form may have expired. Reload the page and try again.", viewer=viewer_name(),
-                           disclaimer=DISCLAIMER, non_affiliation=NON_AFFILIATION, version=__version__,
-                           banners=[], active=None), 400
+    return error_page("The request could not be accepted",
+                      "The form may have expired. Reload the page and try again.", 400)

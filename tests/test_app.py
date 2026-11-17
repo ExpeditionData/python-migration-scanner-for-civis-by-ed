@@ -237,7 +237,24 @@ def test_csv_download(app):
     response = client.get("/download/latest")
     assert response.status_code == 200 and response.mimetype == "text/csv"
     assert "attachment" in response.headers["Content-Disposition"]
-    assert client.get("/download/502").status_code == 404  # The failed run has no report.
+    failed = client.get("/download/502")  # The failed run has no report.
+    assert failed.status_code == 404
+    assert "This scan has no CSV report. It stopped before saving one." in text_of(failed)
+
+
+def test_the_preview_links_the_csv_of_a_canceled_scan_with_only_a_running_row(preview, monkeypatch):
+    """docs/PLAN.md 17.11, Part D, in the local preview's first-scan-cancelled state: Civis run 504 was canceled
+    and its scan wrote only a "running" row, so Scan history links its CSV, and the run has none."""
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    client = make_app(preview, "first-scan-cancelled").test_client()
+    body = client.get("/scan").get_data(as_text=True)
+    assert ('<a href="/download/504" data-no-busy>CSV<span class="sr-only"> report for Civis run 504</span></a>'
+            in body)
+    response = client.get("/download/504")
+    assert response.status_code == 404
+    assert "No CSV report This scan has no CSV report. It stopped before saving one." in text_of(response)
+    running = make_app(preview, "first-scan-running").test_client().get("/scan").get_data(as_text=True)
+    assert "/download/504" not in running  # Still active: no link.
 
 
 # --- CSRF and the concurrent-run guard -----------------------------------------------------
