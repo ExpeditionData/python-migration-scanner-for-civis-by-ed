@@ -9,6 +9,7 @@ and local preview mode.
 from __future__ import annotations
 
 import html
+import html.parser
 import json
 import re
 import threading
@@ -890,7 +891,7 @@ def test_fonts_are_carlito_and_plex_mono_only():
 
 def test_phone_width_rules_exist():
     css = (Path(__file__).resolve().parent.parent / "app/static/css/app.css").read_text(encoding="utf-8")
-    assert "@media (max-width: 640px)" in css and ".table-wrap { overflow-x: auto; }" in css
+    assert "@media (max-width: 640px)" in css and ".table-wrap { overflow-x: auto; position: relative; }" in css
 
 
 # --- Local preview mode -----------------------------------------------------------------------
@@ -1267,3 +1268,60 @@ def test_canceled_status_label_and_unchanged_values():
     run = JobRun(1, "cancelled", "2026-10-14T12:00:00Z", "2026-10-14T12:00:00Z", "2026-10-14T12:10:00Z")
     assert views._status_label(run, None) == "Canceled"
     assert "cancelled" in setup.LATEST_STATES and "cancelled" in LOCAL_STATES[3]
+
+
+# --- Phone width: wide tables scroll inside their box (docs/PLAN.md 17.11, Part C) ---------------------------
+
+
+class _TablePlaces(html.parser.HTMLParser):
+    """Records, for each table and each .sr-only element, whether a .table-wrap box holds it."""
+
+    VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
+
+    def __init__(self):
+        super().__init__()
+        self.stack: list[tuple[str, set[str]]] = []
+        self.tables: list[bool] = []
+        self.sr_only_in_tables: list[bool] = []
+
+    def handle_starttag(self, tag, attrs):
+        classes = set((dict(attrs).get("class") or "").split())
+        wrapped = any("table-wrap" in c for _, c in self.stack)
+        if tag == "table":
+            self.tables.append(wrapped)
+        if "sr-only" in classes and any(t == "table" for t, _ in self.stack):
+            self.sr_only_in_tables.append(wrapped)
+        if tag not in self.VOID:
+            self.stack.append((tag, classes))
+
+    def handle_endtag(self, tag):
+        for i in range(len(self.stack) - 1, -1, -1):
+            if self.stack[i][0] == tag:
+                del self.stack[i:]
+                break
+
+
+def test_table_wrap_clips_the_screen_reader_text_inside_it():
+    """At 390 px, Findings (and Scan history) scrolled sideways as a whole page: .sr-only is absolutely positioned,
+    and the labels in a table's right-hand column had no positioned ancestor, so the .table-wrap scroll box did not
+    clip them and they widened the page. .table-wrap is their containing block now."""
+    css = (Path(__file__).resolve().parent.parent / "app/static/css/app.css").read_text(encoding="utf-8")
+    assert re.search(r"\.sr-only \{[^}]*position: absolute;", css)
+    assert ".table-wrap { overflow-x: auto; position: relative; }" in css
+
+
+@pytest.mark.parametrize("state", ["normal", "failed", "tables-failed", "first-scan-cancelled", "setup-failures"])
+def test_every_table_and_its_screen_reader_text_sit_in_a_table_wrap(preview, monkeypatch, state):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    client = make_app(preview, state).test_client()
+    tables = sr_only = 0
+    for url in PAGES + ["/findings?status=all", "/setup", "/setup/summary"]:
+        places = _TablePlaces()
+        places.feed(client.get(url).get_data(as_text=True))
+        assert all(places.tables), (state, url)
+        assert all(places.sr_only_in_tables), (state, url)
+        tables += len(places.tables)
+        sr_only += len(places.sr_only_in_tables)
+    assert tables >= 1
+    if state == "normal":  # Findings, Inventory, Scan history, Setup, and the Overview's tables.
+        assert tables >= 5 and sr_only >= 2  # Findings' status labels and Scan history's CSV link text.

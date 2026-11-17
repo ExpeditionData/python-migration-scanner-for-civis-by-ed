@@ -304,7 +304,10 @@ h2 {
 .two-col > .narrow { flex: 1 1 320px; display: flex; flex-direction: column; gap: 14px; }
 .two-col > .narrow h2 { margin: 0; }
 
-.table-wrap { overflow-x: auto; }
+/* position: relative makes the box the containing block of the .sr-only text inside its table (absolutely
+   positioned), so the box clips it too. Without it, that text at the table's right edge widened the whole page at
+   phone width (docs/PLAN.md 17.11, Part C). */
+.table-wrap { overflow-x: auto; position: relative; }
 table { width: 100%; border-collapse: collapse; }
 caption { text-align: left; }
 thead th {
