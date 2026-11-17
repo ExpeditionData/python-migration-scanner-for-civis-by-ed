@@ -59,7 +59,7 @@ def test_labels_do_not_change_when_retention_removes_the_oldest_runs():
 
 
 def test_a_resumed_scan_keeps_the_civis_run_that_started_it():
-    """The first scanner run stopped partway; a second run (RUN_ID) resumed it and finished."""
+    """The first scanner run stopped partway; the scanner resumed it in a second run, which finished."""
     rows = [
         row("run-20261110T120000Z-dddddd", "running", "2026-11-10 12:00:00", 201),
         row("run-20261110T120000Z-dddddd", "running", "2026-11-10 13:00:00", 202, started="2026-11-10 12:00:00"),

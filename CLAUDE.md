@@ -127,8 +127,10 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   `arguments` with `RESULTS_DB` in the `object` shape), `services.post`
   (name, image, tag), `services.patch` (repository, tag, three variables,
   `schedule` `{"runtimePlan": "on_demand", "recurrences": []}`, no
-  credentials); nested keys are camelCase because civis passes nested dicts
-  as given. Update: identity checks read fresh before each patch, only the
+  credentials). civis passes nested dicts as given; the script sends the
+  forms the live test saved, `disk_space` in `required_resources` and
+  `runtimePlan` in `schedule`, and `allowedValues` only when Civis already
+  returns allowed values for a parameter. Update: identity checks read fresh before each patch, only the
   fields that differ, `RESULTS_DB` and `RESULTS_SCHEMA` kept and checked,
   `RUN_ID` removed. Output: `CHECK`, `PLAN`, `WRITE`, `RESULT`, `RECOVER`,
   `NEXT`, and one `KEEP IN CIVIS:` line with the new IDs. Its constants must

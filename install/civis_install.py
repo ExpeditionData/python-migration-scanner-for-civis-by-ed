@@ -255,17 +255,18 @@ def threads_of(job):
 
 
 def wanted_resources(profile, threads):
-    """required_resources as a request takes it (nested keys in camelCase, as Civis expects)."""
+    """required_resources as a request takes it. disk_space is the key the live test saved with
+    scripts.patch_containers (docs/PLAN.md 17.14); Civis returns it as diskSpace or disk_space."""
     _, cpu, memory, disk = profile
     memory += MEMORY_PER_EXTRA_THREAD_MB * max(0, threads - DEFAULT_THREADS)
-    return {"cpu": cpu, "memory": memory, "diskSpace": disk}
+    return {"cpu": cpu, "memory": memory, "disk_space": disk}
 
 
 def resources_match(current, wanted):
     current = current if isinstance(current, dict) else {}
-    pairs = (("cpu", "cpu"), ("memory", "memory"), ("disk_space", "diskSpace"))
-    for have_key, want_key in pairs:
-        have = current.get(have_key, current.get(want_key))
+    pairs = (("cpu", ("cpu",)), ("memory", ("memory",)), ("disk_space", ("disk_space", "diskSpace")))
+    for want_key, have_keys in pairs:
+        have = next((current[k] for k in have_keys if k in current), None)
         if isinstance(have, bool) or not isinstance(have, (int, float)) or float(have) != float(wanted[want_key]):
             return False
     return True

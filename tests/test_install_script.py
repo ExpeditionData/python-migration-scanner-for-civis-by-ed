@@ -527,7 +527,7 @@ def test_install_sends_the_expected_post_and_patch_fields_in_order(capsys):
     job_post, job_patch, service_post, service_patch = (w[3] for w in writes)
     assert job_post == {
         "name": "Python Migration Scanner: scanner job",
-        "required_resources": {"cpu": 500, "memory": 2048, "diskSpace": 1},
+        "required_resources": {"cpu": 500, "memory": 2048, "disk_space": 1},
         "docker_image_name": "civisanalytics/datascience-python", "docker_image_tag": "9.1.1",
         "docker_command": "cd /app && python -m scanner",
     }
@@ -558,7 +558,7 @@ def test_install_with_a_github_credential_uses_the_token_profile_and_sets_the_op
     code, lines = run(fake, install_settings(GITHUB_CREDENTIAL=51, LOOKBACK_DAYS=60, RETENTION_DAYS=90), capsys)
     assert code == 0, lines
     post, patch = fake.writes()[0][3], fake.writes()[1][3]
-    assert post["required_resources"] == {"cpu": 1000, "memory": 4096, "diskSpace": 4}
+    assert post["required_resources"] == {"cpu": 1000, "memory": 4096, "disk_space": 4}
     assert [p["name"] for p in patch["params"]] == ["RESULTS_DB", "RESULTS_SCHEMA", "GITHUB", "LOOKBACK_DAYS",
                                                     "RETENTION_DAYS"]
     assert {p["name"]: p["type"] for p in patch["params"]} == {
@@ -804,6 +804,14 @@ def test_update_picks_the_profile_from_the_jobs_github_argument(capsys):
     assert after["required_resources"] == {"cpu": 500, "memory": 2048, "disk_space": 1}
 
 
+def test_resources_match_reads_either_disk_key():
+    wanted = {"cpu": 500, "memory": 2048, "disk_space": 1}
+    assert install.resources_match({"cpu": 500, "memory": 2048, "disk_space": 1.0}, wanted)
+    assert install.resources_match({"cpu": 500, "memory": 2048, "diskSpace": 1}, wanted)
+    assert not install.resources_match({"cpu": 500, "memory": 2048, "diskSpace": 4}, wanted)
+    assert not install.resources_match({"cpu": 500, "memory": 2048}, wanted)
+
+
 def test_more_threads_add_memory_in_both_profiles(capsys):
     job = existing_job(arguments=dict(existing_job()["arguments"], MAX_CONCURRENCY="8"),
                        params=existing_job()["params"] + [{"name": "MAX_CONCURRENCY", "type": "integer"}])
@@ -949,9 +957,10 @@ def test_every_call_exists_in_the_civis_2_10_spec_with_the_arguments_it_sends(ca
     assert seen == READS - {("users", "list_me")} | WRITES
 
 
-def test_nested_fields_use_the_spec_keys(capsys):
+def test_nested_fields_use_the_live_tested_keys(capsys):
+    """required_resources uses disk_space and schedule uses runtimePlan: the forms the live test saved
+    (docs/PLAN.md 17.14). Parameter definitions use only the spec's keys."""
     _, raw = _spec()
-    resources = set(raw["definitions"]["ScriptRequiredResourcesCreateRequest"]["properties"])
     schedule = raw["definitions"]["SchedulingMultiScheduleCreateRequest"]
     param_keys = set(raw["definitions"]["ScriptParamCreateRequest"]["properties"])
     for name in ("install", "install_token", "update", "update_clear"):
@@ -959,9 +968,7 @@ def test_nested_fields_use_the_spec_keys(capsys):
         run(fake, settings, capsys)
         for _, method, _, kwargs in fake.writes():
             if "required_resources" in kwargs:
-                assert set(kwargs["required_resources"]) <= resources
-                assert set(raw["definitions"]["ScriptRequiredResourcesCreateRequest"]["required"]) <= set(
-                    kwargs["required_resources"]) or method == "patch_containers"
+                assert set(kwargs["required_resources"]) == {"cpu", "memory", "disk_space"}
             if "schedule" in kwargs:
                 assert set(kwargs["schedule"]) == set(schedule["required"]) == {"runtimePlan", "recurrences"}
             for param in kwargs.get("params", []):
