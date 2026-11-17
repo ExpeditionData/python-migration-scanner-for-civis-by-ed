@@ -248,7 +248,6 @@ can (see "Who the job runs as" below).
    | `MAX_CONCURRENCY` | Integer | `4` | Worker threads (1 to 16). For each thread above 4, add 512 MB to **Memory**. |
    | `REQUEST_BUDGET` | Integer | `500` | Civis API requests per 5 minutes (10 to 1,000). Civis allows 1,000 per user, shared with the web app and any other jobs that run as the Robot user. |
    | `RETENTION_DAYS` | Integer | blank (keep every scan) | A number deletes scans older than that many days. Blank or 0 keeps every scan. The newest scan is not deleted. |
-   | `RUN_ID` | String | blank (start a new scan) | A run ID resumes that scan (see below). Add it only to resume. |
 
    Click **Add** after each parameter, then **Save**. The names must match
    exactly; `DATABASE` is reserved by Civis, which is why the database
@@ -310,23 +309,48 @@ things up so both give the same answer:
 - Start scans with **Run scan** in the web app, which starts them through the
   Service's owner (the Robot user). Do not start the job from its own page.
 
-**Resuming a stopped scan.** If a scan stops partway (for example, it was
-canceled or hit the 5-day limit for container scripts):
+**Resuming a stopped scan.** A scan can stop partway: it was canceled, it
+failed (for example on a Civis error), or it hit the 5-day limit for
+container scripts. Nobody needs to edit the scanner job to pick it up. Each
+time the scanner starts, it looks at the newest scan in the results tables
+and resumes it when all of these are true:
 
-1. Sign in as the Robot user if you can. On the scanner job, add the `RUN_ID`
-   parameter (String, not required) if the job does not have it, set it to
-   the run ID from the `RUN run_id=... status=running` line near the top of
-   the stopped run's log, and save (see
-   [Settings the Civis forms cannot set](#settings-the-civis-forms-cannot-set)
-   for what to check after a save on the job's page).
-2. Click **Run scan** in the web app. The scan skips the objects it already
-   finished.
-3. When it finishes, clear `RUN_ID` the same way (signed in as the Robot user)
-   and save (see
-   [Settings the Civis forms cannot set](#settings-the-civis-forms-cannot-set)
-   again). The web app starts the job with its saved parameters, so a
-   leftover `RUN_ID` would make every later scan try to resume a finished run.
-   The Setup page warns while `RUN_ID` has a value.
+- The newest scan did not finish (Scan history shows it as Canceled, Failed,
+  or Did not finish). An older stopped scan is never resumed.
+- Its last Civis run ended less than 24 hours ago.
+- It was resumed fewer than 2 times before.
+- The tool's version, and the scanner job's `LOOKBACK_DAYS` and `GITHUB`
+  settings, are the same as when it started.
+- It had not saved its results yet.
+- None of its Civis runs is still queued or running.
+
+Otherwise **Run scan** starts a new scan. A resumed scan keeps its run ID and
+its label (the Civis run that started it), skips the objects it already
+finished, and keeps the rows it already saved. It checks the same scripts as
+before, because its `LOOKBACK_DAYS` window is measured from its first start.
+There is no button to start a new scan instead while a resume applies;
+waiting until the 24 hours pass does that.
+
+How to tell what happens:
+
+- **Before you click.** While **Run scan** would resume the stopped scan, the
+  Overview says so under **Run scan**, with the time (in your local time)
+  after which **Run scan** starts a new scan instead. The app cannot see
+  whether the scan already saved its results, so in rare cases the scanner
+  starts a new scan although the Overview showed the line.
+- **While it runs.** The progress card starts with "Resuming Civis run <ID>."
+- **Afterward.** Scan history shows the scan once, with "Resumed 1 time" (or
+  2 times) under its label. Near the top of the scanner's run log, one line
+  says what the scanner decided: `RESUME decision=resume ...`, or
+  `RESUME decision=new reason=<reason>` with a fixed reason such as
+  `too_old` or `settings_changed`.
+
+**`RUN_ID` from an earlier release.** The scanner no longer uses a `RUN_ID`
+parameter. If the scanner job still has one, remove it (see
+[Settings the Civis forms cannot set](#settings-the-civis-forms-cannot-set)
+for what to check after a save on the job's page). Until then, the scanner
+ignores it and logs `RUN_ID_IGNORED`, and line 4 on the Setup page shows
+"review".
 
 ### Create the Service
 

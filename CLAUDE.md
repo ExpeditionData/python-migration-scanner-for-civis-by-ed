@@ -117,7 +117,9 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   `RESULTS_SCHEMA` parameters (`app/job_settings.py`, cached 5 minutes per
   worker). Its only writes are the checklist INSERT and the "Set up results
   storage" button (CREATE SCHEMA IF NOT EXISTS when the schema is missing,
-  then the five CREATE TABLE IF NOT EXISTS). A read-only Setup page runs ten
+  then the five CREATE TABLE IF NOT EXISTS). Resuming a stopped scan needs no
+  app write and no job edit: the scanner decides by itself (docs/PLAN.md
+  17.13). A read-only Setup page runs ten
   checks, and its "Build test summary" page gives counts, fixed labels, and
   error types only, from an allow list (`app/summary.py`). Shared with Civis
   admins only.
@@ -198,7 +200,9 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   the CSV link for a run left running) is done (docs/PLAN.md 17.11).
   Post-test build part 2 (Python in shell commands, one type's failed list,
   a timeout on Civis requests, and the Inventory progress wording) is done
-  (docs/PLAN.md 17.12).
+  (docs/PLAN.md 17.12). Post-test build part 3 (resume a stopped scan
+  without editing the job; `RUN_ID` is no longer used) is done
+  (docs/PLAN.md 17.13).
   Implementation choices not in the approved plan are in docs/PLAN.md
   sections 10 to 17.
 - **App flow.** `app/__init__.create_app` -> `app/services.py` (Civis or local
@@ -217,7 +221,19 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   link the backing script only when it is in the same scan (its stored
   link; no URL pattern is guessed), and filter by template ID; the Overview
   shows the next scan's window, the scripts left out, and the templates with
-  findings. Each scan is labeled "Civis run <ID>" by the Civis run that
+  findings. While Run scan would resume the newest stopped scan, the Overview
+  says so under Run scan, with the end of the 24-hour window in local time
+  (`views.resume_window`: `common/resume.decide` on the `scan_runs` rows,
+  `jobs.runs()`, `__version__`, the job's `LOOKBACK_DAYS`, and
+  `JobSettings.github_attached`; it cannot check `results_saved`, so the
+  scanner decides; `Services.wall_clock` is the time). The failed and
+  canceled empty states say the same. `Progress` parses the `RESUME` line:
+  a resumed run's progress headline starts with "Resuming <label>.", and
+  Scan history shows a resumed scan once with "Resumed <n> time(s)"
+  (`ScanRun.civis_run_ids`). Setup line 4 is "review" while the job has a
+  `RUN_ID` (any value or none), and the test summary adds
+  `resume: <decision> [reason=<reason>]` (docs/PLAN.md 17.13). Each scan is
+  labeled "Civis run <ID>" by the Civis run that
   started it (`ScanRun.first_civis_run_id`, from the earliest `scan_runs` row
   with one, so a resumed scan keeps it), or "Scan <run ID>" with none; the
   label stays the same when retention removes older runs, and
@@ -276,7 +292,21 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   Contrast is checked by `tests/test_app.py`.
 - **Scanner flow.** `scanner/__main__.py` -> `runner.run_scan` -> inventory ->
   `process.process_item` per object (retrieval, engine, logs) ->
-  `checkpoint.Checkpointer` -> `output` sinks. The engine also scans Python
+  `checkpoint.Checkpointer` -> `output` sinks. **Resume (docs/PLAN.md
+  17.13).** After the schema check and `ensure_tables`, before the "running"
+  row, `runner._resume_decision` reads the `scan_runs` rows
+  (`sink.scan_run_rows`), the stopped scan's newest Civis run of this job
+  (`scripts.get_containers_runs` through the `BudgetedClient`; state and end
+  time only), and `sink.has_summary_rows`, each only when needed, and runs
+  `common/resume.decide` (only the newest scan; `RESUME_WINDOW_HOURS` 24,
+  `MAX_RESUMES` 2; fixed reasons in `common.resume.REASONS`). A resume keeps
+  the run ID, skips finished objects, keeps earlier rows, and uses the first
+  start. One `RESUME decision=resume run_id=<id> resumes=<n>` or
+  `RESUME decision=new reason=<reason>` line comes right before
+  `RUN ... status=running`. A failed read starts a new scan (`read_failed`),
+  never stops it. `ScanConfig.from_env` no longer reads `RUN_ID`; a live run
+  that still has one logs `RUN_ID_IGNORED`. The dry run keeps `--run-id`.
+  The engine also scans Python
   passed inline to an interpreter in shell text (`engine.python_in_shell`,
   docs/PLAN.md 17.12): `python`, `python3`, or `python3.N` (a path or `env`
   in front, options before `-c`) with `-c <code>`, split with `shlex`, and a
@@ -452,8 +482,9 @@ The last two commands stop a run partway and then resume it. A live scan
 ## Local app preview
 
 Seeds made-up data (four scans: completed, failed, completed with fixes, and
-one still running, all with no GitHub token, the normal setup), then serves the
-app on 127.0.0.1 only:
+one canceled by Civis run 504 that Civis run 505, still running, resumed by
+the scanner's own decision; all with no GitHub token, the normal setup), then
+serves the app on 127.0.0.1 only:
 
 ```
 .venv\Scripts\python.exe -m scanner --dry-run --preview --out dry_run_output
@@ -470,8 +501,10 @@ error states. `not-scanner-job` points SCANNER_JOB_ID at another job, and
 up results storage" button (`schema-refused` shows the statement for a
 database admin); `setup-failures` makes several Setup page lines fail.
 `list-failed` gives every scan a made-up `list_failed` coverage row (custom
-scripts, 150 rows, HTTP 503), so the Overview shows its warning. Local
-preview refuses to start if `CIVIS_API_KEY` is set.
+scripts, 150 rows, HTTP 503), so the Overview shows its warning.
+`first-scan-cancelled` also shows the Overview's resume line for 24 hours
+after the preview was built. Local preview refuses to start if
+`CIVIS_API_KEY` is set.
 
 ## Testing commands
 
@@ -522,6 +555,18 @@ Run the full suite on both Python versions before every commit:
   partway (rows kept, `LIST_FAILED`, the `list_failed` row and note, other
   types scanned, status succeeded), the custom and workflow lists, the test
   summary lines, and no exception text in any output.
+- `tests/test_resume.py` covers the resume decision (docs/PLAN.md 17.13):
+  every reason with made-up rows and times (the window edge, one and two
+  resumes, version, lookback, a token added or removed, saved summary rows,
+  an active run), and dry runs that resume a canceled and a failed scan
+  (finished objects skipped, the first Civis run's label kept), start a new
+  scan after a resumed one finishes, refuse a third resume, start a new scan
+  on a failed or timed-out read, unusable tables, or another job's run,
+  charge the read to the budget, ignore `RUN_ID` with `RUN_ID_IGNORED`, and
+  keep names and Civis text out of the `RESUME` line. The synthetic
+  `scripts.get_containers_runs` answers from `container_runs`
+  (`"<job ID>/<run ID>": {state, finished_at}`; 404 when missing, `_error`
+  for a status or timeout).
 - `tests/test_users_timeout.py` covers a timeout on the "all" users list
   (falls back to active, `reason=timeout`), on both lists, a timeout then a
   404, a 500 still FATAL, the summary's `users_list` values, and no

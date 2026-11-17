@@ -71,6 +71,11 @@ while they run ([start_service.sh](start_service.sh) and
 - Python scripts, container scripts, custom scripts, notebooks, Services, and
   workflows that the scanning user can see.
 - Their code, settings, and the most recent run log.
+- The scanner job's own run. When a scan starts and the newest scan in the
+  result tables stopped partway, the scanner reads that scan's last run of
+  the scanner job (`scripts.get_containers_runs`) and keeps only its state and
+  end time, to decide whether to resume it (README "Resuming a stopped
+  scan").
 
 **Changes:** the tool is designed to be read-only on every Civis object. It
 does not edit, archive, share, or delete your scripts, notebooks, Services, or
@@ -83,6 +88,10 @@ clicks **Run scan** in the web app.
 - rows in those five tables
 - runs of the scanner job, started from the web app
 - the CSV run output attached to each scanner run
+
+Resuming a stopped scan adds no write: the scanner decides by itself, and the
+web app starts the scanner job the same way as for any scan, without changing
+the job's parameters.
 
 The web app is designed to start a run only when the job's repository,
 command, and image are this tool's. The web app and the scanner are designed

@@ -598,33 +598,38 @@ Only for troubleshooting, or if item 2.1 failed.
 
 ### 5.4 Resume a stopped scan
 
+Nobody edits the scanner job in this item: the scanner decides by itself
+whether to resume (README "Resuming a stopped scan", docs/PLAN.md 17.13).
+
 - **Steps:**
   1. Click **Run scan** in the app. When the Scan history page shows Code and
      log scan partway done, cancel the run: open the job's Run Log and click
-     the "x" next to the spinner.
-  2. Copy the `run_id=` value from the `RUN run_id=... status=running` line
-     near the top of that run's log. It is a generated ID, not client data.
-  3. Sign in as yourself, not the Robot user. Add the `RUN_ID` parameter
-     (String, not required) to the job if it does not have it, set it to the
-     run ID, save, then click **Run scan** in the app.
-  4. When it finishes, read the Scan history page's "Started ... as <user>"
-     line for the resumed run. Then clear `RUN_ID`, signed in as the Robot
-     user if you can (otherwise as yourself), and save. The Setup page's line
-     4 warns while `RUN_ID` has a value and passes again after.
-  5. Click **Run scan** in the app again and, when it starts, read the same
-     line for this next run.
-- **Expected:** The resumed run succeeds. Its last log line shows
-  `objects_scanned` lower than `objects_total`. The Inventory total matches the
-  earlier full scan. The next **Run scan** starts a new run.
-- **Record:** pass or fail; `objects_total`, `objects_scanned`, and `api_calls`
-  for the resumed run; yes or no: the Scan history page shows the Robot user
-  for the resumed run; yes or no: it shows the Robot user for the next run;
-  and who was signed in for each edit (step 3: Robot user or not; step 4:
-  Robot user or not). No names.
-- **What it means:** Civis's help describes the runner two ways. If the resumed
-  run shows the person who edited `RUN_ID` in step 3, the rule is "the user who
-  last updated it". If it shows the Robot user, the rule is "the user who runs
-  it". The next run checks the same rule after the step 4 edit.
+     the "x" next to the spinner. Note the scan's label in Scan history
+     ("Civis run <ID>").
+  2. Reload the whole Civis page (F5). On the Overview, read the line under
+     **Run scan**: "The last scan stopped before it finished. Run scan picks
+     it up where it stopped, ... After <time>, Run scan starts a new scan."
+  3. Click **Run scan**. On the Scan history page, read the progress card's
+     first line.
+  4. When the run finishes, read its run log: the `RESUME` line near the top
+     and the final `RUN` line. Then read Scan history.
+  5. Click **Run scan** again and read the `RESUME` line near the top of that
+     run's log. Let it finish, or cancel it if time is short.
+- **Expected:** Step 2 shows the line, with a time about 24 hours after the
+  cancel. Step 3's first line starts with "Resuming Civis run <ID>." with the
+  ID from step 1. The resumed run's log has
+  `RESUME decision=resume run_id=... resumes=1` right before its
+  `RUN ... status=running` line, with the run ID from the canceled run's own
+  `RUN ... status=running` line. It succeeds, and its last log line shows
+  `objects_scanned` lower than `objects_total`; the Inventory total matches
+  the earlier full scan. Scan history shows the scan once, with the same
+  "Civis run <ID>" label as in step 1 and "Resumed 1 time" under it. The run
+  in step 5 starts a new scan: its log has
+  `RESUME decision=new reason=last_scan_finished`.
+- **Record:** pass or fail; yes or no: the Overview line in step 2, "Resuming"
+  in step 3, the same label, and "Resumed 1 time"; `objects_total`,
+  `objects_scanned`, and `api_calls` for the resumed run; the `RESUME` reason
+  in step 5. No names.
 
 ### 5.5 Service sleep and wake
 
@@ -733,8 +738,8 @@ Item  Result (pass/fail/skipped)  Counts or note
 5.2
 5.3   rows=
 5.4   objects_total=  objects_scanned=  api_calls=
-      step 3 edit by Robot user: yes/no   resumed run shows Robot user: yes/no
-      step 4 edit by Robot user: yes/no   next run shows Robot user: yes/no
+      Overview line: yes/no   Resuming: yes/no   same label: yes/no   Resumed 1 time: yes/no
+      step 5 RESUME reason=
 5.5   minutes to wake=
 5.6   waits for the first tag after v0.1.0-rc10
 5.7   built:  copied (button/by hand):  sent:  looked like a name: yes/no

@@ -497,7 +497,7 @@ How each object runs:
 | MAX_CONCURRENCY | Integer | `MAX_CONCURRENCY` | 4 (1 to 16) |
 | REQUEST_BUDGET | Integer, requests per 5 minutes | `REQUEST_BUDGET` | 500 (10 to 1,000) |
 | RETENTION_DAYS | Integer | `RETENTION_DAYS` | Blank or 0 keeps every run |
-| RUN_ID | String, optional | `RUN_ID` | Blank starts a new run; a value resumes that run |
+| RUN_ID | String, optional | `RUN_ID` | Blank starts a new run; a value resumes that run. **Removed in 17.13:** the scanner no longer reads it and resumes a stopped scan by itself. |
 
 `DATABASE` is a reserved name in Civis, so the Database parameter is `RESULTS_DB`.
 
@@ -621,7 +621,7 @@ How each object runs:
 | 16.14 | The README says to share the scanner job with Civis admins only. | Each scan saves the full report as a CSV run output on the job (no expiration), so anyone who can read the job can download it. SECURITY.md says the same. |
 | 16.15 | The README tells admins to remove the default group from the new Service's sharing. | Civis shares a new Service with the creator's default group automatically ("Civis Service Deployment"). |
 | 16.16 | The README asks admins to create both objects as the Robot user, or to transfer the scanner job to it ("Transfer Ownership" is documented for scripts, not Services). | The Service's API key belongs to its owner, and scans started from the app run as that user. |
-| 16.17 | The README says to clear `RUN_ID` after a resume. | The app starts the job with its saved parameters, so a leftover `RUN_ID` would make every later scan try to resume a finished run. |
+| 16.17 | The README says to clear `RUN_ID` after a resume. **No longer applies (17.13):** `RUN_ID` is not used, and nobody edits the job to resume. | The app starts the job with its saved parameters, so a leftover `RUN_ID` would make every later scan try to resume a finished run. |
 | 16.18 | The Service keeps Civis's default resources with one replica and the "On Demand" plan. | Nothing in the app needs more, and On Demand matches section 1.10. TESTING.md item 3.7 times the first page loads. |
 | 16.19 | "Remove the tool" archives both objects and drops the schema, and notes that the CSV run outputs stay with the archived job. | Run outputs are saved with no expiration (section 1), and Civis documents no way to delete a file. |
 | 16.20 | The GitHub file cache keeps at most `CACHE_MAX_BYTES` (1 GB, a constant in `scanner/retrieval/github.py`, not a job parameter) of kept file text across all repositories. When a new repository and ref would push it over, the least recently used ones are evicted; an object that needs an evicted repository again downloads it again. Bytes are counted as the in-memory size of the decoded strings (`sys.getsizeof`), which is at least the raw size. Eviction drops only the cache's reference: `process.process_item` holds the repository it got from the cache, and the file texts it selected, until the object is finished, and threads waiting for a download receive the result directly, not through the cache. The final `RUN` log line adds `github_tarball_requests`, `github_cache_peak_bytes`, and `github_cache_evictions`. **Requested by Rob October 22, 2026.** | Other organizations will scan more repositories than the test organization, so one measurement cannot bound their runs, and an out-of-memory kill ends a scan with no clear error (a resume would hit the same limit). One repository is capped at 100 MB of raw text (at most about 400 MB as Python strings), so any single repository always fits. Tests cover eviction order, a download again after eviction, an object keeping its files after eviction, the total never going over the cap, and four threads using the cache at once. The count covers the file strings, not the small dictionary overhead per file, so 1 GB is a close bound rather than an exact one. |
@@ -835,7 +835,7 @@ New `--state` values: `job-unreadable`, `database-unrecognized`, `schema-refused
 
 #### Approved for after the live test, before v0.1.0
 
-- **Resume a stopped scan from the app.** This removes the `RUN_ID` parameter, so the app starts a resume without anyone editing the job.
+- **Resume a stopped scan from the app.** This removes the `RUN_ID` parameter, so the app starts a resume without anyone editing the job. **Built in 17.13 (November 17, 2026):** the scanner decides by itself whether to resume, and Run scan starts it as before.
 - **Frame rule enforced by default** once TESTING item 2.1 confirms the parent address, so `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` is no longer a setup step. Done in 17.7.14 (November 10, 2026).
 
 #### Considered and rejected
@@ -1584,4 +1584,86 @@ The new container script 212 adds one object, one detail call, and two findings;
 - The request budget, the retries policy (17.5.7), scanner resources, and the Content Security Policy. No inline scripts or styles.
 - No table or column change; the only new stored values are `list_failed` coverage rows in existing columns. No new SQL statement kinds and no new Civis API write calls. `app/` and `common/` still call only civis 2.7.1 methods.
 - The users list's own fallback (17.5.1) for errors other than a timeout: any other failure of the "all" list still stops the scan. (A timeout falls back since 17.12.24.)
+- Legal text and SECURITY.md "By design".
+
+### 17.13 Post-test build, part 3: resume without editing the job (November 17, 2026)
+
+**Why.** The first live test of `v0.1.0-rc10` is finished. This is the third of four post-test parts that make up one build, which gets one new tag later and a retest with a fresh install. It builds "Resume a stopped scan from the app," approved on November 4, 2026 (17.2, "Approved for after the live test"): a stopped scan is picked up where it stopped, and nobody edits the scanner job to do it. Requested by Rob on November 17, 2026. No tag.
+
+**Why the design is this one (decided by Rob on November 13, 2026).** Civis starts a container run with the job's saved parameters: `POST /scripts/containers/{id}/runs` takes the job ID and nothing else (civis 2.10 API spec), so the app cannot pass a run ID to one run. Setting `RUN_ID` on the job would edit a Civis object, which the read-only rule forbids. Writing a "resume requested" row from the app was considered and not chosen: it adds an app write and a status value every `scan_runs` reader would have to skip. So the scanner decides by itself, from its own tables and one read call, whether to resume. The app writes nothing new and calls nothing new.
+
+#### The decision
+
+`common/resume.py` (Python 3.12 and 3.14, no civis import) holds `RESUME_WINDOW_HOURS = 24`, `MAX_RESUMES = 2`, and one pure function, `decide`, that the scanner and the app both use. Only the newest scan, by its first start, is considered. Checked in this order; the first that applies starts a new scan with that reason:
+
+| Reason | A new scan starts when |
+|---|---|
+| `no_scan` | There is no scan at all. |
+| `last_scan_finished` | The newest scan has a `succeeded` or `tables_failed` row, or its newest row is not `running` or `failed`. |
+| `run_state_unknown` | No row of that scan has a Civis run ID (a dry run). |
+| `run_active` | One of its Civis runs is still queued or running. |
+| `run_state_unknown` | Its newest Civis run's end time is not known (not read, not listed, or empty). |
+| `too_old` | Its newest Civis run ended more than 24 hours ago (exactly 24 hours still resumes). |
+| `resumed_twice` | It was resumed 2 times already: its distinct Civis run IDs minus one. |
+| `version_changed` | A row's `tool_version` is not this build's `__version__`. |
+| `settings_changed` | A row's `lookback_days` or `github_token_attached` (in `parameters`) differs from the current value, or the row's parameters cannot be read. `max_concurrency`, `request_budget_per_5_minutes`, and `retention_days` do not block a resume. |
+| `results_saved` | It already wrote its `summary` rows to `coverage`, so a resume would write them twice. |
+| `tables_unavailable` | Scanner only: the tables could not be created or the schema check failed. |
+| `read_failed` | Scanner only: a read for the decision failed. |
+
+Otherwise it is resumed. A caller that cannot check an input passes None and that check is skipped.
+
+#### Part A: the scanner
+
+| # | Change | Status |
+|---|---|---|
+| 17.13.1 | `scanner/runner.py`: after the dedicated-schema check and `ensure_tables`, and before the "running" row, `_resume_decision` reads the `scan_runs` rows (`ResultSink.scan_run_rows`: `run_id`, `started_at`, `status`, `tool_version`, `parameters`, `civis_job_id`, `civis_run_id`, `recorded_at`), then, only for a stopped scan whose newest Civis run belongs to this job, that run with `scripts.get_containers_runs(job_id, civis_run_id)` through the `BudgetedClient` (civis 2.10, a read, the `get_*` name so it runs on civis v3; only `state` and `finished_at` are kept), then, only when everything else allows a resume, `ResultSink.has_summary_rows(run_id)` (`SELECT COUNT(*) ... FROM <schema>.coverage WHERE run_id = ... AND row_kind = 'summary'`). Both sinks have both reads (SQLite and Civis forms), SELECT only, results schema only. | Requested by Rob on November 17, 2026 |
+| 17.13.2 | On a resume, the run continues exactly as the `RUN_ID` path did: the same run ID, finished objects skipped, earlier rows kept, the first start used for the window (17.6.10), and `resumed_run_id` in `parameters`. Unusable tables give `tables_unavailable`, and any failed read gives `read_failed`; the decision never stops the scan, and a failed read does not turn the table writes off. | Requested by Rob on November 17, 2026 |
+| 17.13.3 | One line before the `RUN ... status=running` line (`scan_log.resume`): `RESUME decision=resume run_id=<id> resumes=<n>` (n is this resume's number, 1 for the first) or `RESUME decision=new reason=<reason>` (`common.resume.REASONS` only). | Requested by Rob on November 17, 2026 |
+| 17.13.4 | `ScanConfig.from_env` no longer reads `RUN_ID`. A live run with a non-empty `RUN_ID` in its environment (a job set up on an earlier release) ignores it and logs `RUN_ID_IGNORED` once (`config.run_id_left_over`, `scan_log.run_id_ignored`). The dry run keeps `--run-id` for local resume tests, and `AlreadyFinished` stays for it; its message now says to run the dry run again without `--run-id`. A dry run without `--run-id` makes the same decision; it can resume only when `civis_job_id` and `civis_run_id` are set and the synthetic instance's `container_runs` holds the stopped run. | Requested by Rob on November 17, 2026 |
+| 17.13.5 | The synthetic client answers `scripts.get_containers_runs` from `container_runs` (`"<job ID>/<run ID>": {state, finished_at, ...}`); a run that is not there answers 404, and `_error` raises a status or a made-up timeout. | Requested by Rob on November 17, 2026 |
+| 17.13.6 | Tests (`tests/test_resume.py`): every branch of the decision with made-up rows and times, including the window edge, a scan resumed once and twice, a changed version, a changed lookback, a token added and removed, a scan that saved its summary rows, an active run, text values as Civis returns them, and checks a caller skips; the runner resuming a canceled scan (only a "running" row) and a failed scan (a "failed" row from FATAL), skipping finished objects and keeping the label "Civis run <first ID>"; the next start after a resumed scan finishes starting a new scan; a third resume refused; a failed or timed-out Civis read, a 404, unusable tables, and failed table reads starting a new scan; a run of another job not read; the read charged to the budget; no read when the last scan finished; `RUN_ID` in the environment ignored with the log line; and the `RESUME` line holding no names or text from Civis. `tests/test_sql_scope.py` covers the two new SELECTs. The write-call test in `tests/test_security.py` is unchanged: no new Civis write call. | Requested by Rob on November 17, 2026 |
+
+#### Part B: the app
+
+| # | Change | Status |
+|---|---|---|
+| 17.13.7 | **Overview.** `app/views.resume_window` runs `decide` with what the app already has: the `scan_runs` rows, `jobs.runs()`, the app's `__version__`, the job's `LOOKBACK_DAYS` (`JobSettings.lookback_days`), and whether the job's `GITHUB` parameter has a saved argument or fixed value (`JobSettings.github_attached`; never the credential). When it would resume, one line shows under Run scan: "The last scan stopped before it finished. Run scan picks it up where it stopped, unless the tool or the scanner job's settings changed since it started. After <local time>, Run scan starts a new scan." The time is the end of the 24-hour window, with the existing local-time markup. The button keeps its label. No Civis call and no write. | Requested by Rob on November 17, 2026 |
+| 17.13.8 | The "No completed scan yet" empty states for a failed or canceled last scan end with "Within 24 hours of when it stopped, Run scan picks it up where it stopped, unless the tool or the scanner job's settings changed. After that, Run scan starts a new scan." | Requested by Rob on November 17, 2026 |
+| 17.13.9 | **Progress.** `Progress.feed` parses the `RESUME` line (`resumed_scan`). While a resumed scan runs, the progress card's headline starts with "Resuming <label>." (the 17.9 label), on the page and in the status API. **Scan history** shows "Resumed <n> time(s)" under the label of a scan with resumes (its distinct Civis run IDs minus one, `ScanRun.civis_run_ids`), and shows the scan once: an earlier Civis run of a resumed scan has no row of its own. | Requested by Rob on November 17, 2026 |
+| 17.13.10 | **Setup line 4.** `RUN_ID` on the job, as a parameter or an argument, with any value or none, is "review": "RUN_ID is no longer used. The scanner resumes a stopped scan by itself." with the fix "Remove RUN_ID from the scanner job (see README, Create the scanner job)." `RUN_ID` is out of `OPTIONAL_PARAMETERS` and `README_PARAMETERS`, so a job without it passes, and it is not also counted as a name not in the README. With other issues, the line keeps the worst result and both fixes. The preview's `setup-failures` job keeps its `RUN_ID`, so that state shows the review. | Requested by Rob on November 17, 2026 |
+| 17.13.11 | **Test summary.** `resume: resume` or `resume: new reason=<reason>` for the chosen scan, from its log's `RESUME` line, allow list only (`common.resume.DECISIONS` and `REASONS`), else `other`, or `not_found`. `RESUME` and `RUN_ID_IGNORED` are scanner lines, not "other" lines. | Requested by Rob on November 17, 2026 |
+| 17.13.12 | **Local preview.** The seed adds Civis run 504, canceled three hours before the build after 20 objects, and Civis run 505, still running, which resumes it through the scanner's own decision (the earlier runs' states are in the synthetic `container_runs`), so the normal state shows "Resuming Civis run 504." and Scan history shows "Resumed 1 time". Each seeded run logs its `RESUME` line (501 `no_scan`, 502 and 504 `last_scan_finished`, 503 `too_old`, 505 a resume). The existing `first-scan-cancelled` state shows the Overview line: there Civis run 505 is canceled 12 minutes after it started. No new state. `failed` and `tables-failed` drop run 504 as well as the running run, so they show what they did before. | Requested by Rob on November 17, 2026 |
+| 17.13.13 | Tests (`tests/test_app.py`, with updates in `tests/test_empty_states.py`, `tests/test_setup_page.py`, `tests/test_preview.py`, and `tests/test_security.py`): the line shown, not shown after the window (one second either side), after two resumes, with a run active, in other states, and after a `LOOKBACK_DAYS` change or a `GITHUB` value; the progress text and a new scan with no "Resuming"; the Scan history count and one row per scan; the Setup line; the summary line; and escaping of the label. `Services.wall_clock` lets tests set the time. The GitHub token test now allows the bare parameter name `GITHUB` in `app/job_settings.py`, which reads only whether the job's parameter has a value. | Requested by Rob on November 17, 2026 |
+
+**What the app checks and what it leaves to the scanner.** The app checks every reason except `results_saved` (it would need a new read of `coverage`), `tables_unavailable`, and `read_failed`. Its run states come from the job's 20 newest runs; a stopped scan whose newest run is not among them has no line. The scanner decides; the line is a forecast.
+
+#### Part C: docs
+
+| # | Change | Status |
+|---|---|---|
+| 17.13.14 | This section; the 12 parameter table, 16.17, and 17.2's approved item marked. README: "Resuming a stopped scan" rewritten (what stops a scan, the conditions, what starts a new scan, the Overview line, "Resuming", Scan history, the `RESUME` line, and removing a `RUN_ID` left from an earlier release); `RUN_ID` out of the parameter table. TESTING.md 5.4 rewritten with no job edit, and its results line. CLAUDE.md (status, scanner flow, app flow, Setup line 4, and the test list). SECURITY.md lists the new read call and says the app writes nothing new. | Requested by Rob on November 17, 2026 |
+
+The dry run of the synthetic instance has no Civis run ID, so it starts a new scan with no Civis read: its `RUN` line is unchanged, with `RESUME decision=new reason=no_scan` (or `run_state_unknown` after a stopped dry run) right before `RUN ... status=running`.
+
+**Expected in the next live test:** a `RESUME decision=new reason=no_scan` line on the first scan of the fresh install; TESTING 5.4 shows the Overview line after a cancel, "Resuming" during the resumed run, `RESUME decision=resume ... resumes=1`, `objects_scanned` below `objects_total`, the same label, and then `RESUME decision=new reason=last_scan_finished`.
+
+**Implementation choices, for review:**
+
+- `run_active` is checked before the end time, because an active run has no end time yet.
+- Only a Civis run of this job is read: when the stopped scan's newest Civis run has another `civis_job_id`, the scanner reads nothing and starts a new scan (`run_state_unknown`).
+- If Civis leaves `finished_at` empty on a canceled run, the scan is never resumed (`run_state_unknown`). TESTING 5.4 shows which it is.
+- `__version__` is `0.1.0` on every release candidate so far, so moving between `-rcN` tags does not block a resume; a version bump does.
+- The settings check reads every row of the scan; a row whose `parameters` cannot be read counts as changed.
+- The `RUN ... status=running` line now comes after `ensure_tables` and the decision, so a `TABLE_WRITE_FAILED` from creating the tables now comes before it.
+- A dry run's `--run-id` also logs `RESUME decision=resume`, with the resume number from its rows.
+- The progress card adds "Resuming <label>. " to the start of its existing headline, so `scan-status.js` is unchanged.
+- In Scan history, a resumed scan's Started time is its first start, and its Duration runs from then to the end of its newest run, gaps included.
+- In the local preview, the Overview line shows for 24 hours after the preview was built, like a real window.
+- 16.22's question (who the job runs as) is not checked by 5.4 any more, because nobody edits the job.
+
+#### Not changed
+
+- No new table, column, or SQL statement kind; the two new reads are SELECTs in the results schema. No new Civis write call. `app/` and `common/` still call only civis 2.7.1 methods, and the app adds no Civis call.
+- The request budget, retries, and timeouts. The Content Security Policy; no inline scripts or styles.
 - Legal text and SECURITY.md "By design".
