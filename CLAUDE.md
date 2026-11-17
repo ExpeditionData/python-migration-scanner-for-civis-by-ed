@@ -75,10 +75,10 @@ be made public at any time.
   credential and admins copy the install script from a release tag. Rob
   changes its visibility himself; never change it from a session.
 - Releases are git tags, protected by the "release tags" ruleset. The first
-  live test set up on `v0.1.0-rc5` and ran its scans on `v0.1.0-rc10`, with
-  `LOOKBACK_DAYS` 30; it is finished. The post-test build waits for tag
-  `v0.1.0-rc11` and a retest with a fresh install. Create a tag or a GitHub
-  Release only when Rob's prompt says to.
+  live test set up on `v0.1.0-rc5` and ran its scans on `v0.1.0-rc10`. The
+  retest runs on `v0.1.0-rc11`, on a fresh install made with
+  `install/civis_install.py`, with `LOOKBACK_DAYS` 30. Create a tag or a
+  GitHub Release only when Rob's prompt says to.
 - Commit after each completed step, with a clear message that says what changed
   and why.
 - Before every commit, review the staged files (`git diff --cached --name-only`
@@ -130,8 +130,8 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   credentials). civis passes nested dicts as given; the script sends the
   forms the live test saved, `disk_space` in `required_resources` and
   `runtimePlan` in `schedule`, and `allowedValues` only when Civis already
-  returns allowed values for a parameter. Update: identity checks read fresh before each patch, only the
-  fields that differ, `RESULTS_DB` and `RESULTS_SCHEMA` kept and checked,
+  returns allowed values for a parameter. Update: identity checks read fresh
+  before each patch, only the fields that differ, `RESULTS_DB` and `RESULTS_SCHEMA` kept and checked,
   `RUN_ID` removed. Output: `CHECK`, `PLAN`, `WRITE`, `RESULT`, `RECOVER`,
   `NEXT`, and one `KEEP IN CIVIS:` line with the new IDs. Its constants must
   equal `common/release.py` (a test checks each).
@@ -237,10 +237,10 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   (docs/PLAN.md 17.9): a fresh notebook link right before each download,
   live progress that stops with one line instead of reloading the frame,
   run labels by Civis run ID that stay the same after retention, and a busy
-  cue on every same-tab app link. The build under test is `v0.1.0-rc10`,
-  with `LOOKBACK_DAYS` 30. Phase 7 testing on `v0.1.0-rc10` is done except
-  a scan with a GitHub token, and the docs were updated from the live test
-  (docs/PLAN.md 17.10). Post-test build part 1 (the busy cue's look,
+  cue on every same-tab app link. The build under test is `v0.1.0-rc11`,
+  with `LOOKBACK_DAYS` 30. Phase 7 testing on `v0.1.0-rc10` is done, and the
+  docs were updated from the live test (docs/PLAN.md 17.10); the test with a
+  GitHub token runs during the retest. Post-test build part 1 (the busy cue's look,
   "Canceled" in UI text, the Findings sideways scroll at phone width, and
   the CSV link for a run left running) is done (docs/PLAN.md 17.11).
   Post-test build part 2 (Python in shell commands, one type's failed list,
@@ -248,8 +248,9 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   (docs/PLAN.md 17.12). Post-test build part 3 (resume a stopped scan
   without editing the job; `RUN_ID` is no longer used) is done
   (docs/PLAN.md 17.13). Post-test build part 4 (the install script and the
-  setup rewrite) is done (docs/PLAN.md 17.14); the build waits for tag
-  `v0.1.0-rc11` and a retest with a fresh install.
+  setup rewrite) is done (docs/PLAN.md 17.14). The post-test build
+  (docs/PLAN.md 17.11 to 17.14) is tagged `v0.1.0-rc11`, and the retest
+  follows TESTING.md "Retest on v0.1.0-rc11".
   Implementation choices not in the approved plan are in docs/PLAN.md
   sections 10 to 17.
 - **App flow.** `app/__init__.create_app` -> `app/services.py` (Civis or local
@@ -467,8 +468,8 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   a custom script when its `jobs.get` response has `from_template_id`
   (checked before the type words), and is built with `custom_item` and the
   scan's one `TemplateCache`.
-- **Live test.** TESTING.md is the checklist for the first live test. Records
-  are pass or fail and aggregate counts only.
+- **Live test.** TESTING.md is the checklist for the first live test and the
+  retest. Records are pass or fail and aggregate counts only.
 
 Constraints to keep in mind when writing code:
 

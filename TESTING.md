@@ -1,7 +1,8 @@
 # First live test
 
 A step-by-step checklist for the first live test of Python Migration Scanner
-inside a **test organization's** Civis environment. It checks the
+inside a **test organization's** Civis environment, and for its retest on
+`v0.1.0-rc11` ("Retest on v0.1.0-rc11" under "Order"). It checks the
 README setup and every fact that could not be confirmed from documentation
 (docs/PLAN.md marks these "confirm in Phase 7").
 
@@ -16,14 +17,22 @@ README setup and every fact that could not be confirmed from documentation
   `error=CivisAPIError status=403`) are fine to record; they hold no content.
 - If something you would need to record looks like client content, write
   "content withheld" and describe it in general terms instead.
-- **Release tag:** scans use `v0.1.0-rc10`, with `LOOKBACK_DAYS` set to `30`
-  on the scanner job. Setup (section 1) was done on `v0.1.0-rc5` and passed,
-  and it stays: before the next scan, move the scanner job and the Service to
-  `v0.1.0-rc10` by changing their tag only (README "Update to a new release",
-  steps 2 to 4). The scanner job keeps its `LOOKBACK_DAYS` parameter with the
-  value `30` (add it as an optional Integer parameter if it is missing). The
-  Overview then says a scan checks scripts that ran or changed in the last 30
-  days. `v0.1.0-rc10` follows `v0.1.0-rc9` because scan C on `v0.1.0-rc9`
+- **Release tag:** `v0.1.0-rc11` follows `v0.1.0-rc10` with the post-test
+  build (docs/PLAN.md 17.11 to 17.14): a quieter busy cue and "Canceled" in
+  the app's text, Python found in shell commands, a timeout on Civis
+  requests, a partial inventory when one object type's list fails, resume of
+  a stopped scan without editing the job, and an install script that creates
+  and updates the scanner job and the Service. The retest uses
+  `v0.1.0-rc11` on a fresh install: a new scanner job and a new Service made
+  with `install/civis_install.py` (section 1), `LOOKBACK_DAYS` set to `30` by
+  the install script, and the first test's results schema, reused (the new
+  job's `RESULTS_DB` and `RESULTS_SCHEMA` name it). The Overview then says a
+  scan checks scripts that ran or changed in the last 30 days. The job and
+  the Service from the first test are moved to `v0.1.0-rc11` once for item
+  5.6, then removed. The schema stays. Use `v0.1.0-rc11` wherever the README
+  says `<release tag>`. The first test set up on `v0.1.0-rc5` and ran its
+  scans on `v0.1.0-rc10`, with `LOOKBACK_DAYS` `30`. `v0.1.0-rc10` follows
+  `v0.1.0-rc9` because scan C on `v0.1.0-rc9`
   succeeded but every notebook was refused with HTTP 403 and live progress
   stopped when Civis's "Cookie expired." page replaced the app frame
   (docs/PLAN.md 17.9): the scanner now asks Civis for a fresh notebook link
@@ -59,13 +68,13 @@ README setup and every fact that could not be confirmed from documentation
   no rows, and the shape of the Civis sharing lists. `v0.1.0-rc4` followed
   `v0.1.0-rc3` because of two safety guards: Run scan starts only this tool's
   scanner job, and the tool refuses a results schema that holds anything
-  else. Use `v0.1.0-rc10` wherever the README says `<release tag>` from now
-  on. Item 5.6 (update to a new release) waits for the first release tag
-  after `v0.1.0-rc10`.
+  else.
 - **Browser:** Chrome, Edge, or Firefox. Safari ignores the report-only frame
   rule (the optional items 2.2 and 2.3).
 
 ## Order
+
+### First test
 
 1. Section 1 (setup) on `v0.1.0-rc5`, with no GitHub token attached to the
    scanner job. Done.
@@ -84,8 +93,54 @@ README setup and every fact that could not be confirmed from documentation
 7. Item 5.7: build the final test summary, copy it, and send it with these
    results.
 
-Item 5.6 is not part of this run. It waits for the first release tag after
-`v0.1.0-rc10`.
+Item 5.6 was not part of the first test. Its step 1 is part of the retest and
+moves the first test's job and Service from `v0.1.0-rc10` to `v0.1.0-rc11`;
+its step 2 removes them at the end of the retest.
+
+### Retest on v0.1.0-rc11
+
+1. Item 5.6 step 1 on the first test's job and Service: README "Update to a
+   new release" with the install script's update mode, from `v0.1.0-rc10` to
+   `v0.1.0-rc11`. Record the result lines without IDs, `run_id_removed`, and
+   Setup page lines 2, 4, and 7. Skip the new scan at the end of that README
+   section, so the newest scan in the results schema stays a finished scan
+   from the first test. Then stop that Service's deployment.
+2. Section 1 with a fresh install: the install script in check mode, then
+   install mode, with the first test's results schema, and items 1.2 to 1.10,
+   including the Setup page line for the resource profile. On the reused
+   schema, items 1.8 and 1.9 expect the five tables already there (no "Set up
+   results storage" button, Setup line 9 passes), and Scan history on the new
+   Service lists the first test's scans.
+3. Section 3 on the new install: items 3.1, 3.3 (the Inventory progress reads
+   "Inventory: checking N of M listed objects", then "N Python objects
+   found", docs/PLAN.md 17.12), 3.4, and 3.7 (the busy cue as changed in
+   docs/PLAN.md 17.11). The first scan's log has
+   `RESUME decision=new reason=last_scan_finished`, because the newest scan in
+   the reused schema is a finished scan from the first test.
+4. Item 5.4 (resume from the app, as docs/PLAN.md 17.13 rewrote it).
+5. Item 4.6 (the container script now has findings from `python -c`,
+   docs/PLAN.md 17.12), Findings at 390 px wide (item 3.7), and item 5.3's
+   CSV link for a scan left with only a "running" row, if one occurs.
+6. The GitHub test on the new install. A fine-grained GitHub token, read-only
+   and limited to one private test repository that holds synthetic files
+   only, is stored in a Custom credential made while signed in as the Robot
+   user. Test objects that use that repository are made first: a git-backed
+   Python script on a branch, one on a tag, and a container script with the
+   repository URL. Attach the credential with the install script's update
+   mode (`GITHUB_CREDENTIAL` set to the credential's ID), never by saving the
+   job's page. Record the result lines without IDs, and Setup page lines 2
+   (the with-token resource profile) and 4. Run one scan, then items 1.1 (the
+   GitHub step), 1.3 d, 1.4 (peak memory and CPU, and the GitHub counts),
+   3.5, and 4.8 step 4 for that scan. The token reads only the test
+   repository, so every other git-backed Python script gets a GitHub 404 and
+   is read through Civis; only the test objects are read from GitHub. Then
+   run update mode with `GITHUB_CREDENTIAL` `"clear"`, check that Setup line
+   2 is back on the no-token profile, delete the Custom credential, and
+   revoke the token.
+7. Item 5.6 step 2 for the first test's job and Service: README "Remove the
+   tool" steps 1 and 2. Step 3 (drop the results schema) does not apply,
+   because the new install uses that schema.
+8. Item 5.7: the test summary for the retest.
 
 ## Prepare the test organization
 
@@ -171,8 +226,13 @@ finish the step the way the interface allows and record the difference.
   first scan with the token attached (the second scan, item 4.8), or from the
   test summary's `run_line` for that scan (item 5.7). The first scan has no
   token, so its GitHub counts are zero.
+  On the retest, also open the Setup page after each update: with the token,
+  and again after the update with `GITHUB_CREDENTIAL` `"clear"`.
 - **Expected:** Without the token: `500`, `2048`, and `1`. With it: `1000`,
-  `4096`, and `4`. No out-of-memory or disk-full failure. Peak memory stays
+  `4096`, and `4`. Setup line 2 passes and shows "Resource profile:
+  with_token (1000 CPU, 4096 MB, 4 GB)" with the token, and "Resource
+  profile: without_token (500 CPU, 2048 MB, 1 GB)" again after the clear. No
+  out-of-memory or disk-full failure. Peak memory stays
   under 2048 MB without the token and under 4096 MB with it.
   `github_cache_peak_bytes` is at most 1073741824 (the 1 GB cache cap).
 - **Record:** pass or fail; the three values for each profile; peak memory
@@ -221,11 +281,18 @@ finish the step the way the interface allows and record the difference.
 
 ### 1.8 Results schema check before setup
 
-- **Steps:** Open the app before clicking anything.
+- **Steps:** Open the app before clicking anything. On the retest, which
+  reuses the first test's schema, also open Scan history and click the
+  Download CSV link of one of the first test's scans.
 - **Expected:** "The results schema does not exist yet", a **Set up results
   storage** button, and **Run scan** off with one line pointing to the button.
   This confirms the `pg_catalog.pg_namespace` check on Redshift for a
-  missing schema (PLAN.md 14.11 and 17.2.21).
+  missing schema (PLAN.md 14.11 and 17.2.21). On the retest: no button, the
+  Overview shows the first test's newest finished scan with **Run scan** on
+  and no resume line, and Scan history lists the first test's scans by their
+  "Civis run <ID>" labels. Their Download CSV links open the app's plain
+  "not found" page: those runs belong to the first test's job, and the app
+  reads run outputs only through the new job.
 - **Record:** pass or fail; the heading shown if different.
 
 ### 1.9 Set up results storage
@@ -243,9 +310,13 @@ finish the step the way the interface allows and record the difference.
   app may instead say the schema already existed but its tables could not be
   created (step: tables) and show
   `ALTER SCHEMA <schema> OWNER TO <database user>;`. Record that as outcome c:
-  the admin runs it, then click the button again.
+  the admin runs it, then click the button again. On the retest, which reuses
+  the first test's schema, there is no button: skip steps 2 and 3, and open
+  the Setup page.
 - **Expected:** After any outcome, the Overview page shows "No scan yet"
-  and **Run scan** is on. This confirms the check finds the schema on
+  and **Run scan** is on. On the retest, Setup line 9 passes (the schema
+  holds only this tool's five tables) and the test summary shows
+  `results_schema_dedicated: yes`. This confirms the check finds the schema on
   Redshift. Nothing else changes in Civis.
 - **Record:** whether the first click reported that the schema already existed
   (expected: no, because the schema is new); outcome a, b, or c; for b and c,
@@ -433,9 +504,13 @@ Only for troubleshooting, or if item 2.1 failed.
   filters button, and a Next page link turn gray at once, with the progress
   cursor and the page content dimmed, until the next page arrives
   (docs/PLAN.md 17.9 and 17.11). A Download CSV link shows no cue.
+- **Phone width:** in the browser's developer tools, set the page to 390 px
+  wide (the device toolbar) and open Findings. Expected: the page does not
+  scroll sideways as a whole; only the table scrolls inside its box
+  (docs/PLAN.md 17.11).
 - **Record:** seconds per page; the slowest first page load in seconds; whether
   any page load failed or timed out (yes or no, with the error code if shown);
-  the busy cue line in the results template.
+  the busy cue and phone width lines in the results template.
 
 ## 4. Facts to confirm (PLAN.md "confirm in Phase 7")
 
@@ -586,7 +661,13 @@ Only for troubleshooting, or if item 2.1 failed.
   4. The second scan (item 5.2) runs with the token. Repeat steps 1 and 2 for
      it, from the summary only. For Python scripts, the number read from
      GitHub is `git_backed` minus `read_through_civis` minus
-     `civis_read_failed`.
+     `civis_read_failed`. On the retest, the scan with the token is the one
+     scan of "Retest on v0.1.0-rc11" step 6, and the token reads only the
+     private test repository. Expected: only the test objects (the Python
+     script on a branch, the one on a tag, and the container script) are read
+     from GitHub, and the container script is scanned rather than partial;
+     every other git-backed Python script gets a GitHub 404 and is read
+     through Civis.
 - **Expected:** Without the token, git-backed Python scripts and workflows are
   read through Civis, with few or no failures. From `v0.1.0-rc8`, an item on a
   branch is read through the list Civis returns for its file. A workflow whose
@@ -627,9 +708,14 @@ Only for troubleshooting, or if item 2.1 failed.
 ### 5.3 Download CSV
 
 - **Steps:** Click **Download CSV**. Open the file in a spreadsheet program.
+  If a scan is left with only a "running" row after its Civis run ended (for
+  example the canceled run in item 5.4 step 1, before it is resumed), also
+  click its CSV link on the Scan history page.
 - **Expected:** The file downloads and opens with accents shown correctly. It
   has one row per finding plus one row for each object with no findings.
-  Delete the file when done.
+  Delete the file when done. The left-behind scan's link downloads its CSV if
+  the scanner saved one before it stopped, and otherwise opens "This scan has
+  no CSV report. It stopped before saving one." (docs/PLAN.md 17.11).
 - **Record:** pass or fail; the row count.
 
 ### 5.4 Resume a stopped scan
@@ -677,19 +763,26 @@ whether to resume (README "Resuming a stopped scan", docs/PLAN.md 17.13).
 
 ### 5.6 Update to a new release, and removal
 
-This item waits for the first release tag after `v0.1.0-rc10`. It is not part
-of this run.
+Step 1 is part of the retest and moves the first test's job and Service from
+`v0.1.0-rc10` to `v0.1.0-rc11`; step 2 removes them at the end of the retest.
 
 - **Steps:**
   1. Follow README "Update to a new release" to move both objects from
-     `v0.1.0-rc10` to the new tag. Its last step ("Run a new scan") is a new
-     scan from the app.
-  2. Optional, at the end of that test: follow README "Remove the tool".
-- **Expected:** Each step works as written. After the update, the Service
-  starts again, both objects show the new tag, and the Setup page's lines 2
-  and 7 pass (line 7 is "review" instead when the Service has
+     `v0.1.0-rc10` to `v0.1.0-rc11`. Skip its last step ("Run a new scan"),
+     so the newest scan in the results schema stays a finished scan from the
+     first test. Then stop that Service's deployment.
+  2. At the end of the retest: README "Remove the tool" steps 1 and 2. Step 3
+     (drop the results schema) does not apply, because the new install uses
+     that schema.
+- **Expected:** Each step works as written. Every `CHECK` and `RESULT` line
+  says `pass`, including `results_kept`; `run_id_removed` is `yes` if the
+  first test's job still had `RUN_ID`, else `no_parameter`. After **Update
+  Deployment**, the Service starts again, both objects show the new tag, and
+  the Setup page's lines 2, 4, and 7 pass (line 4 is "review" while a
+  `RUN_ID` is left, and line 7 is "review" instead when the Service has
   `REPO_HTTP_TOKEN`, as in item 1.10).
-- **Record:** pass or fail per step.
+- **Record:** pass or fail per step; the `RESULT` lines by label (no IDs);
+  `run_id_removed`; Setup lines 2, 4, and 7.
 
 ### 5.7 Test summary
 
@@ -713,8 +806,8 @@ Copy this template, fill it in, and send it with the final test summary from
 item 5.7 pasted below it. Counts and redacted error types only.
 
 ```
-Python Migration Scanner: first live test results
-Release tag: v0.1.0-rc5 (setup), v0.1.0-rc10 (scans, LOOKBACK_DAYS 30)
+Python Migration Scanner: live test results (first test or retest)
+Release tag: first test v0.1.0-rc5 (setup), v0.1.0-rc10 (scans, LOOKBACK_DAYS 30); retest v0.1.0-rc11 (fresh install, LOOKBACK_DAYS 30)
 Date (MM/DD/YYYY):
 Browser:
 
@@ -779,9 +872,10 @@ Item  Result (pass/fail/skipped)  Counts or note
       Overview line: yes/no   Resuming: yes/no   same label: yes/no   Resumed 1 time: yes/no
       step 5 RESUME reason=
 5.5   minutes to wake=
-5.6   waits for the first tag after v0.1.0-rc10
+5.6   step 1 RESULT lines:   run_id_removed=   Setup 2=  4=  7=   step 2 (end of retest):
 5.7   built:  copied (button/by hand):  sent:  looked like a name: yes/no
 Busy cue: a nav link, a filter, and a pagination link turn gray at once: yes/no
+Phone width: Findings at 390 px scrolls sideways as a whole page: yes/no
 
 Error types seen (from the scanner's log only), with counts:
 Anything that did not match the README (general terms only):
