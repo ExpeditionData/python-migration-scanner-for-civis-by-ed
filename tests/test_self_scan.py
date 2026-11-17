@@ -1,7 +1,7 @@
 """The tool must survive the change it scans for.
 
 Run the scanner's own rules over this repo's code. Any civis-python v3 or
-Python 3.15 finding in scanner/, common/, or app/ fails the test.
+Python 3.15 finding in scanner/, common/, app/, or install/ fails the test.
 """
 
 from pathlib import Path
@@ -16,7 +16,7 @@ def test_repo_code_passes_its_own_rules():
     engine = Engine()
     me = CivisObject(0, ObjectType.CONTAINER_SCRIPT, "self", "", uses_default_image=True, impact=Impact.AFFECTED)
     problems = []
-    for package in ("scanner", "common", "app"):
+    for package in ("scanner", "common", "app", "install"):
         for path in sorted((ROOT / package).rglob("*")):
             if not path.is_file() or "__pycache__" in path.parts or kind_for_path(path.name) is None:
                 continue

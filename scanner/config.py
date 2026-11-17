@@ -33,7 +33,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from common import sql
-from common.release import DEFAULT_LOOKBACK_DAYS, LOOKBACK_DAYS_RANGE
+from common.release import DEFAULT_LOOKBACK_DAYS, LOOKBACK_DAYS_RANGE, RETENTION_DAYS_RANGE
 DEFAULT_MAX_CONCURRENCY = 4
 DEFAULT_REQUEST_BUDGET = 500
 
@@ -89,7 +89,7 @@ class ScanConfig:
                 "starting with a letter or underscore."
             ) from None
 
-        retention = _int(env, "RETENTION_DAYS", None, 0, 36500)
+        retention = _int(env, "RETENTION_DAYS", None, *RETENTION_DAYS_RANGE)
         return cls(
             database=database,
             schema=schema,

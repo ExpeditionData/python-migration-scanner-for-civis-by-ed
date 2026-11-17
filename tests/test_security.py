@@ -450,7 +450,7 @@ def test_app_never_reads_a_github_token():
 
 # --- By design: what the tool writes and contacts (SECURITY.md) ---------------------------
 
-CODE_PACKAGES = ("scanner", "app", "common")
+CODE_PACKAGES = ("scanner", "app", "common", "install")
 # The made-up Civis client and HTTP session used by dry runs and tests; they make no calls.
 FAKES = ("scanner/synthetic/",)
 
@@ -482,6 +482,11 @@ def test_civis_writes_are_limited_to_the_scanner_job_and_the_results_schema():
         # schema, using the DELETE statements common/retention.py builds for that schema.
         ("delete_runs", "scanner/runner.py"),
         ("delete_runs_sql", "scanner/output.py"),
+        # The install script, run by hand by an admin, never by the scanner or the app (docs/PLAN.md 17.14). It
+        # creates the scanner job and the Service and patches them; its services.post and services.patch calls,
+        # and every call it makes, are checked in tests/test_install_script.py.
+        ("post_containers", "install/civis_install.py"),
+        ("patch_containers", "install/civis_install.py"),
     }
     write = re.compile(r"^(post|put|patch|delete)_|^(query_civis|dataframe_to_civis|file_to_civis|civis_to_file)$")
     found = set()

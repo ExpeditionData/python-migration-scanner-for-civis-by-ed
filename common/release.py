@@ -10,17 +10,63 @@ that the README shows the same values.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 REPOSITORY_URL = "https://github.com/ExpeditionData/python-migration-scanner-for-civis-by-ed.git"
 SCANNER_COMMAND = "cd /app && python -m scanner"
-SCANNER_CPU = 1000  # CPU shares (one core)
-SCANNER_MEMORY_MB = 4096
-SCANNER_DISK_GB = 4
-MEMORY_PER_EXTRA_THREAD_MB = 512  # For each MAX_CONCURRENCY thread above the default of 4.
+HEALTH_PATH = "/healthz"  # The Service's CIVIS_SERVICE_HEALTH_PATH.
+
+
+@dataclass(frozen=True)
+class ResourceProfile:
+    """The scanner job's resources: CPU shares (1000 is one core), memory in MB, and disk in GB."""
+
+    name: str
+    cpu: int
+    memory_mb: int
+    disk_gb: int
+
+
+# Two profiles, picked by whether the job attaches a GitHub token (docs/PLAN.md 17.14). With a token: the GitHub
+# file cache holds at most 1 GB of text (scanner CACHE_MAX_BYTES), each tarball is streamed to the temp directory
+# (at most 200 MB, TARBALL_MAX_BYTES, one per thread), and each notebook is held in memory while it is scanned (at
+# most 50 MB, NOTEBOOK_MAX_BYTES, one per thread); 1 GB plus the live test's 215 MB peak plus four notebooks fits in
+# 4096 MB. Without one: no cache and no tarballs. In three live-test scans CPU peaked at 45 millicores, memory holds
+# the 215 MB peak plus one 50 MB notebook per thread, and the disk holds only the clone (about 2 MB) and the CSV.
+PROFILE_WITH_TOKEN = ResourceProfile("with_token", cpu=1000, memory_mb=4096, disk_gb=4)
+PROFILE_WITHOUT_TOKEN = ResourceProfile("without_token", cpu=500, memory_mb=2048, disk_gb=1)
+MEMORY_PER_EXTRA_THREAD_MB = 512  # For each MAX_CONCURRENCY thread above the default of 4, in both profiles.
 DEFAULT_THREADS = 4
+# Kept until the Setup page uses the profiles: the profile with a token.
+SCANNER_CPU = PROFILE_WITH_TOKEN.cpu
+SCANNER_MEMORY_MB = PROFILE_WITH_TOKEN.memory_mb
+SCANNER_DISK_GB = PROFILE_WITH_TOKEN.disk_gb
+
+
+def resource_profile(github_attached: bool) -> ResourceProfile:
+    return PROFILE_WITH_TOKEN if github_attached else PROFILE_WITHOUT_TOKEN
+
+
+def memory_needed(profile: ResourceProfile, threads: int) -> int:
+    """The memory a job needs: the profile's, plus 512 MB for each thread above 4."""
+    return profile.memory_mb + MEMORY_PER_EXTRA_THREAD_MB * max(0, threads - DEFAULT_THREADS)
+
+
+# The scanner job's parameters as the README and the install script set them: name and Civis parameter type.
+PARAMETER_TYPES = {
+    "RESULTS_DB": "database",
+    "RESULTS_SCHEMA": "string",
+    "GITHUB": "credential_custom",
+    "LOOKBACK_DAYS": "integer",
+    "MAX_CONCURRENCY": "integer",
+    "REQUEST_BUDGET": "integer",
+    "RETENTION_DAYS": "integer",
+}
+REQUIRED_PARAMETERS = ("RESULTS_DB", "RESULTS_SCHEMA")
+RETENTION_DAYS_RANGE = (0, 36500)  # 0 or blank keeps every scan (scanner/config.py).
 # A release tag: v, then numbers and dots, with an optional -rcN suffix (for example v0.1.0-rc3).
 RELEASE_TAG = re.compile(r"^v\d+(\.\d+)*(-rc\d+)?$")
 _IMAGE = re.compile(r"image:\s*([a-z0-9][a-z0-9._/-]*):([A-Za-z0-9._-]+)\s*\(Python")
