@@ -22,6 +22,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 from flask import g
@@ -44,6 +45,8 @@ class Services:
     local_user: str | None = None
     setup_provider: Callable[[], Any] | None = None  # The Setup page's reads (app/setup.py).
     clock: Callable[[], float] = time.monotonic
+    # The time of day, for the Overview's resume window (app/views.resume_window). Tests replace it.
+    wall_clock: Callable[[], datetime] = field(default=lambda: datetime.now(timezone.utc))
     progress: dict[int, Progress] = field(default_factory=dict)
     progress_lock: threading.Lock = field(default_factory=threading.Lock)
     start_lock: threading.Lock = field(default_factory=threading.Lock)

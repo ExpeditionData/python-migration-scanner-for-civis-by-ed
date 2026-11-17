@@ -137,8 +137,14 @@ def test_git_credential_line():
     (lambda j: j["params"].append({"name": "GITHUB", "type": "string"}), "warning", "not the Custom Credential type"),
     (lambda j: j["params"].append({"name": "GITHUB", "type": "credential_custom"}), "pass", ""),
     (lambda j: j["params"].append({"name": "LOOKBAK_DAYS", "type": "integer"}), "warning", "1 parameter name not in the README"),
+    # RUN_ID is no longer used (docs/PLAN.md 17.13): on the job with any value, or none, line 4 is "review".
     (lambda j: (j["params"].append({"name": "RUN_ID", "type": "string"}), j["arguments"].update(RUN_ID="run-x")),
-     "warning", "RUN_ID has a value"),
+     "review", "RUN_ID is no longer used. The scanner resumes a stopped scan by itself."),
+    (lambda j: j["params"].append({"name": "RUN_ID", "type": "string"}), "review", "RUN_ID is no longer used."),
+    (lambda j: j["arguments"].update(RUN_ID=""), "review", "RUN_ID is no longer used."),
+    (lambda j: (j["params"].append({"name": "RUN_ID", "type": "string"}),
+                j["params"].append({"name": "LOOKBAK_DAYS", "type": "integer"})),
+     "warning", "1 parameter name not in the README (a typo?). RUN_ID is no longer used."),
     # LOOKBACK_DAYS is an optional Integer parameter (docs/PLAN.md 17.6).
     (lambda j: (j["params"].append({"name": "LOOKBACK_DAYS", "type": "integer"}), j["arguments"].update(LOOKBACK_DAYS=30)),
      "pass", ""),
@@ -165,6 +171,18 @@ def test_parameters_line(change, result, words):
     change(job)
     line = lines_for(job)["job_parameters"]
     assert line.result == result and words in line.reason
+
+
+def test_run_id_review_says_to_remove_it_and_a_job_without_it_passes():
+    assert lines_for(scanner_job())["job_parameters"].result == "pass"
+    job = scanner_job()
+    job["params"].append({"name": "RUN_ID", "type": "string"})
+    line = lines_for(job)["job_parameters"]
+    assert line.fix == "Remove RUN_ID from the scanner job (see README, Create the scanner job)."
+    assert "Parameter names not in the README" not in " ".join(line.details)  # Not also flagged as a typo.
+    job["params"].append({"name": "RESULTS_SHEMA", "type": "string"})
+    both = lines_for(job)["job_parameters"]
+    assert both.fix.endswith("steps 4 and 5. Remove RUN_ID from the scanner job (see README, Create the scanner job).")
 
 
 def test_parameters_line_names_unknown_parameters_and_the_shape_in_details_only():

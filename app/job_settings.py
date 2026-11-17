@@ -31,6 +31,11 @@ the parameter's default (Civis passes a default when no argument is set), else
 400 days (``common/release.DEFAULT_LOOKBACK_DAYS``, the scanner's default).
 Civis's start-run call takes only the job ID, so Run scan cannot pass another
 window (docs/PLAN.md 17.6).
+
+GITHUB (optional Custom Credential): whether the job attaches a GitHub token,
+from whether the parameter has a saved argument or fixed value. The app never
+reads the credential. The Overview's resume line compares it with the stopped
+scan's recorded token setting (common/resume.py, docs/PLAN.md 17.13).
 """
 
 from __future__ import annotations
@@ -43,6 +48,7 @@ from common import release, sql
 
 DATABASE_PARAMETER = "RESULTS_DB"
 SCHEMA_PARAMETER = "RESULTS_SCHEMA"
+GITHUB_PARAMETER = "GITHUB"
 DATABASE_SHAPES = (
     "object", "object_without_credential", "json_text", "object_id_keys", "database_id_only", "missing",
     "not_recognized",
@@ -64,6 +70,8 @@ class JobSettings:
     # The window the next scan will use: the saved LOOKBACK_DAYS argument, the parameter's fixed value or default, else
     # 400. None when that value is not a whole number from 1 to 3650 (the scan would stop with a configuration problem).
     lookback_days: int | None = None
+    # Whether the job attaches a GitHub credential (the GITHUB parameter has a value). Never the credential.
+    github_attached: bool = False
 
     @property
     def usable(self) -> bool:
@@ -203,4 +211,5 @@ def parse_job(job: dict) -> JobSettings:
     if not release.is_scanner_job(job):
         # SCANNER_JOB_ID names some other job. Its parameters are never used to read or create anything.
         problem = "not_scanner_job"
-    return JobSettings(database, credential, schema, shape, problem, None, job, lookback_days=lookback_days(job))
+    return JobSettings(database, credential, schema, shape, problem, None, job, lookback_days=lookback_days(job),
+                       github_attached=parameter_value(job, GITHUB_PARAMETER) is not None)

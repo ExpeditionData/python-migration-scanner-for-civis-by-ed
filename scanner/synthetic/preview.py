@@ -7,7 +7,14 @@ runs the scanner several times so every app page has something to show:
 2. Two weeks ago: a scan that failed partway.
 3. One week ago: a completed scan after some code was fixed, so the history
    shows "fixed since last run," plus some checklist changes by an admin.
-4. Twenty minutes ago: a scan that is still running.
+4. Three hours ago: a scan that was canceled partway (Civis run 504).
+5. Twenty minutes ago: Civis run 505, still running, which resumed the
+   canceled scan by itself (docs/PLAN.md 17.13), so the scan keeps the label
+   "Civis run 504" and Scan history shows it resumed once.
+
+Each run after the first makes the scanner's own resume decision: the
+synthetic instance's ``container_runs`` holds the earlier Civis runs' states
+and end times, the way ``scripts.get_containers_runs`` answers in Civis.
 
 Every run uses the normal setup, with no GitHub token, so the preview shows
 git-backed scripts and workflows read through Civis, Civis reads that failed,
@@ -221,20 +228,24 @@ def build_preview(out: Path, now: datetime | None = None) -> dict:
 
     logger = scan_log.configure()
     plan = [
-        # (Civis run ID, days ago, fixed code, stop after N objects, Civis state, minutes taken)
-        (501, 21, False, None, "succeeded", 38),
-        (502, 14, False, 20, "failed", 9),
-        (503, 7, True, None, "succeeded", 41),
-        (504, 0, True, 40, "running", None),
+        # (Civis run ID, time ago, fixed code, stop after N objects, Civis state, minutes taken)
+        (501, timedelta(days=21), False, None, "succeeded", 38),
+        (502, timedelta(days=14), False, 20, "failed", 9),
+        (503, timedelta(days=7), True, None, "succeeded", 41),
+        (504, timedelta(hours=3), True, 20, "cancelled", 9),
+        (505, timedelta(minutes=20), True, 20, "running", None),  # Resumes 504's scan, 20 more objects.
     ]
     runs, logs, outputs = [], {}, {}
-    for civis_run_id, days_ago, fixed, stop_after, state, minutes in plan:
-        start = now - timedelta(days=days_ago, minutes=20 if state == "running" else 0)
+    container_runs: dict[str, dict] = {}  # What scripts.get_containers_runs answers for the earlier runs.
+    for civis_run_id, ago, fixed, stop_after, state, minutes in plan:
+        start = now - ago
         capture = _LogCapture()
         logger.addHandler(capture)
+        data = preview_instance(fixed, start)
+        data["container_runs"] = copy.deepcopy(container_runs)
         try:
             result = dry_run(
-                out, data=preview_instance(fixed, start), civis_job_id=PREVIEW_JOB_ID, civis_run_id=civis_run_id,
+                out, data=data, civis_job_id=PREVIEW_JOB_ID, civis_run_id=civis_run_id,
                 clock=_ticking(start, 2.0), stop_after=stop_after, checkpoint_objects=10, github_token=None,
             )
             outputs[str(civis_run_id)] = f"python-migration-scanner-{result.run_id}.csv"
@@ -245,10 +256,12 @@ def build_preview(out: Path, now: datetime | None = None) -> dict:
         finished = None if minutes is None else start + timedelta(minutes=minutes)
         span = (minutes or 20) * 60
         if state == "running" and stop_after:
-            # A real scan logs progress every 30 seconds; this short made-up run did not get there.
-            total = next((line.split("objects_total=")[1] for line in capture.lines
-                          if line.startswith("PROGRESS phase=code")), "0")
-            capture.lines.append(f"PROGRESS phase=code objects_done={stop_after} objects_total={total}")
+            # A real scan logs progress every 30 seconds; this short made-up run did not get there. A resumed
+            # run's first code PROGRESS line counts the objects it skipped as already done.
+            first = next((line for line in capture.lines if line.startswith("PROGRESS phase=code")), "")
+            total = first.split("objects_total=")[1] if first else "0"
+            skipped = int(first.split("objects_done=")[1].split()[0]) if first else 0
+            capture.lines.append(f"PROGRESS phase=code objects_done={skipped + stop_after} objects_total={total}")
         logs[str(civis_run_id)] = _log_entries(capture.lines, start, span)
         runs.append({
             "id": civis_run_id, "state": state,
@@ -256,6 +269,7 @@ def build_preview(out: Path, now: datetime | None = None) -> dict:
             "started_at": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "finished_at": finished.strftime("%Y-%m-%dT%H:%M:%SZ") if finished else None,
         })
+        container_runs[f"{PREVIEW_JOB_ID}/{civis_run_id}"] = {k: v for k, v in runs[-1].items() if k != "id"}
         if civis_run_id == 503:
             _admin_checklist_changes(out / "results.sqlite", DRY_RUN_SCHEMA, start + timedelta(days=1))
 

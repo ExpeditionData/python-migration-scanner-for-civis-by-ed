@@ -17,6 +17,7 @@
   </div>
 </div>
 {% if next_window %}<p class="note run-window">{{ next_window }}</p>{% endif %}
+{% if resume_until %}<p class="note run-resume">{{ resume_line[0] }} {{ local_time(resume_until) }}{{ resume_line[1] }}</p>{% endif %}
 
 {% if storage %}{{ storage_result(storage) }}{% endif %}
 {% if empty %}

@@ -267,7 +267,7 @@ def test_the_resumed_scan_keeps_its_first_civis_run_label(tmp_path):
     rows = [dict(r) for r in conn.execute("SELECT * FROM scan_runs")]
     conn.close()
     [summary] = summarize_scan_runs(rows)
-    assert (summary.label, summary.civis_run_id) == ("Civis run 11", 12)
+    assert (summary.label, summary.civis_run_id, summary.resumes) == ("Civis run 11", 12, 1)
 
 
 def test_the_runner_resumes_a_failed_scan(tmp_path, log_stream, monkeypatch):
@@ -496,3 +496,14 @@ def test_run_id_in_the_environment_is_ignored_with_one_log_line(monkeypatch, log
     log_stream.seek(0)
     entry.live_run()
     assert lines(log_stream) == []
+
+
+def test_the_summary_reports_the_resume_line():
+    pytest.importorskip("flask")
+    from app.summary import count_log
+
+    assert count_log(["RESUME decision=resume run_id=run-20261113T100000Z-aaaaaa resumes=1"]).resume == "resume"
+    assert count_log(["RESUME decision=new reason=too_old"]).resume == "new reason=too_old"
+    assert count_log([f"RESUME decision=new reason={MARK}"]).resume == "other"
+    assert count_log([f"RESUME decision={MARK}"]).resume == "other"
+    assert count_log(["RUN_ID_IGNORED", "RESUME decision=new reason=no_scan"]).other_lines == 0

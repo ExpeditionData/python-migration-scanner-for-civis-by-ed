@@ -36,8 +36,13 @@ LINE_KEYS = (
     "frame_rule", "results_storage", "latest_scan",
 )
 LATEST_STATES = ("unknown", "none", "queued", "running", "succeeded", "failed", "cancelled", "tables_failed")
-OPTIONAL_PARAMETERS = ("GITHUB", "LOOKBACK_DAYS", "MAX_CONCURRENCY", "REQUEST_BUDGET", "RETENTION_DAYS", "RUN_ID")
+OPTIONAL_PARAMETERS = ("GITHUB", "LOOKBACK_DAYS", "MAX_CONCURRENCY", "REQUEST_BUDGET", "RETENTION_DAYS")
 README_PARAMETERS = (DATABASE_PARAMETER, SCHEMA_PARAMETER) + OPTIONAL_PARAMETERS
+# A parameter from earlier releases. The scanner no longer reads it: it resumes a stopped scan by itself
+# (common/resume.py, docs/PLAN.md 17.13). On the job, with any value or none, line 4 is "review".
+RETIRED_RUN_ID = "RUN_ID"
+RUN_ID_REASON = "RUN_ID is no longer used. The scanner resumes a stopped scan by itself."
+RUN_ID_FIX = "Remove RUN_ID from the scanner job (see README, Create the scanner job)."
 TOKEN_PARAMETER = OPTIONAL_PARAMETERS[0]  # The optional GitHub token parameter. The app never reads its value.
 MAX_SERVICES = 1000
 # Civis puts the deploying user's GitHub token into a Service under this name when that user's Civis profile has
@@ -301,7 +306,7 @@ def _parameters(job: dict, settings: JobSettings | None) -> Line:
     token = by_name.get(TOKEN_PARAMETER)
     if token is not None and str(token.get("type") or "").lower() != "credential_custom":
         issues.append(("warning", f"{TOKEN_PARAMETER} is not the Custom Credential type"))
-    unknown = sorted(name for name in by_name if name not in README_PARAMETERS)
+    unknown = sorted(name for name in by_name if name not in README_PARAMETERS and name != RETIRED_RUN_ID)
     if unknown:
         issues.append(("warning", f"{_plural(len(unknown), 'parameter name')} not in the README (a typo?)"))
         details.append("Parameter names not in the README: " + ", ".join(unknown))
@@ -310,17 +315,21 @@ def _parameters(job: dict, settings: JobSettings | None) -> Line:
         issues.append(("warning", f"{release.LOOKBACK_PARAMETER} is not the Integer type"))
     if lookback_days(job) is None:
         issues.append(("fail", f"{release.LOOKBACK_PARAMETER} is not a whole number from 1 to 3,650"))
-    if parameter_value(job, "RUN_ID") not in (None, ""):
-        issues.append(("warning", "RUN_ID has a value, so every scan resumes that run"))
+    arguments = job.get("arguments")
+    run_id_left = RETIRED_RUN_ID in by_name or (isinstance(arguments, dict) and RETIRED_RUN_ID in arguments)
     details.append(f"{DATABASE_PARAMETER} value shape: {shape}")
-    if not issues:
+    if not issues and not run_id_left:
         return Line(4, "job_parameters", title, "pass",
                     f"{DATABASE_PARAMETER} and {SCHEMA_PARAMETER} are set, and every parameter name is in the README.",
                     details=tuple(details))
-    return Line(4, "job_parameters", title, _worst([r for r, _ in issues]),
-                _sentence([text for _, text in issues]),
-                "Fix the parameters on the scanner job as in README \"Create the scanner job\", steps 4 and 5. "
-                "Clear RUN_ID after a resume.", tuple(details))
+    if not issues:
+        return Line(4, "job_parameters", title, "review", RUN_ID_REASON, RUN_ID_FIX, tuple(details))
+    reason = _sentence([text for _, text in issues])
+    fix = "Fix the parameters on the scanner job as in README \"Create the scanner job\", steps 4 and 5."
+    if run_id_left:
+        reason, fix = f"{reason} {RUN_ID_REASON}", f"{fix} {RUN_ID_FIX}"
+    return Line(4, "job_parameters", title, _worst([r for r, _ in issues] + (["review"] if run_id_left else [])),
+                reason, fix, tuple(details))
 
 
 def _identity(value: Any) -> tuple[int | None, str | None]:

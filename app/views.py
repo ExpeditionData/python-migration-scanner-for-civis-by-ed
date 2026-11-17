@@ -145,6 +145,12 @@ class ScanRun:
     # The Civis run ID of the scanner run that started the scan: the earliest row for this run ID that has one. A
     # resumed scan keeps it. None when no row has one.
     first_civis_run_id: int | None = None
+    # Every Civis run ID on its rows, distinct, oldest first. More than one means it was resumed (docs/PLAN.md 17.13).
+    civis_run_ids: tuple[int, ...] = ()
+
+    @property
+    def resumes(self) -> int:
+        return max(len(self.civis_run_ids) - 1, 0)
 
     @property
     def label(self) -> str:
@@ -166,7 +172,8 @@ def summarize_scan_runs(rows: list[dict]) -> list[ScanRun]:
         newest = max(items, key=lambda r: (str(r.get("recorded_at") or ""), r.get("status") != "running"))
         final = [r for r in items if r.get("status") != "running"]
         oldest_first = sorted(items, key=lambda r: (str(r.get("recorded_at") or ""), r.get("status") != "running"))
-        first_civis = next((r["civis_run_id"] for r in oldest_first if r.get("civis_run_id") is not None), None)
+        civis_ids = tuple(dict.fromkeys(r["civis_run_id"] for r in oldest_first if r.get("civis_run_id") is not None))
+        first_civis = civis_ids[0] if civis_ids else None
         try:
             parameters = json.loads(newest.get("parameters") or "{}")
         except ValueError:
@@ -181,6 +188,7 @@ def summarize_scan_runs(rows: list[dict]) -> list[ScanRun]:
                 scanning_user=newest.get("scanning_user_name"),
                 parameters=parameters if isinstance(parameters, dict) else {},
                 first_civis_run_id=first_civis,
+                civis_run_ids=civis_ids,
             )
         )
     scans.sort(key=lambda s: s.started_at or datetime.min.replace(tzinfo=timezone.utc))
@@ -200,6 +208,10 @@ class Situation:
     # when that value is not valid. Only set when the job was read and is this tool's scanner job.
     job_lookback: int | None = None
     job_lookback_read: bool = False
+    # The scan_runs rows as read, for the resume decision (common/resume.py), and whether the job attaches a
+    # GitHub credential (app/job_settings.py).
+    scan_rows: list[dict] = field(default_factory=list)
+    job_github: bool | None = None
 
     @property
     def active_run(self) -> JobRun | None:
@@ -214,6 +226,15 @@ class Situation:
         if run is None:
             return None
         return next((s for s in self.scans if s.civis_run_id == run.id), None)
+
+    def resumed_earlier(self, run: JobRun) -> bool:
+        """The run is an earlier part of a scan that a later Civis run resumed. Scan history shows that scan once,
+        on its newest run's row."""
+        return any(run.id in s.civis_run_ids and s.civis_run_id != run.id for s in self.scans)
+
+    def scan_label(self, run_id: str | None) -> str | None:
+        """The label of the scan with this run ID (from a RESUME log line), or None when it is not known."""
+        return next((s.label for s in self.scans if s.run_id == run_id), None) if run_id else None
 
     @property
     def latest_finished_run(self) -> JobRun | None:
@@ -387,6 +408,31 @@ def next_window_text(situation: "Situation") -> str | None:
             "on the scanner job).")
 
 
+RESUME_LINE = ("The last scan stopped before it finished. Run scan picks it up where it stopped, unless the tool or "
+               "the scanner job's settings changed since it started. After")
+RESUME_LINE_TAIL = ", Run scan starts a new scan."
+
+
+def resume_window(situation: "Situation", now: datetime, version: str) -> When | None:
+    """When the Overview's resume line applies: the end of the 24-hour window, else None.
+
+    The same decision the scanner makes when it starts (common/resume.py), with what the app already has: the
+    scan_runs rows, the job's runs it listed, this build's version, the job's LOOKBACK_DAYS, and whether the job
+    attaches a GitHub credential. It cannot see whether the scan already saved its summary rows without another
+    read, so it leaves that to the scanner. No Civis call and no write. Nothing shows while a run is active, when
+    Run scan is off, or when the job's LOOKBACK_DAYS is not valid (the scan would stop before it starts)."""
+    from common import resume
+
+    if situation.active_run is not None or not situation.can_start or situation.results_state != "ok":
+        return None
+    if not situation.job_lookback_read or situation.job_lookback is None:
+        return None
+    runs = {r.id: resume.CivisRun(r.state, parse_time(r.finished_at)) for r in situation.runs}
+    decision = resume.decide(situation.scan_rows, now, civis_runs=runs, version=version,
+                             lookback_days=situation.job_lookback, github_attached=situation.job_github)
+    return when(decision.window_ends) if decision.resume and decision.window_ends else None
+
+
 def _pct(part: int, whole: int) -> int:
     return round(100 * part / whole) if whole else 0
 
@@ -423,6 +469,8 @@ def history(situation: Situation, counts: dict[str, dict]) -> list[dict]:
 
     def row_for(scan: ScanRun | None, run: JobRun | None) -> dict:
         started = (run.started_at or run.created_at) if run else None
+        if scan is not None and scan.resumes:
+            started = scan.started_at  # A resumed scan starts where its label's run did.
         started = started or (scan.started_at if scan else None)
         finished = run.finished_at if run else (scan.finished_at if scan else None)
         label = _status_label(run, scan)
@@ -442,9 +490,12 @@ def history(situation: Situation, counts: dict[str, dict]) -> list[dict]:
             "fixed": number(fixed_since.get(scan.run_id)) if shows and scan.run_id in fixed_since else "n/a",
             "civis_run_id": run.id if run else scan.civis_run_id if scan else None,
             "has_report": shows or (scan is not None and scan.status == "tables_failed") or left_behind,
+            "resumed": resumed_text(scan.resumes) if scan else None,
         }
 
     for run in situation.runs:
+        if situation.resumed_earlier(run):
+            continue  # Shown once, on the scan's newest run (docs/PLAN.md 17.13).
         scan = situation.scan_for(run)
         if scan:
             seen.add(scan.run_id)
@@ -453,6 +504,13 @@ def history(situation: Situation, counts: dict[str, dict]) -> list[dict]:
         if scan.run_id not in seen:
             rows.append(row_for(scan, None))
     return rows
+
+
+def resumed_text(resumes: int) -> str | None:
+    """Scan history's note on a scan that was resumed, from its rows' distinct Civis run IDs."""
+    if resumes <= 0:
+        return None
+    return f"Resumed {resumes} time{'s' if resumes != 1 else ''}"
 
 
 def _status_label(run: JobRun | None, scan: ScanRun | None) -> str:
@@ -733,7 +791,10 @@ def checklist_changes(form: Iterable[tuple[str, str]], valid_rules: set[str]) ->
 # ---------------------------------------------------------------------------
 
 
-def progress_view(run: JobRun | None, progress: Progress | None, now: datetime | None = None) -> dict:
+def progress_view(run: JobRun | None, progress: Progress | None, now: datetime | None = None,
+                  resuming: str | None = None) -> dict:
+    """``resuming`` is the label of the scan this run resumes (from its RESUME line, docs/PLAN.md 17.13). While the
+    run is active, the headline starts with "Resuming <label>."."""
     if run is None:
         return {"state": "idle"}
     p = progress or Progress()
@@ -762,8 +823,10 @@ def progress_view(run: JobRun | None, progress: Progress | None, now: datetime |
         headline = f"Scanning code and logs: {number(done)} of {number(total)} Python objects"
     else:
         headline = "Saving results"
-
     running = run.state in ("queued", "running")
+    if resuming and running:
+        headline = f"Resuming {resuming}. {headline}"
+
     steps = [
         step("1. Inventory", "Done" if inventory_done else ("Running" if running else "Waiting"),
              f"{number(listed)} Python objects found" if inventory_done else (

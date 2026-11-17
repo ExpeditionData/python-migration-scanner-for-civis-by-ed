@@ -423,14 +423,15 @@ def test_app_never_reads_a_github_token():
     """The app reads no GitHub token. It never names the token's environment variables (GITHUB_PASSWORD,
     GITHUB_USERNAME, and GITHUB_ID, which Civis sets for the GITHUB parameter), GH_TOKEN, or REPO_HTTP_TOKEN (a
     token Civis may insert into a Service). The summary's github_* counts from the scanner's RUN line are fine.
-    The bare parameter name GITHUB appears only where the Setup page checks the parameter's type and in the
+    The bare parameter name GITHUB appears only where the Setup page checks the parameter's type, where the job
+    settings note whether the parameter has a value (for the resume line, docs/PLAN.md 17.13), and in the
     preview's made-up job, and never on a line that reads the environment. "GitHub" in Civis field labels
     (GitHub Repository URL) is fine. The one exception for REPO_HTTP_TOKEN is the constant in app/setup.py that
     Setup line 7 uses to check whether the variable is set (never its value), and the summary's
     repo_http_token_present label (tests/test_setup_page.py checks the value never reaches any output)."""
     token_names = re.compile(r"GITHUB_(PASSWORD|USERNAME|ID|TOKEN)\b|GH_TOKEN|REPO_HTTP_TOKEN|github_token", re.IGNORECASE)
     parameter = re.compile(r"\bGITHUB\b")
-    allowed = {"app/setup.py", "app/backends/local_backend.py"}
+    allowed = {"app/setup.py", "app/job_settings.py", "app/backends/local_backend.py"}
     offenders = []
     for p in (ROOT / "app").rglob("*"):
         if not (p.is_file() and p.suffix in (".py", ".html", ".js")):

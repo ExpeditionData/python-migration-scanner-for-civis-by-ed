@@ -29,6 +29,7 @@ from typing import Any
 from app.backends.base import ERROR_TOKEN, LOG_PAGE, LogLine
 from common import release
 from common.models import ObjectType
+from common.resume import DECISIONS as RESUME_DECISIONS, REASONS as RESUME_REASONS
 
 # The scanner's generated run IDs: run-<UTC time>-<6 hex characters> (scanner/runner.py, new_run_id).
 RUN_ID = re.compile(r"^run-\d{8}T\d{6}Z-[0-9a-f]{6}$")
@@ -38,6 +39,7 @@ OTHER = "other"
 SCANNER_PREFIXES = (
     "RUN", "PHASE", "PROGRESS", "CHECKPOINT", "FINDINGS", "OBJECT_ERROR", "CIVIS_GIT_FAILED", "PARSE_ERROR",
     "TABLE_WRITE_FAILED", "OUTPUT_FAILED", "FATAL", "USERS", "INVENTORY", "LIST_FAILED", "REQUEST_TIMEOUT",
+    "RESUME", "RUN_ID_IGNORED",
 )
 ERROR_LINES = (
     "OBJECT_ERROR", "CIVIS_GIT_FAILED", "PARSE_ERROR", "TABLE_WRITE_FAILED", "OUTPUT_FAILED", "FATAL", "LIST_FAILED",
@@ -79,6 +81,8 @@ _FATAL_STEP = re.compile(r"^FATAL .*\sstep=([a-z0-9_]+)$")
 # A type's list that stopped partway (scanner/scan_log.py, list_failed): the type and the rows read.
 _LIST_FAILED_LINE = re.compile(r"^LIST_FAILED type=(\w+) rows_read=(\d+) ")
 _PAIR = re.compile(r"\b(\w+)=(\S+)")
+# Whether the run resumed the newest stopped scan (scanner/scan_log.py, resume; docs/PLAN.md 17.13).
+_RESUME_LINE = re.compile(r"^RESUME decision=(\w+)(?: run_id=\S+ resumes=\d+| reason=(\w+))$")
 
 
 # --- The allow list ---------------------------------------------------------------------------
@@ -152,6 +156,7 @@ class LogCounts:
     inventory: dict[str, dict[str, int]] = field(default_factory=dict)
     # Object type (or "other") -> rows read before the type's list stopped, from each LIST_FAILED line.
     list_failed: dict[str, int | None] = field(default_factory=dict)
+    resume: str | None = None  # "resume" or "new reason=<reason>", from the RESUME line.
 
 
 def count_log(lines: list[str]) -> LogCounts:
@@ -162,6 +167,7 @@ def count_log(lines: list[str]) -> LogCounts:
     fatal_step = None
     inventory: dict[str, dict[str, int]] = {}
     list_failed: dict[str, int | None] = {}
+    resume = None
     for raw in lines:
         line = (raw or "").strip()
         if not _PREFIX.match(line):
@@ -193,13 +199,25 @@ def count_log(lines: list[str]) -> LogCounts:
                 users = OTHER if reason == OTHER else f"{source} reason={reason}"
             else:
                 users = source if not match.group(2) else f"{source} status={match.group(2)}"
+        elif line.startswith("RESUME"):
+            resume = _resume_value(_RESUME_LINE.match(line))
         elif line.startswith("INVENTORY"):
             match = _INVENTORY_LINE.match(line)
             if match and _label(match.group(1), OBJECT_TYPES) != OTHER:
                 inventory[match.group(1)] = {name: int(match.group(i + 2)) for i, name in enumerate(INVENTORY_COUNTS)}
             else:
                 inventory.setdefault(OTHER, {})
-    return LogCounts(run_counts, errors, other, users, fatal_step, inventory, list_failed)
+    return LogCounts(run_counts, errors, other, users, fatal_step, inventory, list_failed, resume)
+
+
+def _resume_value(match: re.Match | None) -> str:
+    """The RESUME line as "resume" or "new reason=<reason>", from the allow lists; anything else is "other"."""
+    if match is None or _label(match.group(1), RESUME_DECISIONS) == OTHER:
+        return OTHER
+    if match.group(1) == "resume":
+        return "resume" if match.group(2) is None else OTHER
+    reason = _label(match.group(2), RESUME_REASONS)
+    return OTHER if reason == OTHER else f"new reason={reason}"
 
 
 # --- Counts from the result tables ------------------------------------------------------------
@@ -333,6 +351,7 @@ def _scan_lines(scan: ScanData | None) -> list[str]:
             out.append(f"    {_label(kind, ERROR_LINES)} {_token(token)}: {_n(count)}")
         out.append(f"  log_other_lines: {_n(counts.other_lines)}")
         out.append(f"  users_list: {counts.users or 'not_found'}")
+        out.append(f"  resume: {counts.resume or 'not_found'}")
         if not counts.list_failed:
             out.append("  list_failed: none")
         for object_type in OBJECT_TYPES + (OTHER,):

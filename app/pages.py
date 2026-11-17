@@ -94,10 +94,11 @@ def load_situation() -> views.Situation:
             results_state = svc.results.check()
         except ResultsUnavailable as exc:
             results_state = exc.kind
-    scans = []
+    scans, scan_rows = [], []
     if results_state == "ok":
         try:
-            scans = views.summarize_scan_runs(svc.results.scan_runs())
+            scan_rows = svc.results.scan_runs()
+            scans = views.summarize_scan_runs(scan_rows)
         except ResultsUnavailable:
             results_state = "error"
     runs, jobs_error = [], False
@@ -115,6 +116,7 @@ def load_situation() -> views.Situation:
         runs=runs, scans=scans, settings_problem=svc.settings.problem,
         job_problem=job_settings.problem if job_settings else None,
         job_lookback=job_settings.lookback_days if lookback_read else None, job_lookback_read=lookback_read,
+        scan_rows=scan_rows, job_github=job_settings.github_attached if lookback_read else None,
     )
 
 
@@ -202,11 +204,9 @@ def _empty_state(situation: views.Situation) -> dict | None:
                 "link": url_for("pages.download_latest"), "link_text": "Download CSV report"}
     if situation.last_outcome == "failed":
         return {"title": "No completed scan yet",
-                "body": "The last scan failed before it finished. Check the scanner job's run log in Civis, then run "
-                        "the scan again."}
+                "body": "The last scan failed before it finished. Check the scanner job's run log in Civis. " + RESUME_HINT}
     if situation.last_outcome == "cancelled":
-        return {"title": "No completed scan yet",
-                "body": "The last scan was canceled before it finished. Run the scan again."}
+        return {"title": "No completed scan yet", "body": "The last scan was canceled before it finished. " + RESUME_HINT}
     if situation.runs or situation.scans:
         # A scan exists but none completed, and it ended some other way (Civis lists the run in another final
         # state, or the scan has no final status row). "No scan yet" is only for when there is no scan at all.
@@ -218,6 +218,11 @@ def _empty_state(situation: views.Situation) -> dict | None:
                 "body": "Run the first scan to find code affected by the February 2027 update. The scanner creates "
                         "its five result tables when it starts, or click Set up results storage to create them now."}
     return {"title": "No scan yet", "body": "Run the first scan to find code affected by the February 2027 update."}
+
+
+# A failed or canceled scan is resumed by the scanner itself (common/resume.py, docs/PLAN.md 17.13).
+RESUME_HINT = ("Within 24 hours of when it stopped, Run scan picks it up where it stopped, unless the tool or the "
+               "scanner job's settings changed. After that, Run scan starts a new scan.")
 
 
 def base_context(active: str, situation: views.Situation) -> dict:
@@ -371,6 +376,8 @@ def _overview(storage: dict | None = None):
     return render_template(
         "overview.html", **base_context("overview", situation), stats=stats, empty=empty_state(situation),
         next_window=views.next_window_text(situation),
+        resume_until=views.resume_window(situation, services().wall_clock(), __version__),
+        resume_line=(views.RESUME_LINE, views.RESUME_LINE_TAIL),
         last_scan=views.when(current.started_at) if current else None,
         duration=views.format_duration(run.started_at, run.finished_at) if run else (
             views.format_duration(current.started_at, current.finished_at) if current else None),
@@ -399,7 +406,7 @@ def scan():
     scan_run = situation.scan_for(run)
     lookback = (scan_run.parameters.get("lookback_days") if scan_run else None) or release.DEFAULT_LOOKBACK_DAYS
     notice = NOTICES.get(request.args.get("notice", ""))
-    view = views.progress_view(run, progress)
+    view = views.progress_view(run, progress, resuming=_resuming(situation, progress))
     return render_template(
         "scan.html", **base_context("scan", situation),
         run=run, scan_run=scan_run, progress=view, running=view.get("state") in ("queued", "running"), lookback=lookback,
@@ -518,7 +525,8 @@ def start_scan():
 def scan_status():
     situation = load_situation()
     run = situation.active_run or (situation.runs[0] if situation.runs else None)
-    view = views.progress_view(run, _progress(run))
+    progress = _progress(run)
+    view = views.progress_view(run, progress, resuming=_resuming(situation, progress))
     view["configured"] = situation.job_configured
     view["can_start"] = situation.can_start
     view["outcome"] = situation.last_outcome
@@ -666,6 +674,14 @@ def _progress(run) -> Progress | None:
     with svc.progress_lock:
         progress.feed(lines)
     return progress
+
+
+def _resuming(situation: views.Situation, progress: Progress | None) -> str | None:
+    """The label of the scan the run resumes, from its RESUME line (docs/PLAN.md 17.13), else None."""
+    run_id = progress.resumed_scan if progress else None
+    if not run_id:
+        return None
+    return situation.scan_label(run_id) or f"Scan {run_id}"
 
 
 NO_REPORT = "This scan has no CSV report. It stopped before saving one."

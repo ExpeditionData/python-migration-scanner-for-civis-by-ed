@@ -15,7 +15,7 @@ import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -276,18 +276,19 @@ def test_csv_download(app):
 
 
 def test_the_preview_links_the_csv_of_a_canceled_scan_with_only_a_running_row(preview, monkeypatch):
-    """docs/PLAN.md 17.11, Part D, in the local preview's first-scan-cancelled state: Civis run 504 was canceled
-    and its scan wrote only a "running" row, so Scan history links its CSV, and the run has none."""
+    """docs/PLAN.md 17.11, Part D, in the local preview's first-scan-cancelled state: Civis run 505 (which resumed
+    the scan Civis run 504 started, docs/PLAN.md 17.13) was canceled and the scan wrote only "running" rows, so
+    Scan history links its newest run's CSV, and the run has none."""
     monkeypatch.delenv("FLASK_DEBUG", raising=False)
     client = make_app(preview, "first-scan-cancelled").test_client()
     body = client.get("/scan").get_data(as_text=True)
-    assert ('<a href="/download/504" data-no-busy>CSV<span class="sr-only"> report for Civis run 504</span></a>'
+    assert ('<a href="/download/505" data-no-busy>CSV<span class="sr-only"> report for Civis run 504</span></a>'
             in body)
-    response = client.get("/download/504")
+    response = client.get("/download/505")
     assert response.status_code == 404
     assert "No CSV report This scan has no CSV report. It stopped before saving one." in text_of(response)
     running = make_app(preview, "first-scan-running").test_client().get("/scan").get_data(as_text=True)
-    assert "/download/504" not in running  # Still active: no link.
+    assert "/download/505" not in running  # Still active: no link.
 
 
 # --- CSRF and the concurrent-run guard -----------------------------------------------------
@@ -380,7 +381,8 @@ def test_checklist_save_rejects_values_that_are_not_allowed(app, monkeypatch):
 @pytest.mark.parametrize("state, expected", [
     ("no-scan", "No scan yet"),
     ("first-scan-running", "The first scan is running"),
-    ("first-scan-cancelled", "No completed scan yet The last scan was canceled before it finished. Run the scan again."),
+    ("first-scan-cancelled", "No completed scan yet The last scan was canceled before it finished. Within 24 hours "
+                             "of when it stopped, Run scan picks it up where it stopped"),
     ("schema-missing", "The results schema does not exist yet"),
     ("failed", "The last scan failed before it finished."),
     ("tables-failed", "could not save its results tables"),
@@ -1378,3 +1380,178 @@ def test_every_table_and_its_screen_reader_text_sit_in_a_table_wrap(preview, mon
     assert tables >= 1
     if state == "normal":  # Findings, Inventory, Scan history, Setup, and the Overview's tables.
         assert tables >= 5 and sr_only >= 2  # Findings' status labels and Scan history's CSV link text.
+
+
+# --- Resume a stopped scan (docs/PLAN.md 17.13) ---------------------------------------------------------------
+
+RESUME_LINE = ("The last scan stopped before it finished. Run scan picks it up where it stopped, unless the tool or the "
+               "scanner job's settings changed since it started. After")
+
+
+def resume_app(folder: Path, state: str, at: datetime):
+    """A preview app whose clock reads ``at``. The preview was built at NOW: in first-scan-cancelled, Civis run 505
+    (which resumed the scan Civis run 504 started) was canceled at 14:52 UTC, so the window ends a day later."""
+    app = make_app(folder, state)
+    app.extensions["pmsc"].wall_clock = lambda: at
+    return app
+
+
+def test_the_overview_says_run_scan_resumes_the_stopped_scan(preview, monkeypatch):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    response = resume_app(preview, "first-scan-cancelled", NOW).test_client().get("/")
+    body = html.unescape(response.get_data(as_text=True))
+    assert ('<p class="note run-resume">' + RESUME_LINE
+            + ' <time datetime="2026-10-15T14:52:00Z" data-local="datetime">October 15, 2026 at 2:52 PM UTC</time>'
+            ', Run scan starts a new scan.</p>') in body
+    assert "Run scan</button>" in body  # The button keeps its label.
+
+
+@pytest.mark.parametrize("state, at", [
+    ("first-scan-cancelled", NOW + timedelta(hours=24, minutes=-8, seconds=1)),  # After the window.
+    ("normal", NOW),  # Civis run 505 is still running.
+    ("first-scan-running", NOW),
+    ("failed", NOW),  # The stopped scan's runs are not listed, so their state is not known.
+    ("no-scan", NOW),
+    ("job-unreadable", NOW),  # Run scan is off.
+])
+def test_the_resume_line_does_not_show(preview, monkeypatch, state, at):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    body = resume_app(preview, state, at).test_client().get("/").get_data(as_text=True)
+    assert "run-resume" not in body and "changed since it started" not in body
+    if state == "first-scan-cancelled":  # One second earlier, it shows.
+        early = resume_app(preview, state, at - timedelta(seconds=1)).test_client().get("/").get_data(as_text=True)
+        assert "run-resume" in early
+
+
+def test_the_resume_line_does_not_show_after_two_resumes(preview, tmp_path, monkeypatch):
+    """A third Civis run on the stopped scan's rows (an earlier one, 500) makes two resumes."""
+    import shutil
+    import sqlite3
+
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    folder = tmp_path / "resumed-twice"
+    shutil.copytree(preview, folder)
+    conn = sqlite3.connect(folder / "results.sqlite")
+    try:
+        cursor = conn.execute("SELECT * FROM scan_runs WHERE civis_run_id = 504")
+        names = [d[0] for d in cursor.description]
+        extra = dict(zip(names, cursor.fetchone()), civis_run_id=500, recorded_at="2026-10-14 11:00:00")
+        conn.execute(f"INSERT INTO scan_runs ({', '.join(names)}) VALUES ({', '.join('?' for _ in names)})",
+                     [extra[n] for n in names])
+        conn.commit()
+    finally:
+        conn.close()
+    body = resume_app(folder, "first-scan-cancelled", NOW).test_client().get("/").get_data(as_text=True)
+    assert "run-resume" not in body
+    history = text_of(resume_app(folder, "first-scan-cancelled", NOW).test_client().get("/scan"))
+    assert "Civis run 500 Resumed 2 times" in history
+
+
+@pytest.mark.parametrize("change", [{"LOOKBACK_DAYS": 30}, {"GITHUB": 77}])
+def test_the_resume_line_follows_the_jobs_settings(preview, monkeypatch, change):
+    """A changed LOOKBACK_DAYS or an attached GitHub credential means a new scan, so the line does not show."""
+    from app.backends import local_backend
+
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    original = local_backend.preview_job
+
+    def changed(job_id, state="normal"):
+        job = original(job_id, state)
+        return dict(job, arguments=dict(job["arguments"], **change))
+
+    monkeypatch.setattr(local_backend, "preview_job", changed)
+    body = resume_app(preview, "first-scan-cancelled", NOW).test_client().get("/").get_data(as_text=True)
+    assert "run-resume" not in body
+
+
+def test_the_progress_card_says_resuming_with_the_scans_label(preview, monkeypatch):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    client = make_app(preview).test_client()
+    body = client.get("/scan").get_data(as_text=True)
+    headline = "Resuming Civis run 504. Scanning code and logs: 40 of 103 Python objects"
+    assert f'data-field="headline">{headline}</div>' in body
+    assert client.get("/api/scan-status").get_json()["headline"] == headline
+    assert "Civis run 504. Started" in text_of(client.get("/scan"))  # The subtitle keeps the scan's label.
+
+
+def test_a_new_scan_has_no_resuming_text():
+    run = JobRun(7, "running", "2026-10-14T12:00:00Z", "2026-10-14T12:00:00Z")
+    progress = Progress()
+    progress.feed([LogLine(1, "RESUME decision=new reason=last_scan_finished"),
+                   LogLine(2, "RUN run_id=run-20261014T120000Z-abcdef status=running")])
+    assert progress.resumed_scan is None
+    assert not views.progress_view(run, progress)["headline"].startswith("Resuming")
+    progress.feed([LogLine(3, "RESUME decision=resume run_id=run-20261013T120000Z-abcdef resumes=1")])
+    assert progress.resumed_scan == "run-20261013T120000Z-abcdef"
+    assert views.progress_view(run, progress, resuming="Civis run 6")["headline"] == (
+        "Resuming Civis run 6. Listing Python objects")
+    ended = JobRun(7, "succeeded", "2026-10-14T12:00:00Z", "2026-10-14T12:00:00Z", "2026-10-14T12:30:00Z")
+    assert not views.progress_view(ended, progress, resuming="Civis run 6")["headline"].startswith("Resuming")
+
+
+def test_scan_history_shows_the_resumes_once_per_scan(preview, monkeypatch):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    body = make_app(preview).test_client().get("/scan").get_data(as_text=True)
+    assert body.count('<th scope="row">Civis run 504<span class="note run-resumed">Resumed 1 time</span></th>') == 1
+    assert body.count("Resumed 1 time") == 1
+    rows = re.findall(r'<th scope="row">(Civis run \d+)', body)
+    assert rows == ["Civis run 504", "Civis run 503", "Civis run 502", "Civis run 501"]  # Civis run 504 has no row of its own.
+
+
+def test_setup_line_4_reviews_a_left_over_run_id(preview, monkeypatch):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    page = text_of(make_app(preview, "setup-failures").test_client().get("/setup"))
+    assert "RUN_ID is no longer used. The scanner resumes a stopped scan by itself." in page
+    assert "Remove RUN_ID from the scanner job (see README, Create the scanner job)." in page
+    normal = text_of(make_app(preview).test_client().get("/setup"))
+    assert "RUN_ID" not in normal
+
+
+def test_the_test_summary_reports_the_resume_decision(preview, monkeypatch):
+    import sqlite3
+
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    client = make_app(preview).test_client()
+    default = html.unescape(client.get("/setup/summary").get_data(as_text=True))
+    assert "  resume: new reason=too_old\n" in default  # Civis run 503's scan, the newest finished one.
+    conn = sqlite3.connect(preview / "results.sqlite")
+    try:
+        resumed = conn.execute("SELECT run_id FROM scan_runs WHERE civis_run_id = 505").fetchone()[0]
+    finally:
+        conn.close()
+    chosen = html.unescape(client.get(f"/setup/summary?run={resumed}").get_data(as_text=True))
+    assert "  resume: resume\n" in chosen
+
+
+def test_the_resuming_label_is_escaped(preview, monkeypatch):
+    from app import pages
+
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    hostile = "Scan <script>alert('x')</script>"
+    monkeypatch.setattr(pages, "_resuming", lambda situation, progress: hostile)
+    client = make_app(preview).test_client()
+    body = client.get("/scan").get_data(as_text=True)
+    assert "<script>alert" not in body and "Resuming Scan &lt;script&gt;alert(" in body
+    # The API sends it as data; js/scan-status.js sets it with textContent.
+    assert client.get("/api/scan-status").get_json()["headline"].startswith(f"Resuming {hostile}.")
+    progress = Progress()  # A RESUME line can carry only a run ID's characters.
+    progress.feed([LogLine(1, "RESUME decision=resume run_id=run-1<script>x</script> resumes=1")])
+    assert progress.resumed_scan == "run-1"
+
+
+def test_resume_window_needs_run_scan_and_a_valid_lookback():
+    from common.version import __version__
+
+    rows = [{"run_id": "run-20261014T120000Z-abcdef", "status": "running", "civis_run_id": 7, "civis_job_id": 9,
+             "recorded_at": "2026-10-14 12:00:00", "started_at": "2026-10-14 12:00:00", "tool_version": __version__,
+             "parameters": json.dumps({"lookback_days": 400, "github_token_attached": False})}]
+    runs = [JobRun(7, "cancelled", "2026-10-14T12:00:00Z", "2026-10-14T12:00:00Z", "2026-10-14T12:10:00Z")]
+    base = dict(results_state="ok", job_configured=True, runs=runs, scans=views.summarize_scan_runs(rows),
+                job_lookback=400, job_lookback_read=True, scan_rows=rows, job_github=False)
+    at = datetime(2026, 10, 14, 13, 0, tzinfo=timezone.utc)
+    shown = views.resume_window(views.Situation(**base), at, __version__)
+    assert shown is not None and shown.iso == "2026-10-15T12:10:00Z"
+    for change in ({"job_lookback": None}, {"job_lookback_read": False}, {"jobs_error": True},
+                   {"job_problem": "not_scanner_job"}, {"results_state": "schema_missing"}):
+        assert views.resume_window(views.Situation(**{**base, **change}), at, __version__) is None, change
+    assert views.resume_window(views.Situation(**base), at, "0.0.1") is None  # Another version.

@@ -21,7 +21,10 @@ from app.views import ScanRun, Situation  # noqa: E402
 
 SECRET = "empty-states-test-secret-key-long-enough-0001"  # pragma: allowlist secret  gitleaks:allow
 WHEN = "2026-11-10T12:00:00Z"
-CANCELLED = "The last scan was canceled before it finished. Run the scan again."
+# A failed or canceled scan is resumed within 24 hours, then a new scan starts (docs/PLAN.md 17.13).
+RESUME_HINT = ("Within 24 hours of when it stopped, Run scan picks it up where it stopped, unless the tool or the "
+               "scanner job's settings changed. After that, Run scan starts a new scan.")
+CANCELLED = "The last scan was canceled before it finished. " + RESUME_HINT
 FAILED = "The last scan failed before it finished."
 OTHER = "No scan has finished with results to show yet."
 

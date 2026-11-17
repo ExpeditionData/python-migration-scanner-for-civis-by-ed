@@ -79,6 +79,7 @@ def preview_job(job_id: int, state: str = "normal") -> dict:
     if state == "setup-failures":
         job.update(author=dict(PREVIEW_OTHER_USER), running_as=dict(PREVIEW_OTHER_USER), git_credential_id=77,
                    repo_ref="main", required_resources={"cpu": 1000, "memory": 8192, "disk_space": 4.0})
+        # A typo in a parameter name, and RUN_ID left from an earlier release (line 4 "review", docs/PLAN.md 17.13).
         job["params"] = job["params"] + [{"name": "RESULTS_SHEMA", "type": "string"}, {"name": "RUN_ID", "type": "string"}]
         job["arguments"] = dict(job["arguments"], RUN_ID="run-20261001T120000Z-abc123")
     return job
@@ -294,13 +295,17 @@ class LocalJobs:
         elif self.state == "first-scan-running":
             self._runs = [r for r in self._runs if r.state == "running"]
         elif self.state == "first-scan-cancelled":
-            # The first scan was cancelled: Civis lists its run as cancelled, and it wrote no final status row.
+            # The first scan was cancelled: Civis lists its run as cancelled, and it wrote no final status row. The
+            # preview's running run (505) resumed a canceled scan, so this scan was canceled twice and resumed once;
+            # its newest run ended 8 minutes before the preview was built, so the Overview shows the resume line
+            # (docs/PLAN.md 17.13).
             self._runs = [JobRun(r.id, "cancelled", r.created_at, r.started_at, _minutes_later(r.started_at, 12))
                           for r in self._runs if r.state == "running"]
         elif self.state in ("failed", "tables-failed"):
-            # Drop the running scan, and show the newest finished run as failed. With
-            # tables-failed, that run's scan also has status tables_failed (exit code 3).
-            self._runs = sorted((r for r in self._runs if r.state != "running"), key=lambda r: r.id, reverse=True)
+            # Drop the running scan and the canceled run it resumes, and show the newest finished run as failed.
+            # With tables-failed, that run's scan also has status tables_failed (exit code 3).
+            self._runs = sorted((r for r in self._runs if r.state not in ("running", "cancelled")),
+                                key=lambda r: r.id, reverse=True)
             if self._runs:
                 newest = self._runs[0]
                 self._runs[0] = JobRun(newest.id, "failed", newest.created_at, newest.started_at, newest.finished_at)

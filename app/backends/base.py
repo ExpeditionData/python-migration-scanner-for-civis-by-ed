@@ -183,7 +183,7 @@ def normalize_row(table: str, row: dict) -> dict:
 # Progress from the scanner's structured log lines (scanner/scan_log.py)
 # ---------------------------------------------------------------------------
 
-_LINE = re.compile(r"^(PROGRESS|PHASE|RUN|TABLE_WRITE_FAILED|OUTPUT_FAILED|FATAL|CHECKPOINT)\b(.*)$")
+_LINE = re.compile(r"^(PROGRESS|PHASE|RUN|RESUME|TABLE_WRITE_FAILED|OUTPUT_FAILED|FATAL|CHECKPOINT)\b(.*)$")
 _PAIR = re.compile(r"(\w+)=([\w.-]+)")
 
 
@@ -204,6 +204,9 @@ class Progress:
     last_at: str | None = None
     tables_failed: bool = False
     last_id: int | None = None
+    # RESUME decision=resume: this Civis run resumes the scan with this run ID (common/resume.py,
+    # docs/PLAN.md 17.13). None for a new scan.
+    resumed_scan: str | None = None
 
     def feed(self, lines: list[LogLine]) -> None:
         """Apply new log lines, oldest first. Lines already fed are skipped, so two
@@ -219,7 +222,9 @@ class Progress:
             kind, values = match.group(1), dict(_PAIR.findall(match.group(2)))
             if line.created_at:
                 self.last_at = line.created_at
-            if kind == "RUN":
+            if kind == "RESUME":
+                self.resumed_scan = values.get("run_id") if values.get("decision") == "resume" else None
+            elif kind == "RUN":
                 self.scan_run_id = values.get("run_id", self.scan_run_id)
                 self.status = values.get("status", self.status)
             elif kind == "PHASE" and values.get("name"):

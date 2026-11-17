@@ -342,6 +342,8 @@ tbody tr:nth-child(even) th { background: var(--stripe); }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
 .note { font-size: 13px; color: var(--muted); margin: 0; }
+/* Scan history: a resumed scan's note under its label (docs/PLAN.md 17.13). */
+.run-resumed { display: block; font-weight: 400; }
 /* A type's list stopped partway (Overview, docs/PLAN.md 17.12). */
 .note-warning {
   font-size: 13px; margin: 8px 0 0; padding: 6px 10px;

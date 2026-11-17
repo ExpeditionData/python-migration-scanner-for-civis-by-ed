@@ -53,7 +53,7 @@
       <tbody>
         {% for row in history %}
         <tr>
-          <th scope="row">{{ row.run }}</th>
+          <th scope="row">{{ row.run }}{% if row.resumed %}<span class="note run-resumed">{{ row.resumed }}</span>{% endif %}</th>
           <td>{{ local_time(row.started) }}</td>
           <td>{{ row.duration }}</td>
           <td>{{ row.status }}</td>
