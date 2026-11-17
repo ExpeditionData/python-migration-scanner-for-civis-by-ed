@@ -129,6 +129,39 @@ def test_overview_numbers(app):
     assert "A scan is running." in page
 
 
+LIST_FAILED_TEXT = ("Custom scripts: Civis stopped returning the list of custom scripts after 150 rows (HTTP 503). "
+                    "Any custom scripts after that point were not found or scanned. Run a new scan to check them.")
+
+
+def test_overview_warns_once_for_each_list_that_stopped_partway(preview):
+    """docs/PLAN.md 17.12, Part B: the list-failed preview state's custom script list stopped after 150 rows."""
+    response = make_app(preview, "list-failed").test_client().get("/")
+    assert LIST_FAILED_TEXT in text_of(response)
+    assert response.get_data(as_text=True).count('class="note-warning"') == 1
+    normal = make_app(preview).test_client().get("/")
+    assert "note-warning" not in normal.get_data(as_text=True) and "stopped returning" not in text_of(normal)
+
+
+def test_list_failed_warning_is_escaped(preview, monkeypatch):
+    monkeypatch.setattr("app.backends.local_backend.list_failed_note", lambda *args: f"<script>{HOSTILE_NAME}</script>")
+    body = make_app(preview, "list-failed").test_client().get("/").get_data(as_text=True)
+    assert "<script>" not in body.split("<main", 1)[1].split("</main>", 1)[0]
+    assert "&lt;script&gt;" in body
+
+
+def test_list_failures_come_only_from_list_failed_rows_in_type_order():
+    rules = load_rules()
+    coverage = [
+        {"row_kind": "list_failed", "object_type": "workflow", "found_count": 0, "reason": "Workflow note."},
+        {"row_kind": "users", "reason": "A users note."},
+        {"row_kind": "list_failed", "object_type": "python_script", "found_count": 4, "reason": "Python note."},
+        {"row_kind": "list_failed", "object_type": "service", "found_count": 1, "reason": None},
+    ]
+    assert views.overview([], [], coverage, [], rules)["list_failures"] == [
+        {"type": "Python scripts", "note": "Python note."}, {"type": "Workflows", "note": "Workflow note."}]
+    assert views.overview([], [], coverage[1:2], [], rules)["list_failures"] == []
+
+
 def test_overview_shows_the_users_note(app):
     """The preview follows the live test: the users list refuses "all", so the scan used the active list."""
     from scanner.inventory.users import USERS_ACTIVE_NOTE

@@ -7,12 +7,13 @@ which lives in memory for the length of the run and is never written out.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from common.models import CivisObject, CoverageCounts, CoverageItem, Impact, ObjectType, ScanStatus
+from common.models import CivisObject, CoverageCounts, CoverageItem, Impact, ObjectType, ScanStatus, list_failed_note
 from common.release import default_tag_forms
 from common.urls import object_url
 
@@ -123,6 +124,40 @@ class InventoryItem:
     code: dict[str, Any] = field(default_factory=dict)
 
 
+class ListFailed(Exception):
+    """A list call failed after civis's retries (docs/PLAN.md 17.12). Carries the rows read before the failure
+    and the original error. Its own text is only the error's type name, never the message."""
+
+    def __init__(self, rows: list, error: BaseException):
+        super().__init__(type(error).__name__)
+        self.rows = rows
+        self.error = error
+
+
+_ERROR_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,99}$")
+
+
+@dataclass(frozen=True)
+class ListFailure:
+    """One type's list that stopped partway: the rows read, the error's type name, and its HTTP status."""
+
+    object_type: ObjectType
+    rows_read: int
+    error_name: str
+    status: int | None
+
+    @classmethod
+    def of(cls, object_type: ObjectType, failed: ListFailed) -> "ListFailure":
+        name = type(failed.error).__name__
+        status = getattr(failed.error, "status_code", None)
+        return cls(object_type, len(failed.rows), name if _ERROR_NAME.match(name) else "Exception",
+                   status if isinstance(status, int) and not isinstance(status, bool) else None)
+
+    def note(self) -> str:
+        """The fixed coverage note (row_kind "list_failed"). No text from Civis or the exception."""
+        return list_failed_note(self.object_type, self.rows_read, self.status, self.error_name)
+
+
 @dataclass
 class Inventory:
     items: list[InventoryItem] = field(default_factory=list)
@@ -133,6 +168,8 @@ class Inventory:
     # and the fixed coverage note when it is not "all".
     users_source: str = "all"
     users_note: str | None = None
+    # Lists that stopped partway; the scan went on with the rows read (docs/PLAN.md 17.12).
+    list_failures: list[ListFailure] = field(default_factory=list)
 
     def count(self, object_type: ObjectType) -> CoverageCounts:
         if object_type not in self.counts:
@@ -159,9 +196,18 @@ class InventoryContext:
         jobs) are not in these lists, so they are skipped. They are not counted
         either: in the first live test the hidden custom script list failed with
         HTTP 503 after more than a minute per request, and civis-python's lock
-        holds every other API call while one request waits (docs/PLAN.md 17.5)."""
+        holds every other API call while one request waits (docs/PLAN.md 17.5).
+
+        Rows are kept as the iterator gives them. If the list fails partway (after civis's retries), ListFailed
+        carries the rows read so far and the original error (docs/PLAN.md 17.12)."""
         kwargs.setdefault("archived", "false")
-        return list(method(iterator=True, limit=LIST_PAGE_SIZE, **kwargs))
+        rows: list = []
+        try:
+            for row in method(iterator=True, limit=LIST_PAGE_SIZE, **kwargs):
+                rows.append(row)
+        except Exception as exc:
+            raise ListFailed(rows, exc) from None
+        return rows
 
     def fetch(self, method: Callable, *args) -> tuple[Any, str | None]:
         """Call a detail endpoint. Returns (response, None) or (None, reason)."""

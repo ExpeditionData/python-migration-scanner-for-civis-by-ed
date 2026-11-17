@@ -81,6 +81,9 @@
     {% if stats.users_note %}
     <p class="note">{{ stats.users_note }}</p>
     {% endif %}
+    {% for failure in stats.list_failures %}
+    <p class="note-warning"><strong>{{ failure.type }}:</strong> {{ failure.note }}</p>
+    {% endfor %}
   </section>
 
   <section class="card narrow" aria-labelledby="checklist-progress">

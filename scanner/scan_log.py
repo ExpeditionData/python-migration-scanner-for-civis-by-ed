@@ -20,6 +20,7 @@ Line formats (parsed by the web app to show progress):
     USERS source=active status=404
     CHECKPOINT objects_written=500
     OUTPUT_FAILED error=CivisAPIError
+    LIST_FAILED type=custom_script rows_read=150 error=CivisAPIError status=503
     FATAL error=KeyError step=code_and_logs
     FATAL error=CivisAPIError status=404 step=inventory_users
     FATAL error=SchemaNotDedicated reason=results_schema_holds_other_tables_or_views other_objects=3
@@ -36,6 +37,11 @@ type, inventoried once as custom scripts), and not_python (rows whose list row
 shows they cannot run Python). Detail calls can find more objects that cannot
 run Python (dbt off the default image, Shiny Services); those are counted in
 the coverage table's not_python rows, not here.
+
+LIST_FAILED: a list call failed partway, after civis's retries. rows_read is
+how many rows it returned before that; the scan keeps them and goes on with
+the next type, and the coverage table gets a "list_failed" row with a fixed
+note (docs/PLAN.md 17.12). The type's INVENTORY line counts the rows read.
 
 PROGRESS phase=inventory: during the detail calls, every 50 objects or 30
 seconds, and once more when they end. objects_total is the number of kept
@@ -206,6 +212,17 @@ def users(source: str, status: int | None = None) -> None:
         _logger.info("USERS source=%s", source)
     else:
         _logger.info("USERS source=%s status=%d", source, _count(status, "status"))
+
+
+def list_failed(object_type: ObjectType | str, rows_read: int, exc: BaseException) -> None:
+    """One type's list stopped partway: the rows read before that, the error type, and the HTTP status.
+    Never the message."""
+    status = getattr(exc, "status_code", None)
+    suffix = f" status={status}" if isinstance(status, int) and not isinstance(status, bool) else ""
+    _logger.warning(
+        "LIST_FAILED type=%s rows_read=%d error=%s%s",
+        _object_type(object_type), _count(rows_read, "rows_read"), _error_name(exc), suffix,
+    )
 
 
 def output_failed(exc: BaseException) -> None:

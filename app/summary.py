@@ -37,9 +37,11 @@ OTHER = "other"
 # Line types the scanner writes (scanner/scan_log.py). Any other log line is counted as "other".
 SCANNER_PREFIXES = (
     "RUN", "PHASE", "PROGRESS", "CHECKPOINT", "FINDINGS", "OBJECT_ERROR", "CIVIS_GIT_FAILED", "PARSE_ERROR",
-    "TABLE_WRITE_FAILED", "OUTPUT_FAILED", "FATAL", "USERS", "INVENTORY",
+    "TABLE_WRITE_FAILED", "OUTPUT_FAILED", "FATAL", "USERS", "INVENTORY", "LIST_FAILED",
 )
-ERROR_LINES = ("OBJECT_ERROR", "CIVIS_GIT_FAILED", "PARSE_ERROR", "TABLE_WRITE_FAILED", "OUTPUT_FAILED", "FATAL")
+ERROR_LINES = (
+    "OBJECT_ERROR", "CIVIS_GIT_FAILED", "PARSE_ERROR", "TABLE_WRITE_FAILED", "OUTPUT_FAILED", "FATAL", "LIST_FAILED",
+)
 # The counts on the scanner's final RUN line, in order (scanner/scan_log.py, RUN_COUNTS).
 RUN_COUNTS = (
     "objects_total", "objects_scanned", "api_calls", "github_tarball_requests", "github_cache_peak_bytes",
@@ -72,6 +74,8 @@ INVENTORY_COUNTS = ("listed", "kept", "outside_window", "template_copies", "not_
 _INVENTORY_LINE = re.compile(
     r"^INVENTORY type=(\w+) " + " ".join(rf"{name}=(\d+)" for name in INVENTORY_COUNTS) + r"$")
 _FATAL_STEP = re.compile(r"^FATAL .*\sstep=([a-z0-9_]+)$")
+# A type's list that stopped partway (scanner/scan_log.py, list_failed): the type and the rows read.
+_LIST_FAILED_LINE = re.compile(r"^LIST_FAILED type=(\w+) rows_read=(\d+) ")
 _PAIR = re.compile(r"\b(\w+)=(\S+)")
 
 
@@ -144,6 +148,8 @@ class LogCounts:
     # Object type (or "other") -> the INVENTORY counts, from each INVENTORY line. A line that does not match the
     # format is counted under "other" with no counts.
     inventory: dict[str, dict[str, int]] = field(default_factory=dict)
+    # Object type (or "other") -> rows read before the type's list stopped, from each LIST_FAILED line.
+    list_failed: dict[str, int | None] = field(default_factory=dict)
 
 
 def count_log(lines: list[str]) -> LogCounts:
@@ -153,6 +159,7 @@ def count_log(lines: list[str]) -> LogCounts:
     users = None
     fatal_step = None
     inventory: dict[str, dict[str, int]] = {}
+    list_failed: dict[str, int | None] = {}
     for raw in lines:
         line = (raw or "").strip()
         if not _PREFIX.match(line):
@@ -166,6 +173,10 @@ def count_log(lines: list[str]) -> LogCounts:
             step = _FATAL_STEP.match(line) if match.group(1) == "FATAL" else None
             if step:
                 fatal_step = _label(step.group(1), FATAL_STEPS)
+            if match.group(1) == "LIST_FAILED":
+                failed = _LIST_FAILED_LINE.match(line)
+                kind = _label(failed.group(1), OBJECT_TYPES) if failed else OTHER
+                list_failed[kind] = int(failed.group(2)) if failed and kind != OTHER else None
         elif _RUN_LINE.match(line):
             pairs = dict(_PAIR.findall(line))
             if "objects_total" in pairs:
@@ -180,7 +191,7 @@ def count_log(lines: list[str]) -> LogCounts:
                 inventory[match.group(1)] = {name: int(match.group(i + 2)) for i, name in enumerate(INVENTORY_COUNTS)}
             else:
                 inventory.setdefault(OTHER, {})
-    return LogCounts(run_counts, errors, other, users, fatal_step, inventory)
+    return LogCounts(run_counts, errors, other, users, fatal_step, inventory, list_failed)
 
 
 # --- Counts from the result tables ------------------------------------------------------------
@@ -314,6 +325,12 @@ def _scan_lines(scan: ScanData | None) -> list[str]:
             out.append(f"    {_label(kind, ERROR_LINES)} {_token(token)}: {_n(count)}")
         out.append(f"  log_other_lines: {_n(counts.other_lines)}")
         out.append(f"  users_list: {counts.users or 'not_found'}")
+        if not counts.list_failed:
+            out.append("  list_failed: none")
+        for object_type in OBJECT_TYPES + (OTHER,):
+            if object_type in counts.list_failed:
+                rows = counts.list_failed[object_type]
+                out.append(f"  list_failed: {object_type}" + (f"={_n(rows)}" if rows is not None else ""))
         out.append("  inventory:" + ("" if counts.inventory else " not_found"))
         for object_type in OBJECT_TYPES + (OTHER,):
             if object_type in counts.inventory:

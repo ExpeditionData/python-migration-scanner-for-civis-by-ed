@@ -342,6 +342,11 @@ tbody tr:nth-child(even) th { background: var(--stripe); }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
 .note { font-size: 13px; color: var(--muted); margin: 0; }
+/* A type's list stopped partway (Overview, docs/PLAN.md 17.12). */
+.note-warning {
+  font-size: 13px; margin: 8px 0 0; padding: 6px 10px;
+  background: var(--warn-bg); color: var(--warn-text); border-left: 3px solid var(--warn-border);
+}
 
 /* The busy cue while the next app page loads (js/busy.js, docs/PLAN.md 17.9 and 17.11). Main is dimmed to 0.7
    opacity: main is inactive while the next page loads (WCAG 1.4.3 exempts its text), and 0.7 is the lowest

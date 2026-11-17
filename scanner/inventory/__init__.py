@@ -3,7 +3,15 @@
 ``build_inventory`` works in three steps (docs/PLAN.md 17.6):
 
 1. List every type, all pages (the users list first, then Python, container,
-   custom, and dbt scripts, notebooks, Services, and workflows).
+   custom, and dbt scripts, notebooks, Services, and workflows). A list that
+   fails partway (after civis's retries) keeps the rows read, logs one
+   LIST_FAILED line, adds a "list_failed" coverage note, and the scan goes on
+   with the next type. Only when all seven lists fail does the scan stop, with
+   FATAL for the first failure's error and step (docs/PLAN.md 17.12). Choosing
+   rows then works the same way on the rows read: if the custom script list
+   failed, a template copy whose custom script the list did not return is read
+   under its own type, and if the workflow list failed, workflows it did not
+   return add no references and no archived jobs.
 2. Choose which listed rows to read, in this order:
    - A row in the Python, container, or dbt script list with
      ``from_template_id`` set is a custom script made from a template. When
@@ -51,7 +59,9 @@ from typing import Any
 from common.models import CoverageItem, ObjectType, WorkflowRef
 from scanner import scan_log
 from scanner.inventory import custom, notebooks
-from scanner.inventory.base import Inventory, InventoryContext, InventoryItem, field_of, in_window
+from scanner.inventory.base import (
+    Inventory, InventoryContext, InventoryItem, ListFailed, ListFailure, field_of, in_window,
+)
 from scanner.inventory.containers import container_item, list_container_scripts
 from scanner.inventory.custom import TemplateCache, custom_item, list_custom_scripts
 from scanner.inventory.dbt import dbt_item, list_dbt_scripts
@@ -132,13 +142,29 @@ def build_inventory(client: Any, civis_git: Any = None, step: Callable[[str], No
     inventory.users_source, inventory.users_note = lookup.source, lookup.note()
     ctx = InventoryContext(client, lookup.users, inventory, civis_git)
 
-    # 1. List every type, all pages.
+    # 1. List every type, all pages. A list that fails partway keeps the rows read (docs/PLAN.md 17.12).
+    failures: list[tuple[str, BaseException]] = []
+
+    def read_list(object_type: ObjectType, list_rows: Callable[[InventoryContext], list], step_name: str) -> list:
+        step(step_name)
+        try:
+            return list_rows(ctx)
+        except ListFailed as failed:
+            failure = ListFailure.of(object_type, failed)
+            inventory.list_failures.append(failure)
+            scan_log.list_failed(object_type, failure.rows_read, failed.error)
+            failures.append((step_name, failed.error))
+            return failed.rows
+
     listed: dict[ObjectType, Listed] = {}
     for object_type, list_rows in _LISTS:
-        step(f"inventory_list_{object_type.value}")
-        listed[object_type] = Listed(object_type, list_rows(ctx))
-    step("inventory_workflows")
-    workflow_rows = list_workflows(ctx)
+        listed[object_type] = Listed(object_type, read_list(object_type, list_rows, f"inventory_list_{object_type.value}"))
+    workflow_rows = read_list(ObjectType.WORKFLOW, list_workflows, "inventory_workflows")
+    if len(failures) == len(_LISTS) + 1:
+        # Every list failed: stop as before, with the first failure's error and step.
+        first_step, first_error = failures[0]
+        step(first_step)
+        raise first_error
 
     # 2. Choose the rows to read.
     custom_ids = {field_of(row, "id") for row in listed[ObjectType.CUSTOM_SCRIPT].rows}

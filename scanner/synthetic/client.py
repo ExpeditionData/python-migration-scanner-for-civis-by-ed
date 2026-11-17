@@ -28,6 +28,13 @@ issued, with the notebook ID, for tests.
 "users_list_errors" makes users.list refuse an account_status (see _users__list).
 The default instance refuses "all" and "inactive" with HTTP 404, as Civis did
 for the scanning user in the first live test (docs/PLAN.md 17.5).
+
+"list_errors" makes one object type's list fail partway (docs/PLAN.md 17.12):
+{"custom_script": {"status": 503, "after": 3}} returns the first 3 rows, then
+raises FakeAPIError(503), as civis-python's paginated iterator raises when a
+later page fails after its retries. "after" 0 fails on the first page. Keys
+are object types (python_script, container_script, custom_script, dbt_script,
+notebook, service, workflow).
 """
 
 from __future__ import annotations
@@ -114,7 +121,7 @@ class FakeClient:
 
     # -- helpers ----------------------------------------------------------
 
-    def _list(self, rows: list[dict], fields: set[str], hidden=None, archived="false", **_ignored):
+    def _list(self, rows: list[dict], fields: set[str], hidden=None, archived="false", object_type=None, **_ignored):
         assert archived == "false", "inventory must only list non-archived objects"
         result = []
         for row in rows:
@@ -123,7 +130,15 @@ class FakeClient:
             if bool(row.get("hidden", False)) != bool(hidden):
                 continue
             result.append(_public(row, fields))
-        return iter(result)
+        error = self.data.get("list_errors", {}).get(object_type)
+        if not error:
+            return iter(result)
+
+        def pages():
+            yield from result[: error.get("after", 0)]
+            raise FakeAPIError(error["status"])
+
+        return pages()
 
     def _get(self, rows: list[dict] | dict, object_id: int) -> dict:
         if isinstance(rows, dict):
@@ -140,10 +155,11 @@ class FakeClient:
 
     def _scripts__list(self, type=None, **kwargs):
         rows = self.data.get({"python3": "python3", "containers": "containers", "dbt": "dbt"}[type], [])
-        return self._list(rows, SCRIPT_LIST_FIELDS, **kwargs)
+        object_type = {"python3": "python_script", "containers": "container_script", "dbt": "dbt_script"}[type]
+        return self._list(rows, SCRIPT_LIST_FIELDS, object_type=object_type, **kwargs)
 
     def _scripts__list_custom(self, **kwargs):
-        return self._list(self.data.get("custom", []), CUSTOM_LIST_FIELDS, **kwargs)
+        return self._list(self.data.get("custom", []), CUSTOM_LIST_FIELDS, object_type="custom_script", **kwargs)
 
     def _scripts__get_python3(self, object_id):
         return self._get(self.data.get("python3", []), object_id)
@@ -205,7 +221,7 @@ class FakeClient:
         return self._get(self.data.get("templates", {}), template_id)
 
     def _notebooks__list(self, **kwargs):
-        return self._list(self.data.get("notebooks", []), NOTEBOOK_LIST_FIELDS, **kwargs)
+        return self._list(self.data.get("notebooks", []), NOTEBOOK_LIST_FIELDS, object_type="notebook", **kwargs)
 
     def _notebooks__get(self, object_id):
         """A new signed link on every call, issued now on the client's clock (docs/PLAN.md 17.9)."""
@@ -225,13 +241,13 @@ class FakeClient:
         return row
 
     def _services__list(self, **kwargs):
-        return self._list(self.data.get("services", []), SERVICE_LIST_FIELDS, **kwargs)
+        return self._list(self.data.get("services", []), SERVICE_LIST_FIELDS, object_type="service", **kwargs)
 
     def _services__get(self, object_id):
         return self._get(self.data.get("services", []), object_id)
 
     def _workflows__list(self, **kwargs):
-        return self._list(self.data.get("workflows", []), WORKFLOW_LIST_FIELDS, **kwargs)
+        return self._list(self.data.get("workflows", []), WORKFLOW_LIST_FIELDS, object_type="workflow", **kwargs)
 
     def _workflows__get(self, object_id):
         return self._get(self.data.get("workflows", []), object_id)

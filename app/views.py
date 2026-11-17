@@ -44,6 +44,8 @@ TYPE_LABELS_PLURAL = {
     "service": "Services",
     "workflow": "Workflows with inline code",
 }
+# The type names on the Overview's warning for a list that stopped partway (coverage row_kind "list_failed").
+LIST_FAILED_LABELS = {**TYPE_LABELS_PLURAL, "workflow": "Workflows"}
 SCAN_STATUS_LABELS = {"scanned": "Scanned", "partial": "Partial", "not_scanned": "Not scanned", "pending": "Not scanned"}
 LANGUAGE_LABELS = {"r": "R", "sql": "SQL", "javascript": "JavaScript", "dbt": "dbt on a custom or pinned image"}
 
@@ -311,6 +313,12 @@ def overview(objects: list[dict], findings: list[dict], coverage: list[dict], ch
     outside_window = sum(r.get("found_count") or 0 for r in coverage if r.get("row_kind") == "outside_window")
     # The scanner's fixed note when owner active status is only partly known or not known (row_kind "users").
     users_note = next((r.get("reason") for r in coverage if r.get("row_kind") == "users" and r.get("reason")), None)
+    # One warning per type whose list stopped partway (row_kind "list_failed", a fixed note; docs/PLAN.md 17.12).
+    list_failures = [
+        {"type": LIST_FAILED_LABELS.get(r.get("object_type"), r.get("object_type") or ""), "note": r.get("reason")}
+        for r in sorted((r for r in coverage if r.get("row_kind") == "list_failed" and r.get("reason")),
+                        key=lambda r: order.index(r["object_type"]) if r.get("object_type") in order else len(order))
+    ]
 
     pairs = {(f["object_id"], f["rule_id"]) for f in findings}
     status_of = current_checklist(checklist)
@@ -341,6 +349,7 @@ def overview(objects: list[dict], findings: list[dict], coverage: list[dict], ch
         "outside_window": outside_window,
         "templates_text": template_findings_text(objects, findings),
         "users_note": users_note,
+        "list_failures": list_failures,
         "checklist": {
             "total": total_pairs, "objects": len({p[0] for p in pairs}),
             "open": progress.get("open", 0), "fixed": progress.get("fixed", 0), "ignored": progress.get("ignored", 0),

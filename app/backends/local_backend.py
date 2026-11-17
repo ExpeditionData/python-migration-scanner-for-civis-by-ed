@@ -19,7 +19,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from common.schema import CHECKLIST_STATUS, SCAN_RUNS, TABLES
+from common.models import ObjectType, list_failed_note
+from common.schema import CHECKLIST_STATUS, COVERAGE, SCAN_RUNS, TABLES
 from common import sql
 from app.backends.base import (
     ChecklistSaveError, JobRun, LogLine, ResultsUnavailable, StorageFacts, StorageSetup, normalize_row,
@@ -34,7 +35,7 @@ STATES = (
     "normal", "no-scan", "first-scan-running", "first-scan-cancelled", "failed", "tables-failed", "schema-missing",
     "no-job-id",
     "job-unreadable", "database-unrecognized", "schema-refused", "tables-missing", "setup-failures",
-    "not-scanner-job", "schema-shared",
+    "not-scanner-job", "schema-shared", "list-failed",
 )
 # States that look like a new install: no scans yet, and the results storage is not set up.
 FRESH_STATES = ("schema-missing", "schema-refused", "tables-missing", "schema-shared")
@@ -47,6 +48,8 @@ PREVIEW_ROBOT = {"id": 15, "name": "Example Robot", "username": "example_robot"}
 PREVIEW_OTHER_USER = {"id": 12, "name": "Example Owner Casey", "username": "example_owner_casey"}
 PREVIEW_TAG = "v0.1.0-rc3"
 PREVIEW_SERVICE_ID = 9200
+# list-failed: every scan's custom script list stopped after 150 rows with HTTP 503 (docs/PLAN.md 17.12).
+PREVIEW_LIST_FAILED = (ObjectType.CUSTOM_SCRIPT, 150, 503, "CivisAPIError")
 
 
 def preview_job(job_id: int, state: str = "normal") -> dict:
@@ -212,6 +215,12 @@ class LocalResults:
                 # before it wrote one).
                 first = self._running_run_id(conn)
                 rows = [r for r in rows if r.get("run_id") == first]
+            if self.state == "list-failed" and table == COVERAGE.name and run_id is not None:
+                object_type, rows_read, status, error_name = PREVIEW_LIST_FAILED
+                rows.append(normalize_row(table, {
+                    "run_id": run_id, "row_kind": "list_failed", "object_type": object_type.value,
+                    "found_count": rows_read, "reason": list_failed_note(object_type, rows_read, status, error_name),
+                }))
             return rows
 
     @staticmethod

@@ -108,7 +108,8 @@ def test_a_fatal_in_inventory_writes_a_failed_row(tmp_path, log_stream):
     assert "PHASE name=inventory state=start" in logged and MARK not in log_stream.getvalue()
 
 
-def test_a_fatal_in_a_list_call_names_the_object_type(tmp_path, log_stream, monkeypatch):
+def test_one_failed_list_call_no_longer_stops_the_scan(tmp_path, log_stream, monkeypatch):
+    """docs/PLAN.md 17.12: a list that fails is logged with LIST_FAILED and the scan goes on (tests/test_list_failed.py)."""
     original = FakeClient._scripts__list
 
     def refuse_containers(self, type=None, **kwargs):
@@ -117,10 +118,41 @@ def test_a_fatal_in_a_list_call_names_the_object_type(tmp_path, log_stream, monk
         return original(self, type=type, **kwargs)
 
     monkeypatch.setattr(FakeClient, "_scripts__list", refuse_containers)
+    assert dry_run(tmp_path, now=NOW).status == "succeeded"
+    logged = lines(log_stream)
+    assert "LIST_FAILED type=container_script rows_read=0 error=CivisAPIError status=503" in logged
+    assert not [line for line in logged if line.startswith("FATAL")] and MARK not in log_stream.getvalue()
+    assert scan_runs(tmp_path) == [("running", 0), ("succeeded", 1)]
+
+
+EVERY_LIST_FAILS = {
+    "python_script": {"status": 503, "after": 2},  # The first list read, so its error and step are on the FATAL line.
+    "container_script": {"status": 500},
+    "custom_script": {"status": 502},
+    "dbt_script": {"status": 500},
+    "notebook": {"status": 504},
+    "service": {"status": 500},
+    "workflow": {"status": 429},
+}
+
+
+def test_every_list_failing_stops_with_the_first_failure(tmp_path, log_stream):
     with pytest.raises(ScanFailed):
-        dry_run(tmp_path, now=NOW)
-    assert lines(log_stream)[-1] == "FATAL error=CivisAPIError status=503 step=inventory_list_container_script"
+        dry_run(tmp_path, now=NOW, data=synthetic(list_errors=EVERY_LIST_FAILS))
+    logged = lines(log_stream)
+    assert logged[-1] == "FATAL error=FakeAPIError status=503 step=inventory_list_python_script"
+    assert len([line for line in logged if line.startswith("LIST_FAILED ")]) == 7
+    assert not [line for line in logged if line.startswith("INVENTORY ")]  # It stopped before choosing rows.
     assert scan_runs(tmp_path) == [("running", 0), ("failed", 1)]
+
+
+def test_main_exits_1_when_every_list_fails(tmp_path, log_stream, monkeypatch):
+    original = entry.dry_run
+    monkeypatch.setattr(entry, "dry_run", lambda out, **kwargs: original(
+        out, data=synthetic(list_errors=EVERY_LIST_FAILS), **kwargs))
+    assert entry.main(["--dry-run", "--out", str(tmp_path)]) == 1
+    assert [line for line in lines(log_stream) if line.startswith("FATAL")] == [
+        "FATAL error=FakeAPIError status=503 step=inventory_list_python_script"]
 
 
 def test_a_fatal_in_the_code_scan(tmp_path, log_stream, monkeypatch):

@@ -184,3 +184,28 @@ class CoverageCounts:
     def add_not_python(self, language: str | None) -> None:
         key = (language or "unknown").strip().lower() or "unknown"
         self.not_python[key] = self.not_python.get(key, 0) + 1
+
+
+# The fixed coverage note for a list call that stopped partway (coverage row_kind "list_failed", docs/PLAN.md
+# 17.12). Only the object type, the number of rows read, and the HTTP status or error type name are filled in,
+# never text from Civis or an exception's message.
+LIST_NAMES = {
+    ObjectType.PYTHON_SCRIPT: "Python scripts",
+    ObjectType.CONTAINER_SCRIPT: "container scripts",
+    ObjectType.CUSTOM_SCRIPT: "custom scripts",
+    ObjectType.DBT_SCRIPT: "dbt scripts",
+    ObjectType.NOTEBOOK: "notebooks",
+    ObjectType.SERVICE: "Services",
+    ObjectType.WORKFLOW: "workflows",
+}
+LIST_FAILED_NOTE = (
+    "Civis stopped returning the list of {names} after {rows} ({cause}). Any {names} after that point were not "
+    "found or scanned. Run a new scan to check them."
+)
+
+
+def list_failed_note(object_type: ObjectType | str, rows_read: int, status: int | None, error_name: str) -> str:
+    """The note for one type's failed list: the HTTP status when the error had one, else its type name."""
+    rows = "1 row" if rows_read == 1 else f"{rows_read:,} rows"
+    cause = f"HTTP {status}" if status is not None else error_name
+    return LIST_FAILED_NOTE.format(names=LIST_NAMES[ObjectType(object_type)], rows=rows, cause=cause)
