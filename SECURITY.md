@@ -110,6 +110,49 @@ to check that the schema and its tables exist and that it holds nothing else (`t
 **Sees:** what the Civis user the scan runs as can see, and no more. We
 recommend running it as your Robot user.
 
+## The install script
+
+The install script ([install/civis_install.py](install/civis_install.py)) is
+the one exception to the read-only rule above. It is not part of the scanner
+or the web app. An admin reads it, sets its values, and runs it by hand as a
+Civis Python script, once to install and once per update, the same way they
+would follow setup steps by hand. The scanner and the web app are designed
+never to import it, and stay read-only as described above.
+
+What it is designed to do:
+
+- **Create the two objects.** In install mode, it creates the scanner job and
+  the Service.
+- **Change only listed fields.** In update mode, it changes only the fields
+  the README lists under "What the install script sets", on the two objects
+  whose IDs the admin gives. It keeps the scanner job's `RESULTS_DB` and
+  `RESULTS_SCHEMA` exactly as they are and checks them after the update.
+- **Nothing else.** It does not delete, archive, or share anything, and does
+  not start a scanner run or a Service deployment.
+
+How it is built so it cannot touch anything else in your Civis:
+
+- **Four write calls.** Its only write calls are `scripts.post_containers`,
+  `scripts.patch_containers`, `services.post`, and `services.patch`. Every
+  other call is a read: the running user, the results credential, the
+  database lookup, the GitHub credential's type, and the two objects. It
+  sends no SQL, calls nothing in `civis.io`, reads no table, file, run log, or
+  other script, and does not read a credential's secret.
+- **Identity checks before a change.** A change goes only to an object that
+  passed the identity check in the same run, read fresh right before the
+  change. The scanner job must be owned by the running user, use the
+  `civisanalytics/datascience-python` image, and have exactly this tool's
+  command. The Service must be owned by the running user, use the
+  `civisanalytics/civis-services-flask` image, and either use this
+  repository or have a `SCANNER_JOB_ID` equal to the scanner job's ID. In
+  install mode, a change goes only to an object the same run just created.
+- **Stops before any write.** Every check runs before the first write. A
+  failed check stops the script, names the check with a fixed label, and
+  says "Nothing changed."
+- **Prints no content.** It prints only pass or fail, field names, fixed
+  labels, and error types. The IDs of the objects it creates print on one
+  line that starts with `KEEP IN CIVIS:`.
+
 ## What Civis records when the tool runs
 
 Civis creates records for any use of its API, including this tool's. They are

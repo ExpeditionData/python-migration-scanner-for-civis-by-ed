@@ -45,6 +45,19 @@ be made public at any time.
   object, including the scanner job's settings and the Service. Every SQL
   statement is CREATE SCHEMA IF NOT EXISTS, CREATE TABLE IF NOT EXISTS,
   SELECT, INSERT, or DELETE in the results schema (`tests/test_sql_scope.py`).
+- **The one exception: the install script** (Rob, November 13, 2026).
+  `install/civis_install.py` is not the scanner or the app. An admin reads it,
+  sets its values, and runs it by hand as a Civis Python script, once to
+  install and once per update. It creates the scanner job and the Service,
+  and on update changes only the fields it lists, on the two objects whose
+  IDs the admin gives. It never deletes, archives, or shares anything, and
+  never starts a run or a deployment. Its only write calls are
+  `scripts.post_containers`, `scripts.patch_containers`, `services.post`, and
+  `services.patch`; a patch goes only to an object that passed the identity
+  check in the same run (or that the same run created); it sends no SQL and
+  never calls `civis.io` (docs/PLAN.md 17.14). The scanner and the app stay
+  read-only as above and never import the install script
+  (`tests/test_install_boundary.py`).
 - **Security and privacy requirements** are in [SECURITY.md](SECURITY.md). Code
   must follow them: Civis content (code, logs, notebook outputs) stays in
   memory and only object ID, rule ID, file, and line number are stored; the
