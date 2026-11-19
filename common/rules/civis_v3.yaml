@@ -3,6 +3,7 @@
 # Source: civis-python v3 changelog (v3-changelog branch) and the civis-python
 # source on main, both read October 9, 2026. Log patterns are the exact
 # FutureWarning messages that civis-python 2.9.3 and later print.
+# civis-python 2.11.0 changelog read November 19, 2026 (CV3-CIVIS-TO-CSV-UNQUOTED).
 #
 # Approved in docs/PLAN.md section 7. Not included yet, by decision: the 37
 # pending list_*_shares and search.list renames. Revisit them, and re-check
@@ -176,6 +177,22 @@ rules:
         max_positional: 2
     fix: Pass return_as="files" to keep the current behavior. In v3 the default changes from "files" to "future". This change is stated in the civis-python source, not in the changelog.
     source: https://github.com/civisanalytics/civis-python/blob/main/src/civis/utils/_jobs.py
+
+  - id: CV3-CIVIS-TO-CSV-UNQUOTED
+    title: The unquoted argument of civis.io.civis_to_csv is removed
+    severity: high
+    confidence: high
+    ast:
+      - match: call
+        qualnames: [civis.io.civis_to_csv]
+        names: [civis_to_csv]
+        keywords_any: [unquoted]
+        or_min_positional: 11
+    python_regex: 'civis_to_csv\s*\(.*\bunquoted\s*='
+    log:
+      patterns: ['keyword argument ''unquoted'' of civis\.io\.civis_to_csv']
+    fix: Remove the unquoted argument from civis.io.civis_to_csv. civis-python 2.11.0 says it has no effect, and v3 removes it. civis.io.civis_to_multifile_csv keeps its unquoted argument.
+    source: https://github.com/civisanalytics/civis-python/blob/main/CHANGELOG.md
 
   - id: CV3-UNPINNED-INSTALL
     title: civis is installed at run time without an upper bound, so it will get v3

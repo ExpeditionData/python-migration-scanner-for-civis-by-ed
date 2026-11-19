@@ -78,8 +78,9 @@ be made public at any time.
   live test set up on `v0.1.0-rc5` and ran its scans on `v0.1.0-rc10`. The
   retest ran on `v0.1.0-rc11`, on a fresh install made with
   `install/civis_install.py`, with `LOOKBACK_DAYS` 30. The retest's job and
-  Service move to `v0.1.0-rc12` for the last scan with the GitHub token and
-  the test summary. Create a tag or a GitHub Release only when Rob's prompt
+  Service moved to `v0.1.0-rc12` for a scan with the GitHub token, and move
+  to `v0.1.0-rc13` (scanner image 9.2.0) for the last scan with the token
+  and the test summary. Create a tag or a GitHub Release only when Rob's prompt
   says to.
 - Commit after each completed step, with a clear message that says what changed
   and why.
@@ -241,7 +242,7 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   live progress that stops with one line instead of reloading the frame,
   run labels by Civis run ID that stay the same after retention, and a busy
   cue on every same-tab app link. The retest ran on `v0.1.0-rc11` and finishes on
-  `v0.1.0-rc12`, with `LOOKBACK_DAYS` 30. Phase 7 testing on `v0.1.0-rc10` is done, and the
+  `v0.1.0-rc13`, with `LOOKBACK_DAYS` 30. Phase 7 testing on `v0.1.0-rc10` is done, and the
   docs were updated from the live test (docs/PLAN.md 17.10); the test with a
   GitHub token runs during the retest. Post-test build part 1 (the busy cue's look,
   "Canceled" in UI text, the Findings sideways scroll at phone width, and
@@ -255,8 +256,11 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   (docs/PLAN.md 17.11 to 17.14) is tagged `v0.1.0-rc11`, and the retest
   follows TESTING.md "Retest on v0.1.0-rc11". rc12 (docs/PLAN.md 17.15)
   counts every Civis default tag after Civis moved to 9.2, with docs from
-  the retest; the retest finishes on it ("Default tags on v0.1.0-rc12" in
-  TESTING.md).
+  the retest ("Default tags on v0.1.0-rc12" in TESTING.md). rc13
+  (docs/PLAN.md 17.16) moves the scanner image to
+  `datascience-python:9.2.0` (Python 3.14.10, civis 2.11.0, certifi
+  2026.10.23) and adds CV3-CIVIS-TO-CSV-UNQUOTED; the retest finishes on it
+  ("Scanner image on v0.1.0-rc13" in TESTING.md).
   Implementation choices not in the approved plan are in docs/PLAN.md
   sections 10 to 17.
 - **App flow.** `app/__init__.create_app` -> `app/services.py` (Civis or local

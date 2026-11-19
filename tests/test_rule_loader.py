@@ -24,7 +24,7 @@ def doc(**rule_overrides):
 
 def test_shipped_rule_files_load():
     rules = load_rules()
-    assert len(rules.family("civis_v3")) == 33
+    assert len(rules.family("civis_v3")) == 34
     assert len(rules.family("python315")) == 25
     assert len(set(rules.ids())) == len(rules)
 

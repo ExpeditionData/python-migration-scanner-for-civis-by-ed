@@ -309,7 +309,7 @@ Most of these changes have warned since 3.13 or 3.14. But Python hides `Deprecat
 
 ## 7. civis-python v3 rules (approved)
 
-**Conclusion: ship 33 rules.**
+**Conclusion: ship 33 rules.** (34 since 17.16.)
 
 - **11 for removals:** the 8 non-rename changelog items, with the four removed classes getting one rule each.
 - **1 for the undocumented `run_template` default change.**
@@ -333,8 +333,9 @@ The 19 renames match the changelog exactly. I also rebuilt the list from the cli
 | CV3-SERVICECLIENT | `ServiceClient` removed, with no replacement | AST: name or import | High | Call the Service over HTTP directly. |
 | CV3-POLLABLERESULT | `PollableResult` becomes private (`_PollableResult`) | AST: name or import | High | Use `CivisFuture`. |
 | CV3-CIVISASYNCRESULTBASE | `CivisAsyncResultBase` becomes private | AST: name or import | High | Use `CivisFuture`. |
-| CV3-RUN-TEMPLATE-JSONVALUE | `JSONValue` parameter of `civis.utils.run_template` removed | AST: `run_template` with `JSONValue=` or a third positional argument | High (keyword), Medium (positional) | Use `return_as="JSONValue"`. |
+| CV3-RUN-TEMPLATE-JSONVALUE | `JSONValue` parameter of `civis.utils.run_template` removed | AST: `run_template` with `JSONValue=` or a third positional argument | High (AST and log), Medium (regex fallback) | Use `return_as="JSONValue"`. |
 | CV3-RUN-TEMPLATE-DEFAULT | Default `return_as` of `run_template` changes from `"files"` to `"future"`. Not in the changelog; stated in the civis-python source. | AST: `run_template` with neither `return_as=` nor `JSONValue` | Medium | Pass `return_as="files"` to keep current behavior. |
+| CV3-CIVIS-TO-CSV-UNQUOTED | `unquoted` argument of `civis.io.civis_to_csv` removed; deprecated in civis-python 2.11.0 | AST: `civis_to_csv` with `unquoted=` or an 11th positional argument; regex names `civis_to_csv`; log: the 2.11 FutureWarning | High (AST and log), Medium (regex fallback) | Remove the argument; it has no effect. (added in 17.16) |
 | CV3-UNPINNED-INSTALL | Code that installs civis at run time without an upper bound gets v3 in February, **even on a custom or pinned image** | Regex on container commands, notebook `!pip`/`%pip` cells, and `requirements.txt` and `pyproject.toml` in git repos: `civis` with no version or with no `<3` bound | Medium | Pin `civis>=2.8,<3` until the code is updated. |
 | CV3-LOG-FUTUREWARNING | Any removed feature used on the last run | Regex on log text: `FutureWarning: .*civis-python v3\.0\.0`. The method name is parsed from ``The method name ``<client>.X.Y`` is deprecated``. The unrelated `tables/:id/refresh` warning is excluded. | High (see decision 6) | Shown per matched feature |
 
@@ -1845,6 +1846,19 @@ After:  the same INVENTORY lines, the same RUN counts, affected objects 21, advi
 ```
 
 Affected and advisory objects are counted as in the test summary (`app/summary.scan_counts`).
+
+#### Part B: CV3-CIVIS-TO-CSV-UNQUOTED
+
+| # | Change | Status |
+|---|---|---|
+| 17.16.11 | **The rule.** New `CV3-CIVIS-TO-CSV-UNQUOTED` in `common/rules/civis_v3.yaml`, after `CV3-RUN-TEMPLATE-DEFAULT` (severity high, confidence high, source the civis-python `CHANGELOG.md` on main). civis-python 2.11.0 deprecates the `unquoted` argument of `civis.io.civis_to_csv` (it has no effect) and removes it in v3. The v3-changelog branch does not list it yet; the 2.11.0 changelog and the `civis_to_csv` docstring do. The file's header comment records that the 2.11.0 changelog was read on November 19, 2026. The civis_v3 family has 34 rules. | Decided by Rob on November 19, 2026 |
+| 17.16.12 | **The regex fallback** is `civis_to_csv\s*\(.*\bunquoted\s*=`. It names `civis_to_csv`, so `civis_to_multifile_csv(..., unquoted=...)`, which keeps its `unquoted` argument in v3, does not match (its name does not contain `civis_to_csv`). The AST match names `civis.io.civis_to_csv` and a bare `civis_to_csv`. | Decided by Rob on November 19, 2026 |
+| 17.16.13 | **Positional count.** `unquoted` is the 11th parameter of `civis_to_csv` in civis 2.10.0 and 2.11.0, so the AST match also fires on 11 or more positional arguments (`or_min_positional: 11`). | Decided by Rob on November 19, 2026 |
+| 17.16.14 | **Log.** The log pattern matches the exact civis 2.11.0 warning: "FutureWarning: The keyword argument 'unquoted' of civis.io.civis_to_csv has no effect and is deprecated since civis-python v2.11.0. It will be removed in civis-python v3.0.0 (scheduled for February 2027). Please stop setting 'unquoted'." Before this rule, the catch-all log rule `CV3-LOG-FUTUREWARNING` caught that warning, but only on runs made with civis 2.11; civis 2.10 and earlier print no warning for `unquoted`. Now the specific rule explains the line, and the catch-all does not also fire. | Decided by Rob on November 19, 2026 |
+| 17.16.15 | **Tests.** `tests/test_rules.py`: fixtures for `civis.io.civis_to_csv(..., unquoted=True)` (positive) and the same call with `delimiter='\|'` (negative); `from civis.io import civis_to_csv` with `unquoted=False` (positive) and `civis.io.civis_to_multifile_csv('select 1', 'db', unquoted=True)` (negative); 11 positional arguments (positive) and 10 (negative); the exact 2.11.0 warning as a log sample (`test_rule_log_samples` checks that `CV3-LOG-FUTUREWARNING` does not also fire); `civis_to_multifile_csv(..., unquoted=True)` matches no rule in code that parses and in code that does not (the regex fallback); and `civis_to_csv(..., unquoted=True` in code that does not parse still matches the new rule. `tests/test_rule_loader.py` counts 34 civis_v3 rules. `tests/test_self_scan.py` scans only `scanner/`, `common/`, `app/`, and `install/`, so it does not read the fixtures and is unchanged. The synthetic instance and the preview are unchanged. | Decided by Rob on November 19, 2026 |
+| 17.16.16 | **Section 7 Confidence cells.** The rows for `CV3-RUN-TEMPLATE-JSONVALUE` and `CV3-CIVIS-TO-CSV-UNQUOTED` now say "High (AST and log), Medium (regex fallback)", which is what `scanner/engine.py` does: every AST match, keyword or positional, takes the rule's own confidence (High), and only the regex fallback is Medium. The JSONValue row said "Medium (positional)" before. This was found while writing rc13, and no code changed. | Decided by Rob on November 19, 2026 |
+
+The plain dry run after this part has the same INVENTORY lines, the same RUN counts, affected objects 21, advisory objects 4, and findings 43, because no synthetic object calls `civis_to_csv`.
 
 #### Not changed
 

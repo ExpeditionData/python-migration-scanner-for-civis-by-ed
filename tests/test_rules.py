@@ -121,6 +121,26 @@ CASES: dict[str, list[tuple[str, str, str]]] = {
             "from my_helpers import run_template\nfiles = run_template(12, {'a': 1})\n",
         ),
     ],
+    "CV3-CIVIS-TO-CSV-UNQUOTED": [
+        (
+            "python",
+            "import civis\nfut = civis.io.civis_to_csv('out.csv', 'select 1', 'db', unquoted=True)\n",
+            "import civis\nfut = civis.io.civis_to_csv('out.csv', 'select 1', 'db', delimiter='|')\n",
+        ),
+        (
+            "python",
+            "from civis.io import civis_to_csv\nfut = civis_to_csv('out.csv', 'select 1', 'db', unquoted=False)\n",
+            "import civis\nfut = civis.io.civis_to_multifile_csv('select 1', 'db', unquoted=True)\n",
+        ),
+        (
+            # unquoted is civis_to_csv's 11th parameter (civis 2.10.0 and 2.11.0), so 11 positional arguments set it.
+            "python",
+            "import civis\nfut = civis.io.civis_to_csv('out.csv', 'select 1', 'db', None, None, 'r', True, ',', 'utf-8',"
+            " None, False)\n",
+            "import civis\nfut = civis.io.civis_to_csv('out.csv', 'select 1', 'db', None, None, 'r', True, ',', 'utf-8',"
+            " None)\n",
+        ),
+    ],
     "CV3-UNPINNED-INSTALL": [
         ("shell", "pip install civis pandas==2.2.0 && python run.py", "pip install 'civis>=2.8,<3' && python run.py"),
         ("shell", "python -m pip install -U civis>=2.4", "python -m pip install -r requirements.txt"),
@@ -337,6 +357,7 @@ LOG_SAMPLES: dict[str, str] = {
     "CV3-POLLABLERESULT": "FutureWarning: The PollableResult class is deprecated since civis-python v2.10.0. In civis-python v3.0.0 (scheduled for February 2027), it will be renamed as _PollableResult intended for private use only within civis-python.",
     "CV3-CIVISASYNCRESULTBASE": "FutureWarning: The CivisAsyncResultBase class is deprecated since civis-python v2.10.0. In civis-python v3.0.0 (scheduled for February 2027), it will be renamed as _CivisAsyncResultBase intended for private use only within civis-python.",
     "CV3-RUN-TEMPLATE-JSONVALUE": "FutureWarning: As of civis-python v2.8.0, civis.utils.run_template can return three types of values, so 'JSONValue' is deprecated and will be removed in civis-python v3.0.0 (scheduled for February 2027).",
+    "CV3-CIVIS-TO-CSV-UNQUOTED": "/app/job.py:8: FutureWarning: The keyword argument 'unquoted' of civis.io.civis_to_csv has no effect and is deprecated since civis-python v2.11.0. It will be removed in civis-python v3.0.0 (scheduled for February 2027). Please stop setting 'unquoted'.",
     "CV3-LOG-FUTUREWARNING": "/app/job.py:40: FutureWarning: Some other feature is deprecated and will be removed at civis-python v3.0.0 (scheduled for February 2027).",
     "PY315-STRPTIME-NO-YEAR": "/app/job.py:7: DeprecationWarning: Parsing dates involving a day of month without a year specified is ambiguous and fails to parse leap day. The default behavior will change in Python 3.15.",
     "PY315-LOAD-MODULE": "<frozen importlib._bootstrap>:1: DeprecationWarning: the load_module() method is deprecated and slated for removal in Python 3.15; use exec_module() instead",
@@ -458,6 +479,23 @@ def test_unrelated_log_lines_do_not_match(line):
 def test_zipimporter_load_module_is_not_double_reported():
     found = run("python", CASES["PY315-ZIPIMPORT-LOAD-MODULE"][0][1])
     assert "PY315-LOAD-MODULE" not in found
+
+
+def test_civis_to_multifile_csv_unquoted_matches_no_rule():
+    # civis_to_multifile_csv keeps its unquoted argument in v3, so neither the AST rule nor the regex fallback fires.
+    parsed = ENGINE.scan_python("import civis\nfut = civis.io.civis_to_multifile_csv('select 1', 'db', unquoted=True)\n",
+                                "fixture")
+    assert parsed.fully_parsed and parsed.matches == []
+    broken = ENGINE.scan_python("import civis\nfut = civis.io.civis_to_multifile_csv('select 1', 'db', unquoted=True\n",
+                                "fixture")
+    assert not broken.fully_parsed and broken.matches == []
+
+
+def test_civis_to_csv_unquoted_matches_in_code_that_does_not_parse():
+    result = ENGINE.scan_python("import civis\nfut = civis.io.civis_to_csv('out.csv', 'select 1', 'db', unquoted=True\n",
+                                "fixture")
+    assert not result.fully_parsed
+    assert {m.rule_id for m in result.matches} == {"CV3-CIVIS-TO-CSV-UNQUOTED"}
 
 
 def test_run_template_rules_do_not_overlap():

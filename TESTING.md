@@ -2,8 +2,9 @@
 
 A step-by-step checklist for the first live test of Python Migration Scanner
 inside a **test organization's** Civis environment, and for its retest on
-`v0.1.0-rc11` and `v0.1.0-rc12` ("Retest on v0.1.0-rc11" and "Default tags
-on v0.1.0-rc12" under "Order"). It checks the
+`v0.1.0-rc11`, `v0.1.0-rc12`, and `v0.1.0-rc13` ("Retest on v0.1.0-rc11",
+"Default tags on v0.1.0-rc12", and "Scanner image on v0.1.0-rc13" under
+"Order"). It checks the
 README setup and every fact that could not be confirmed from documentation
 (docs/PLAN.md marks these "confirm in Phase 7").
 
@@ -18,7 +19,9 @@ README setup and every fact that could not be confirmed from documentation
   `error=CivisAPIError status=403`) are fine to record; they hold no content.
 - If something you would need to record looks like client content, write
   "content withheld" and describe it in general terms instead.
-- **Release tag:** `v0.1.0-rc12` follows `v0.1.0-rc11` with the default-tag
+- **Release tag:** `v0.1.0-rc13` moves the scanner image to
+  `datascience-python:9.2.0` (docs/PLAN.md 17.16) and adds
+  CV3-CIVIS-TO-CSV-UNQUOTED. `v0.1.0-rc12` follows `v0.1.0-rc11` with the default-tag
   rule (docs/PLAN.md 17.15) and docs from the retest. The retest's job and
   Service move to `v0.1.0-rc12` with the install script's update mode during
   step 6, with the token still attached. `v0.1.0-rc11` follows
@@ -35,8 +38,9 @@ README setup and every fact that could not be confirmed from documentation
   scan checks scripts that ran or changed in the last 30 days. The job and
   the Service from the first test are moved to `v0.1.0-rc11` once for item
   5.6, then removed. The schema stays. Use `v0.1.0-rc11` wherever the README
-  says `<release tag>`, and `v0.1.0-rc12` from "Default tags on
-  v0.1.0-rc12" on. The first test set up on `v0.1.0-rc5` and ran its
+  says `<release tag>`, `v0.1.0-rc12` from "Default tags on
+  v0.1.0-rc12" on, and `v0.1.0-rc13` from "Scanner image on v0.1.0-rc13"
+  on. The first test set up on `v0.1.0-rc5` and ran its
   scans on `v0.1.0-rc10`, with `LOOKBACK_DAYS` `30`. `v0.1.0-rc10` follows
   `v0.1.0-rc9` because scan C on `v0.1.0-rc9`
   succeeded but every notebook was refused with HTTP 403 and live progress
@@ -169,9 +173,34 @@ Run this after step 6's scan with the token and before the token is removed
    `PY315-PINNED-PACKAGE-INSTALL` (Advisory, the impact that rule sets for
    itself), and its rows from other rules are Affected. Count the notebooks
    whose tag is `5.2` or newer, and whether each shows Default image Yes.
-3. The rest of step 6 (update mode with `GITHUB_CREDENTIAL` `"clear"`, delete
+3. Then "Scanner image on v0.1.0-rc13" below.
+
+### Scanner image on v0.1.0-rc13
+
+Run this after the rc12 scan with the token and before the token is removed
+(docs/PLAN.md 17.16).
+
+1. README "Update to a new release" from `v0.1.0-rc12` to `v0.1.0-rc13` on
+   the retest's job and Service, check mode first, with `GITHUB_CREDENTIAL`
+   `None` so the token stays attached. Expected: every `CHECK` line passes,
+   the job's plan line starts `PLAN scanner_job: update
+   fields=docker_image_tag,repo_ref profile=with_token`, `PLAN service: update
+   fields=git_repo_ref`, and in update mode every `RESULT` line passes,
+   `image_set` included. Record the result lines without IDs.
+2. On the Service's page in Civis, click Update Deployment, or Start
+   Deployment if the Service is stopped, then press F5. Setup line 2 passes
+   with the token's profile and tag `9.2.0`.
+3. One scan with the token. The run log has `REQUEST_TIMEOUT installed=yes
+   connect=15 read=120`, and the final `RUN` line has `status=succeeded`.
+   Record its counters and the minutes. The GitHub test container script
+   still shows Default image Yes and the same rule IDs as the rc12 scan.
+   CV3-CIVIS-TO-CSV-UNQUOTED has no live test object; unit tests cover it.
+4. The rest of step 6 (update mode with `GITHUB_CREDENTIAL` `"clear"`, delete
    the Custom credential, and revoke the token), then step 8 (item 5.7) on
-   this scan.
+   this scan. If this scan cannot run before the token expires, run the rest
+   of step 6 and step 8 on the rc12 scan instead, then update to
+   `v0.1.0-rc13` and run one scan without the token, checking (2) with the
+   no-token profile and (3) without the GitHub checks.
 
 ## Prepare the test organization
 
@@ -857,7 +886,7 @@ item 5.7 pasted below it. Counts and redacted error types only.
 
 ```
 Python Migration Scanner: live test results (first test or retest)
-Release tag: first test v0.1.0-rc5 (setup), v0.1.0-rc10 (scans, LOOKBACK_DAYS 30); retest v0.1.0-rc11 (fresh install, LOOKBACK_DAYS 30); v0.1.0-rc12 (default tags) for the last token scan and the summary
+Release tag: first test v0.1.0-rc5 (setup), v0.1.0-rc10 (scans, LOOKBACK_DAYS 30); retest v0.1.0-rc11 (fresh install, LOOKBACK_DAYS 30); v0.1.0-rc12 (default tags) for the last token scan and the summary; v0.1.0-rc13 (scanner image 9.2.0)
 Date (MM/DD/YYYY):
 Browser:
 
@@ -916,6 +945,7 @@ Item  Result (pass/fail/skipped)  Counts or note
                          workflow git_backed=  civis_read_failed=
                          civis_git_reads=  civis_git_failures=   failures by type:
 rc12 tags: github container default=  rule IDs (count)=  first-test container default=  notebooks on 5.2 or newer=  shown as default=
+rc13 image: update fields=  setup line 2=  token=  status=  minutes=  objects_total=  api_calls=  request_timeouts=  timeout line=
 5.1   rows=
 5.2
 5.3   rows=
