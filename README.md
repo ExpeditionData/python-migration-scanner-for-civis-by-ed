@@ -72,7 +72,12 @@ for your review.
 - **GitHub token (optional).** The normal setup has no token (see "Before you
   start" below). If you add one:
   - Use a fine-grained token with read-only "Contents" permission.
-  - Limit it to the repositories your Civis objects use.
+  - Limit it to the repositories your Civis objects use. This still limits
+    which private repositories it can read, but GitHub gives every
+    fine-grained token read access to all public repositories, whatever
+    repositories it is limited to. With a token attached, the scan also
+    downloads public repositories that your Civis objects use, so those
+    objects are scanned from GitHub.
   - Give it an expiration date.
   - Set it in the install script, which attaches it to the scanner job only,
     never to the Service.
@@ -176,7 +181,11 @@ You need:
    own code is public and needs no token. If you add one:
    - Create a **fine-grained** GitHub token with read-only **Contents**
      permission and no other permissions, limited to only those repositories,
-     with an expiration date.
+     with an expiration date. GitHub gives every fine-grained token read
+     access to all public repositories, whatever repositories it is limited
+     to, so with a token attached the scan also downloads public repositories
+     that your Civis objects use, and those objects are scanned from GitHub.
+     The limit still decides which private repositories it can read.
    - Store it in Civis as a **Custom Credential**. Put the token in the
      password field; the user name can be anything, such as `github`.
    - Create the credential while signed in as the Robot user, or share it
@@ -383,7 +392,10 @@ answer:
    fail, or review, with the fix. Fix any line that is not a pass. The sharing
    line is always "review": confirm that only Civis admins have access. The
    frame rule line passes while the rule is enforced, and is a warning while
-   `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` is `true`.
+   `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` is `true`. Line 10 (latest scan) reads
+   the new scanner job's runs: if the results schema was used by an earlier
+   install, the Overview shows that install's last scan, while line 10 says
+   "No scan has run yet." until the new scanner job's first scan.
 5. If you need help, click **Build test summary** on the Setup page, copy the
    text, and send it to whoever supports your setup. It holds counts, fixed
    labels, and error types only. Do not send the Setup page itself, which can
@@ -483,8 +495,12 @@ and resumes it when all of these are true:
 
 Otherwise **Run scan** starts a new scan. A resumed scan keeps its run ID and
 its label (the Civis run that started it), skips the objects it already
-finished, and keeps the rows it already saved. It checks the same scripts as
+saved, and keeps the rows it already saved. It checks the same scripts as
 before, because its `LOOKBACK_DAYS` window is measured from its first start.
+The scanner saves its progress every 500 objects or every 10 minutes of the
+code scan, and logs a `CHECKPOINT` line each time. A scan stopped before its
+first save keeps its label and run ID when resumed, but scans every object
+again, so its `objects_scanned` equals `objects_total`.
 There is no button to start a new scan instead while a resume applies;
 waiting until the 24 hours pass does that.
 
@@ -510,13 +526,16 @@ parameter. An update with the install script removes it and prints
 **If progress stops updating.** Live progress updates on its own for a few
 minutes after the Civis page loads. Then Civis's session for the page
 expires: Civis's proxy in front of the Service uses a cookie that lasts about
-5 to 6 minutes, and only a reload of the whole Civis page renews it. The app
-then stops updating and says so. To see the latest progress, reload the whole
+5 to 6 minutes from the whole-page load, and only a reload of the whole Civis
+page renews it. Clicks inside the app do not extend it (measured November
+18, 2026). The app then stops updating and says so. To see the latest progress, reload the whole
 Civis page with the browser's reload button (F5 on Windows). Reloading only
 the app's frame does not help. After the reload, the app opens on the
 Overview page. Civis's "Cookie expired." message on the Service's page means
 the same thing: once the cookie has expired, any click in the app shows
-"Cookie expired." in the frame until you reload the whole Civis page.
+"Cookie expired." in the frame until you reload the whole Civis page. Press
+F5 before you change checklist statuses on the Findings page: a save after
+the cookie expires shows "Cookie expired." and the unsaved statuses are lost.
 
 ### The CSV report
 
@@ -563,12 +582,20 @@ exactly as they are. Do not change the tag on the scanner job's page.
    `pass`, including `results_kept`. `run_id_removed` says `yes` if an earlier
    release left a `RUN_ID` parameter, and `no_parameter` if not.
    `other_fields_changed` lists any other field Civis changed, by name only.
-6. On the Service's page, click **Update Deployment**.
+6. On the Service's page, click **Update Deployment**, or **Start
+   Deployment** if the Service is stopped.
 7. Open the app's **Setup** page and check that every line still passes. Line 7
    compares the Service's tag with the scanner job's. It is "review" instead
    of a pass if Civis added the deploying user's GitHub token to the Service
    as `REPO_HTTP_TOKEN` (see
-   [What the install script sets](#what-the-install-script-sets)).
+   [What the install script sets](#what-the-install-script-sets)). While
+   another install of this tool in the organization uses the same repository
+   (for example an old install not yet removed), line 7's Service lookup
+   finds several matches: line 7 is "Review", says "2 Services use this
+   repository, so the app cannot tell which one it is." (with the number of
+   matches), and shows "Service lookup: several_matches (2 matches)" under
+   it. Check the Service by hand, or remove the old install (see
+   [Remove the tool](#remove-the-tool)).
 8. Archive the install script's Python script in Civis.
 9. Run a new scan. Earlier scans and checklist statuses are kept.
 

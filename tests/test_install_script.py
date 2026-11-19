@@ -604,7 +604,8 @@ def test_install_prints_the_result_lines_and_the_next_steps(capsys):
     steps = [t for t in lines if t.startswith("NEXT ")]
     assert steps == [t for t in lines[-len(steps):]]
     text = " ".join(steps)
-    for words in ("Civis admins only", "remove the default group", "Start Deployment", "Set up results storage",
+    for words in ("Civis admins only", "remove the default group", "Start Deployment",
+                  "If it shows Set up results storage, click it.",
                   "Setup page", "archive this script's copy"):
         assert words in text, words
 
@@ -776,7 +777,8 @@ def test_update_keeps_results_settings_removes_run_id_and_sets_the_listed_fields
                      "RESULT service env_set: pass", "RESULT service on_demand: pass"):
         assert expected in lines, expected
     assert not any(t.startswith("KEEP IN CIVIS:") for t in lines)
-    assert "Update Deployment" in " ".join(t for t in lines if t.startswith("NEXT "))
+    next_text = " ".join(t for t in lines if t.startswith("NEXT "))
+    assert "Update Deployment" in next_text and "Start Deployment if the Service is stopped" in next_text
 
 
 def test_update_without_run_id_reports_no_parameter(capsys):

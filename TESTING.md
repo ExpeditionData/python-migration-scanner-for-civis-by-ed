@@ -17,8 +17,12 @@ README setup and every fact that could not be confirmed from documentation
   `error=CivisAPIError status=403`) are fine to record; they hold no content.
 - If something you would need to record looks like client content, write
   "content withheld" and describe it in general terms instead.
-- **Release tag:** `v0.1.0-rc11` follows `v0.1.0-rc10` with the post-test
-  build (docs/PLAN.md 17.11 to 17.14): a quieter busy cue and "Canceled" in
+- **Release tag:** `v0.1.0-rc12` follows `v0.1.0-rc11` with the default-tag
+  rule (docs/PLAN.md 17.15) and docs from the retest. The retest's job and
+  Service move to `v0.1.0-rc12` with the install script's update mode during
+  step 6, with the token still attached. `v0.1.0-rc11` follows
+  `v0.1.0-rc10` with the post-test build (docs/PLAN.md 17.11 to 17.14): a
+  quieter busy cue and "Canceled" in
   the app's text, Python found in shell commands, a timeout on Civis
   requests, a partial inventory when one object type's list fails, resume of
   a stopped scan without editing the job, and an install script that creates
@@ -131,9 +135,15 @@ its step 2 removes them at the end of the retest.
    job's page. Record the result lines without IDs, and Setup page lines 2
    (the with-token resource profile) and 4. Run one scan, then items 1.1 (the
    GitHub step), 1.3 d, 1.4 (peak memory and CPU, and the GitHub counts),
-   3.5, and 4.8 step 4 for that scan. The token reads only the test
-   repository, so every other git-backed Python script gets a GitHub 404 and
-   is read through Civis; only the test objects are read from GitHub. Then
+   3.5, and 4.8 step 4 for that scan. GitHub gives every fine-grained token
+   read access to all public repositories, whatever repositories it is
+   limited to, so with the token attached the scan also downloads public
+   repositories that Civis objects use, and those objects are scanned from
+   GitHub. The retest saw this: the scan with the token read public
+   repositories as well as the private test repository. Git-backed Python
+   scripts in other private repositories get a GitHub 404 and are read
+   through Civis. Then "Default tags on v0.1.0-rc12" below runs before the
+   token is removed. Then
    run update mode with `GITHUB_CREDENTIAL` `"clear"`, check that Setup line
    2 is back on the no-token profile, delete the Custom credential, and
    revoke the token.
@@ -141,6 +151,25 @@ its step 2 removes them at the end of the retest.
    tool" steps 1 and 2. Step 3 (drop the results schema) does not apply,
    because the new install uses that schema.
 8. Item 5.7: the test summary for the retest.
+
+### Default tags on v0.1.0-rc12
+
+Run this after step 6's scan with the token and before the token is removed
+(docs/PLAN.md 17.15).
+
+1. README "Update to a new release" from `v0.1.0-rc11` to `v0.1.0-rc12` on
+   the retest's job and Service, check mode first, with `GITHUB_CREDENTIAL`
+   `None` so the token stays attached. Record the result lines without IDs.
+2. One scan with the token. On Inventory, the GitHub test container script
+   (made with no tag after Civis moved its default) shows Default image Yes,
+   and the first test's container script (on `9.1`) still shows Yes. On
+   Findings, the GitHub test container's rows include
+   `PY315-PINNED-PACKAGE-INSTALL` (Advisory, the impact that rule sets for
+   itself), and its rows from other rules are Affected. Count the notebooks
+   whose tag is `5.2` or newer, and whether each shows Default image Yes.
+3. The rest of step 6 (update mode with `GITHUB_CREDENTIAL` `"clear"`, delete
+   the Custom credential, and revoke the token), then step 8 (item 5.7) on
+   this scan.
 
 ## Prepare the test organization
 
@@ -340,7 +369,10 @@ finish the step the way the interface allows and record the difference.
   of a pass if Civis added the deploying user's GitHub token to the Service as
   `REPO_HTTP_TOKEN`. Line 6 (sharing) is "review". Line 8 (frame rule) is a
   pass (a warning only while `CIVIS_FRAME_ANCESTORS_REPORT_ONLY` is `true`,
-  item 2.2). Line 10 (latest scan) is "review" before the first scan.
+  item 2.2). Line 10 (latest scan) is "review" before the first scan. On a
+  results schema used by an earlier install, the Overview shows that
+  install's last scan, while line 10 says "No scan has run yet." until the
+  new scanner job's first scan.
 - **Record:** the result of each line (1 to 10), first visit and after item
   2.1; the resource profile shown under line 2; the `RESULTS_DB` value shape
   shown under line 4; the Service lookup method shown under line 7; the user
@@ -420,7 +452,9 @@ Only for troubleshooting, or if item 2.1 failed.
   objects"), then Save results. The Python objects found can be fewer or
   more than the listed objects checked: Services and workflows with no
   Python and custom scripts on other templates drop out, and archived jobs
-  that workflows run are added (docs/PLAN.md 17.12).
+  that workflows run are added (docs/PLAN.md 17.12). The Inventory count does
+  not show during the first minutes of listing, and the first stop line can
+  come before it does.
   The card updates on its own for the first few minutes after the Civis page
   loads. When Civis's session for the page expires (its proxy cookie lasts
   about 5 to 6 minutes), the card stops updating and shows "Progress stopped
@@ -440,8 +474,9 @@ Only for troubleshooting, or if item 2.1 failed.
 
 ### 3.4 Scan results
 
-- **Steps:** When the scan finishes, build the test summary (item 5.7) for
-  this scan. Its `run_line`, `objects_by_type`, and `findings` lines give the
+- **Steps:** When the scan finishes, press F5 (reload the whole Civis page),
+  then build the test summary (item 5.7) for this scan; without the reload,
+  the frame can show "Cookie expired.". Its `run_line`, `objects_by_type`, and `findings` lines give the
   counts below, so you do not need to copy them from the run log. Then read
   the counts on the Overview page.
 - **Expected:** Status `succeeded`; Overview counts match the summary.
@@ -662,12 +697,18 @@ Only for troubleshooting, or if item 2.1 failed.
      it, from the summary only. For Python scripts, the number read from
      GitHub is `git_backed` minus `read_through_civis` minus
      `civis_read_failed`. On the retest, the scan with the token is the one
-     scan of "Retest on v0.1.0-rc11" step 6, and the token reads only the
-     private test repository. Expected: only the test objects (the Python
-     script on a branch, the one on a tag, and the container script) are read
-     from GitHub, and the container script is scanned rather than partial;
-     every other git-backed Python script gets a GitHub 404 and is read
-     through Civis.
+     scan of "Retest on v0.1.0-rc11" step 6. The token is limited to the
+     private test repository, but GitHub gives every fine-grained token read
+     access to all public repositories, whatever repositories it is limited
+     to, so with the token attached the scan also downloads public
+     repositories that Civis objects use, and those objects are scanned from
+     GitHub. The retest saw this: the scan with the token read public
+     repositories as well as the private test repository. Expected: the test
+     objects (the Python script on a branch, the one on a tag, and the
+     container script) and objects in public repositories are read from
+     GitHub, and the container script is scanned rather than partial;
+     git-backed Python scripts in other private repositories get a GitHub 404
+     and are read through Civis.
 - **Expected:** Without the token, git-backed Python scripts and workflows are
   read through Civis, with few or no failures. From `v0.1.0-rc8`, an item on a
   branch is read through the list Civis returns for its file. A workflow whose
@@ -742,15 +783,20 @@ whether to resume (README "Resuming a stopped scan", docs/PLAN.md 17.13).
   ID from step 1. The resumed run's log has
   `RESUME decision=resume run_id=... resumes=1` right before its
   `RUN ... status=running` line, with the run ID from the canceled run's own
-  `RUN ... status=running` line. It succeeds, and its last log line shows
-  `objects_scanned` lower than `objects_total`; the Inventory total matches
+  `RUN ... status=running` line. It succeeds. The scanner saves its progress
+  every 500 objects or every 10 minutes of the code scan, with a
+  `CHECKPOINT` line each time, so its last log line shows `objects_scanned`
+  lower than `objects_total` only if the canceled run logged a `CHECKPOINT`
+  line; a scan stopped before its first save keeps its label and run ID but
+  scans every object again, so the two are equal. The Inventory total matches
   the earlier full scan. Scan history shows the scan once, with the same
   "Civis run <ID>" label as in step 1 and "Resumed 1 time" under it. The run
   in step 5 starts a new scan: its log has
   `RESUME decision=new reason=last_scan_finished`.
 - **Record:** pass or fail; yes or no: the Overview line in step 2, "Resuming"
-  in step 3, the same label, and "Resumed 1 time"; `objects_total`,
-  `objects_scanned`, and `api_calls` for the resumed run; the `RESUME` reason
+  in step 3, the same label, and "Resumed 1 time"; whether the canceled
+  run's log has a `CHECKPOINT` line; `objects_total`, `objects_scanned`, and
+  `api_calls` for the resumed run; the `RESUME` reason
   in step 5. No names.
 
 ### 5.5 Service sleep and wake
@@ -786,7 +832,9 @@ Step 1 is part of the retest and moves the first test's job and Service from
 
 ### 5.7 Test summary
 
-- **Steps:** On the Setup page, click **Build test summary**. Choose the scan
+- **Steps:** Press F5 (reload the whole Civis page) first; without it, the
+  frame can show "Cookie expired." when you click **Build test summary**.
+  On the Setup page, click **Build test summary**. Choose the scan
   in the select list (the newest finished scan is chosen by default; a running
   scan can be chosen too, but has no `run_line` yet) and click **Build
   summary**. Read the text before you copy it. Click **Copy** (or select the
@@ -807,7 +855,7 @@ item 5.7 pasted below it. Counts and redacted error types only.
 
 ```
 Python Migration Scanner: live test results (first test or retest)
-Release tag: first test v0.1.0-rc5 (setup), v0.1.0-rc10 (scans, LOOKBACK_DAYS 30); retest v0.1.0-rc11 (fresh install, LOOKBACK_DAYS 30)
+Release tag: first test v0.1.0-rc5 (setup), v0.1.0-rc10 (scans, LOOKBACK_DAYS 30); retest v0.1.0-rc11 (fresh install, LOOKBACK_DAYS 30); v0.1.0-rc12 (default tags) for the last token scan and the summary
 Date (MM/DD/YYYY):
 Browser:
 
@@ -865,10 +913,11 @@ Item  Result (pass/fail/skipped)  Counts or note
       scan 2 (token):    python git_backed=  read_through_civis=  civis_read_failed=  read_from_github=
                          workflow git_backed=  civis_read_failed=
                          civis_git_reads=  civis_git_failures=   failures by type:
+rc12 tags: github container default=  rule IDs (count)=  first-test container default=  notebooks on 5.2 or newer=  shown as default=
 5.1   rows=
 5.2
 5.3   rows=
-5.4   objects_total=  objects_scanned=  api_calls=
+5.4   objects_total=  objects_scanned=  api_calls=   CHECKPOINT in the canceled run: yes/no
       Overview line: yes/no   Resuming: yes/no   same label: yes/no   Resumed 1 time: yes/no
       step 5 RESUME reason=
 5.5   minutes to wake=

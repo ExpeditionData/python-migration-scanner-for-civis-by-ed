@@ -77,8 +77,10 @@ be made public at any time.
 - Releases are git tags, protected by the "release tags" ruleset. The first
   live test set up on `v0.1.0-rc5` and ran its scans on `v0.1.0-rc10`. The
   retest runs on `v0.1.0-rc11`, on a fresh install made with
-  `install/civis_install.py`, with `LOOKBACK_DAYS` 30. Create a tag or a
-  GitHub Release only when Rob's prompt says to.
+  `install/civis_install.py`, with `LOOKBACK_DAYS` 30. The retest's job and
+  Service move to `v0.1.0-rc12` for the last scan with the GitHub token and
+  the test summary. Create a tag or a GitHub Release only when Rob's prompt
+  says to.
 - Commit after each completed step, with a clear message that says what changed
   and why.
 - Before every commit, review the staged files (`git diff --cached --name-only`
@@ -250,7 +252,10 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   (docs/PLAN.md 17.13). Post-test build part 4 (the install script and the
   setup rewrite) is done (docs/PLAN.md 17.14). The post-test build
   (docs/PLAN.md 17.11 to 17.14) is tagged `v0.1.0-rc11`, and the retest
-  follows TESTING.md "Retest on v0.1.0-rc11".
+  follows TESTING.md "Retest on v0.1.0-rc11". rc12 (docs/PLAN.md 17.15)
+  counts every Civis default tag after Civis moved to 9.2, with docs from
+  the retest; the retest finishes on it ("Default tags on v0.1.0-rc12" in
+  TESTING.md).
   Implementation choices not in the approved plan are in docs/PLAN.md
   sections 10 to 17.
 - **App flow.** `app/__init__.create_app` -> `app/services.py` (Civis or local

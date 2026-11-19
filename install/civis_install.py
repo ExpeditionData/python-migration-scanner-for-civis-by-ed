@@ -816,7 +816,8 @@ class Installer:
             steps = [
                 "Check that the scanner job and the Service are shared with Civis admins only, and remove the "
                 "default group if Civis added one.",
-                "On the Service's page in Civis, click Update Deployment.",
+                "On the Service's page in Civis, click Update Deployment, or Start Deployment if the Service is "
+                "stopped.",
                 "Open the app's Setup page and fix any line that is not a pass.",
                 "When you are done, archive this script's copy in Civis.",
             ]
@@ -825,7 +826,7 @@ class Installer:
                 "Share the scanner job and the Service with Civis admins only, and remove the default group if "
                 "Civis added one.",
                 "On the Service's page in Civis, click Start Deployment.",
-                "Open the app and click Set up results storage.",
+                "Open the app. If it shows Set up results storage, click it.",
                 "Open the app's Setup page and fix any line that is not a pass.",
                 "When you are done, archive this script's copy in Civis.",
             ]

@@ -219,7 +219,12 @@ all of it as sensitive.
   repository from GitHub. If you add one:
   - Use a **fine-grained** GitHub token, not a classic token.
   - Give it **read-only "Contents"** permission and no other permissions.
-  - Limit it to **only the repositories** your Civis objects use.
+  - Limit it to **only the repositories** your Civis objects use. This limits
+    which private repositories it can read. GitHub gives every fine-grained
+    token read access to all public repositories, whatever repositories it is
+    limited to, so with a token attached the scan also downloads public
+    repositories that your Civis objects use, and those objects are scanned
+    from GitHub.
   - Set an **expiration date**.
   - Store it as a Civis Custom credential and set its ID in the install
     script, which checks its type and attaches it to the **scanner job only**.
