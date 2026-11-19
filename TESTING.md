@@ -2,7 +2,8 @@
 
 A step-by-step checklist for the first live test of Python Migration Scanner
 inside a **test organization's** Civis environment, and for its retest on
-`v0.1.0-rc11` ("Retest on v0.1.0-rc11" under "Order"). It checks the
+`v0.1.0-rc11` and `v0.1.0-rc12` ("Retest on v0.1.0-rc11" and "Default tags
+on v0.1.0-rc12" under "Order"). It checks the
 README setup and every fact that could not be confirmed from documentation
 (docs/PLAN.md marks these "confirm in Phase 7").
 
@@ -34,7 +35,8 @@ README setup and every fact that could not be confirmed from documentation
   scan checks scripts that ran or changed in the last 30 days. The job and
   the Service from the first test are moved to `v0.1.0-rc11` once for item
   5.6, then removed. The schema stays. Use `v0.1.0-rc11` wherever the README
-  says `<release tag>`. The first test set up on `v0.1.0-rc5` and ran its
+  says `<release tag>`, and `v0.1.0-rc12` from "Default tags on
+  v0.1.0-rc12" on. The first test set up on `v0.1.0-rc5` and ran its
   scans on `v0.1.0-rc10`, with `LOOKBACK_DAYS` `30`. `v0.1.0-rc10` follows
   `v0.1.0-rc9` because scan C on `v0.1.0-rc9`
   succeeded but every notebook was refused with HTTP 403 and live progress

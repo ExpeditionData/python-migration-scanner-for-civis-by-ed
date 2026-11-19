@@ -76,7 +76,7 @@ be made public at any time.
   changes its visibility himself; never change it from a session.
 - Releases are git tags, protected by the "release tags" ruleset. The first
   live test set up on `v0.1.0-rc5` and ran its scans on `v0.1.0-rc10`. The
-  retest runs on `v0.1.0-rc11`, on a fresh install made with
+  retest ran on `v0.1.0-rc11`, on a fresh install made with
   `install/civis_install.py`, with `LOOKBACK_DAYS` 30. The retest's job and
   Service move to `v0.1.0-rc12` for the last scan with the GitHub token and
   the test summary. Create a tag or a GitHub Release only when Rob's prompt
@@ -239,8 +239,8 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   (docs/PLAN.md 17.9): a fresh notebook link right before each download,
   live progress that stops with one line instead of reloading the frame,
   run labels by Civis run ID that stay the same after retention, and a busy
-  cue on every same-tab app link. The build under test is `v0.1.0-rc11`,
-  with `LOOKBACK_DAYS` 30. Phase 7 testing on `v0.1.0-rc10` is done, and the
+  cue on every same-tab app link. The retest ran on `v0.1.0-rc11` and finishes on
+  `v0.1.0-rc12`, with `LOOKBACK_DAYS` 30. Phase 7 testing on `v0.1.0-rc10` is done, and the
   docs were updated from the live test (docs/PLAN.md 17.10); the test with a
   GitHub token runs during the retest. Post-test build part 1 (the busy cue's look,
   "Canceled" in UI text, the Findings sideways scroll at phone width, and
