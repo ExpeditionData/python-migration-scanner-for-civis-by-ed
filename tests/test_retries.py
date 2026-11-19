@@ -2,7 +2,9 @@
 
 The policy runs through civis-python's own retry_request with a made-up session,
 so civis keeps its rules for which status codes and verbs are retried. No
-network calls and no Civis instance.
+network calls and no Civis instance. civis 2.10 and 2.11 (the scanner image
+since docs/PLAN.md 17.16) have the same civis/base.py, civis/_retries.py, and
+civis/resources/_resources.py, so the policy behaves the same on both.
 """
 
 from __future__ import annotations

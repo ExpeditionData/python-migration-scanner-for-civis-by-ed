@@ -1,9 +1,10 @@
 """The install script (install/civis_install.py, docs/PLAN.md 17.14).
 
 The script runs by hand as a Civis Python script, so these tests load it by path and pass it a recording fake
-civis client with made-up objects. Nothing here contacts Civis. The spec checks use the API spec bundled with
-civis 2.10 (the scanner image's version, and the version on Civis's default Python image), and skip on civis
-2.7.1 (the Service image).
+civis client with made-up objects. Nothing here contacts Civis. The spec checks use the API spec bundled with the
+installed civis, 2.10 or 2.11 (the scanner image's version, and the version on Civis's default Python image since
+9.2), and skip on civis 2.7.1 (the Service image). civis/base.py, civis/_retries.py, and
+civis/resources/_resources.py are the same in 2.10 and 2.11, and no call the script makes changed in the 2.11 spec.
 """
 
 from __future__ import annotations
@@ -29,6 +30,9 @@ OTHER_USER = 8
 JOB_ID = 1234
 SERVICE_ID = 5678
 TAG = "v0.1.0-rc11"
+# The scanner image tag of a job set up by an earlier release (before v0.1.0-rc13 moved the image to 9.2.0).
+EARLIER_SCANNER_TAG = "9.1.1"
+SCANNER_TAG = release.pinned_image("scanner")[1]
 READS = {("users", "get_me"), ("users", "list_me"), ("credentials", "get"), ("databases", "get"),
          ("databases", "list"), ("scripts", "get_containers"), ("services", "get")}
 WRITES = {("scripts", "post_containers"), ("scripts", "patch_containers"), ("services", "post"),
@@ -216,11 +220,12 @@ class FakeCivis:
 
 
 def existing_job(**changes) -> dict:
-    """A made-up scanner job from an earlier release: RUN_ID left on it, the old resources, LOOKBACK_DAYS 30."""
+    """A made-up scanner job from an earlier release: the earlier image tag, RUN_ID left on it, the old resources,
+    LOOKBACK_DAYS 30."""
     owner = {"id": ME, "username": MARK, "name": MARK}
     job = {
         "id": JOB_ID, "name": f"Scanner {MARK}", "description": MARK, "author": owner, "running_as": owner,
-        "docker_image_name": "civisanalytics/datascience-python", "docker_image_tag": "9.1.1",
+        "docker_image_name": "civisanalytics/datascience-python", "docker_image_tag": EARLIER_SCANNER_TAG,
         "docker_command": "cd /app && python -m scanner", "repo_http_uri": release.REPOSITORY_URL,
         "repo_ref": "v0.1.0-rc10", "git_credential_id": None, "updated_at": "2026-11-01T00:00:00Z",
         "required_resources": {"cpu": 1000, "memory": 4096, "disk_space": 4.0},
@@ -528,7 +533,7 @@ def test_install_sends_the_expected_post_and_patch_fields_in_order(capsys):
     assert job_post == {
         "name": "Python Migration Scanner: scanner job",
         "required_resources": {"cpu": 500, "memory": 2048, "disk_space": 1},
-        "docker_image_name": "civisanalytics/datascience-python", "docker_image_tag": "9.1.1",
+        "docker_image_name": "civisanalytics/datascience-python", "docker_image_tag": SCANNER_TAG,
         "docker_command": "cd /app && python -m scanner",
     }
     job_id = fake.results[[c[1] for c in fake.calls].index("post_containers")]["id"]
@@ -768,7 +773,8 @@ def test_update_keeps_results_settings_removes_run_id_and_sets_the_listed_fields
     assert after["repo_ref"] == TAG
     assert after["required_resources"] == {"cpu": 500, "memory": 2048, "disk_space": 1}
     patch = fake.writes()[0][3]
-    assert sorted(patch) == ["arguments", "params", "repo_ref", "required_resources"]
+    assert sorted(patch) == ["arguments", "docker_image_tag", "params", "repo_ref", "required_resources"]
+    assert after["docker_image_tag"] == SCANNER_TAG
     service_patch = fake.writes()[1][3]
     assert sorted(service_patch) == ["git_repo_ref"]
     for expected in ("RESULT scanner_job results_kept: pass", "RESULT scanner_job run_id_removed: yes",
@@ -890,13 +896,33 @@ def test_results_db_changed_by_civis_fails_results_kept(capsys):
 
 
 def test_update_with_nothing_to_change_writes_nothing(capsys):
-    job = existing_job(repo_ref=TAG, required_resources={"cpu": 500, "memory": 2048, "disk_space": 1.0},
+    job = existing_job(repo_ref=TAG, docker_image_tag=SCANNER_TAG,
+                       required_resources={"cpu": 500, "memory": 2048, "disk_space": 1.0},
                        params=existing_job()["params"][:3],
                        arguments={k: v for k, v in existing_job()["arguments"].items() if k != "RUN_ID"})
     fake = updatable(job=job, service=existing_service(git_repo_ref=TAG))
     code, lines = run(fake, update_settings(), capsys)
     assert code == 0 and fake.writes() == []
     assert "WRITE scanner_job: no change" in lines and "WRITE service: no change" in lines
+
+
+def test_update_from_an_earlier_image_tag_patches_only_the_tag_and_the_branch(capsys):
+    # Set up as the README sets it (no RUN_ID, the profile without a token), but by an earlier release: the earlier
+    # image tag and an earlier repo_ref. This is the update from v0.1.0-rc12 to v0.1.0-rc13 (docs/PLAN.md 17.16).
+    job = existing_job(required_resources={"cpu": 500, "memory": 2048, "disk_space": 1.0},
+                       params=existing_job()["params"][:3],
+                       arguments={k: v for k, v in existing_job()["arguments"].items() if k != "RUN_ID"})
+    assert job["docker_image_tag"] == EARLIER_SCANNER_TAG != SCANNER_TAG and job["repo_ref"] != TAG
+    fake = updatable(job=job)
+    code, lines = run(fake, update_settings(GITHUB_CREDENTIAL=None), capsys)
+    assert code == 0, lines
+    assert line(lines, "PLAN scanner_job: update ").startswith(
+        "PLAN scanner_job: update fields=docker_image_tag,repo_ref ")
+    assert "WRITE scanner_job: patched fields=docker_image_tag,repo_ref" in lines
+    assert "RESULT scanner_job image_set: pass" in lines
+    job_patches = [w for w in fake.writes() if w[:2] == ("scripts", "patch_containers")]
+    assert len(job_patches) == 1 and job_patches[0][3] == {"docker_image_tag": SCANNER_TAG, "repo_ref": TAG}
+    assert fake.containers[JOB_ID]["docker_image_tag"] == SCANNER_TAG
 
 
 # ---------------------------------------------------------------------------
@@ -933,7 +959,7 @@ def test_error_text_is_the_class_name_and_status_only():
 
 def _spec():
     civis = pytest.importorskip("civis")
-    pytest.importorskip("civis._retries")  # civis 2.10 (the scanner image and Civis's Python image); not 2.7.1.
+    pytest.importorskip("civis._retries")  # civis 2.10 or 2.11 (the scanner image and Civis's Python image); not 2.7.1.
     from civis.resources._resources import generate_classes_maybe_cached
 
     path = Path(civis.__file__).parent / "resources" / "civis_api_spec.json"

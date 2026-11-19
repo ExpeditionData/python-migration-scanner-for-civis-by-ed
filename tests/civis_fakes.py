@@ -14,6 +14,8 @@ import io
 import re
 from typing import Any
 
+from common import release
+
 try:
     from civis.base import CivisJobFailure, EmptyResultError
 except ImportError:  # Both venvs and both test images have civis; this keeps the fakes usable without it.
@@ -114,10 +116,11 @@ class FakeAPIError(Exception):
 
 
 def scanner_job(**changes: Any) -> dict:
-    """A made-up scanner job that matches the README."""
+    """A made-up scanner job that matches the README (its image tag is the pinned one)."""
     job = {
         "id": 1234, "name": "Example scanner job", "author": dict(ROBOT), "running_as": dict(ROBOT),
-        "docker_image_name": "civisanalytics/datascience-python", "docker_image_tag": "9.1.1",
+        "docker_image_name": "civisanalytics/datascience-python",
+        "docker_image_tag": release.pinned_image("scanner")[1],
         "repo_http_uri": REPO, "repo_ref": "v0.1.0-rc3", "git_credential_id": None,
         "docker_command": "cd /app && python -m scanner",
         "required_resources": {"cpu": 500, "memory": 2048, "disk_space": 1.0},  # The profile without a token.
@@ -134,7 +137,8 @@ def scanner_job(**changes: Any) -> dict:
 def app_service(**changes: Any) -> dict:
     service = {
         "id": 501, "name": "Example scanner app", "user": dict(ROBOT),
-        "docker_image_name": "civisanalytics/civis-services-flask", "docker_image_tag": "0.1.0",
+        "docker_image_name": "civisanalytics/civis-services-flask",
+        "docker_image_tag": release.pinned_image("service")[1],
         "git_repo_url": REPO, "git_repo_ref": "v0.1.0-rc3", "credentials": [],
         "environment_variables": {"SCANNER_JOB_ID": "1234", "CIVIS_SERVICE_HEALTH_PATH": "/healthz"},
     }

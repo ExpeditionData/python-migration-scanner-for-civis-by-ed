@@ -278,7 +278,7 @@ script sets the field when it creates the object; "update" means `MODE`
 |---|---|---|---|
 | Scanner job | Name | `Python Migration Scanner: scanner job` | install |
 | Scanner job | **Image** (Docker section) | `civisanalytics/datascience-python` | install |
-| Scanner job | **Tag** (Docker section) | `9.1.1` | install, update |
+| Scanner job | **Tag** (Docker section) | `9.2.0` | install, update |
 | Scanner job | **Repository** (**GIT CONNECTION** section) | `https://github.com/ExpeditionData/python-migration-scanner-for-civis-by-ed.git`. The page shows the field blank, because its dropdown cannot show an address that is not in its list. | install, update |
 | Scanner job | **Branch** (**GIT CONNECTION** section) | `<release tag>` | install, update |
 | Scanner job | **Command** | `cd /app && python -m scanner` | install |
@@ -626,11 +626,15 @@ example with `docker pull <image>@<digest>`.
 
 | Part | Image and tag | Digest (linux/amd64) | Pushed |
 |---|---|---|---|
-| Scanner job | `civisanalytics/datascience-python:9.1.1` | `sha256:d6903fdcf6b13801417621ad7522c09a16e1d2c01d11eb398f75ad0f73d974ef` | September 17, 2026 |
+| Scanner job | `civisanalytics/datascience-python:9.2.0` | `sha256:8a5a9fb50b93cdcd5280acf170ca9d7b1bcfdd9c9d50e13decdd1a18ef5b2956` | November 9, 2026 |
 | Web app Service | `civisanalytics/civis-services-flask:0.1.0` | `sha256:e8d7a631ab46598caa6735e2dd657763c95eb5c76af7a57510f3d2370f02a20f` | August 6, 2025 |
 
-The digests were read from Docker Hub on October 13, 2026, and both images
-were pulled by digest and checked again on October 22, 2026.
+The Service image's digest was read from Docker Hub on October 13, 2026, and
+the image was pulled by digest and checked again on October 22, 2026. The
+scanner image's digest was read from Docker Hub, and the image pulled by
+digest and checked, on November 19, 2026. The scanner image moved from `9.1.1`
+to `9.2.0` in `v0.1.0-rc13` for its updated CA certificates (Python 3.14.10,
+civis-python 2.11.0).
 
 ## For developers
 

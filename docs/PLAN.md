@@ -378,9 +378,9 @@ civis-python already contains code to rename 37 more methods, all `list_*_shares
 
 | Use | Image and tag | What is inside | Why |
 |---|---|---|---|
-| Scanner job | `civisanalytics/datascience-python:9.1.1` (September 17, 2026) | Python 3.14.6, civis 2.10.0, pandas, PyYAML, requests | Includes every package the scanner needs, so the scanner installs nothing at run time. The exact tag never changes, so the February update does not affect it. |
+| Scanner job | `civisanalytics/datascience-python:9.2.0` (November 9, 2026) | Python 3.14.10, civis 2.11.0, pandas 3.1.1, PyYAML 6.0.3, requests 2.34.2 | Includes every package the scanner needs, so the scanner installs nothing at run time. The exact tag never changes, so the February update does not affect it. (changed in 17.16) |
 | Web app Service | `civisanalytics/civis-services-flask:0.1.0` (August 6, 2025) | Python 3.12.11, Flask 3.1.1, gunicorn 22.0.0, civis 2.7.1 | Civis's supported Flask image. With no pip install at start, the app is limited to these packages, which is enough. The app calls no renamed v2 or v3 methods. |
-| v3 compatibility test | Local image: `datascience-python:9.1.1` plus `civis==3.0.0rcN` once a release candidate is on PyPI. Later, the first Civis image that ships Python 3.15 and civis v3. | n/a | Lets us confirm the scanner runs unchanged after the update, before clients need to rescan. |
+| v3 compatibility test | Local image: `datascience-python:9.2.0` plus `civis==3.0.0rcN` once a release candidate is on PyPI. Later, the first Civis image that ships Python 3.15 and civis v3. | n/a | Lets us confirm the scanner runs unchanged after the update, before clients need to rescan. (changed in 17.16) |
 
 How each object runs:
 
@@ -388,7 +388,7 @@ How each object runs:
 - **Service.** Repo ref: the same release tag. Path left blank. `start_service.sh` runs `exec gunicorn --bind "0.0.0.0:${CIVIS_SERVICE_PORT:-3838}" --worker-class gthread --workers 2 --threads 4 --timeout 120 "app:create_app()"`. **Changed October 22, 2026 (16.21):** it was two sync workers with gunicorn's 30-second default timeout. Each of the two worker processes keeps its own result cache; the four threads in a worker share it.
 - **Local testing.** The two Dockerfiles in `docker/` are `FROM` these exact images by digest (tag in a comment) and are used only for local tests (section 16).
 - **Requirements files.** They record the versions inside each image, so tests run against the same versions.
-- **Image digests.** Recorded in the README on October 13, 2026 (linux/amd64): `datascience-python:9.1.1` is `sha256:d6903fdcf6b13801417621ad7522c09a16e1d2c01d11eb398f75ad0f73d974ef`, and `civis-services-flask:0.1.0` is `sha256:e8d7a631ab46598caa6735e2dd657763c95eb5c76af7a57510f3d2370f02a20f`.
+- **Image digests.** Recorded in the README (linux/amd64): `civis-services-flask:0.1.0` is `sha256:e8d7a631ab46598caa6735e2dd657763c95eb5c76af7a57510f3d2370f02a20f` (October 13, 2026), and `datascience-python:9.2.0` is `sha256:8a5a9fb50b93cdcd5280acf170ca9d7b1bcfdd9c9d50e13decdd1a18ef5b2956` (November 19, 2026). (changed in 17.16)
 
 **How the Flask image starts (checked October 22, 2026, from the image pulled by digest).**
 
@@ -397,7 +397,7 @@ How each object runs:
 - So `start_service.sh` sits at the repo root, is run directly (not through `sh`), and needs a shebang, the executable bit, and LF line endings. `tests/test_deploy.py` checks all three.
 - The image also has a `/requirements.txt` (`flask~=3.0`, `gunicorn~=22.0`, `civis~=2.2`) that it does not install itself. Our start script installs nothing.
 - Installed versions: Python 3.12.11, pip 25.2, Flask 3.1.1, gunicorn 22.0.0, civis 2.7.1, PyYAML 6.0.2, requests 2.32.4, on Debian 12. PyYAML 6.0.2 was unconfirmed before and is now pinned in `requirements-service.txt`.
-- The scanner image (`datascience-python:9.1.1`) has `CMD ["python3"]`, runs as root, and has Python 3.14.6, civis 2.10.0, pandas 3.0.5, PyYAML 6.0.3, and requests 2.34.2. It has no Flask, so the web app tests skip inside it and run in the Service image instead.
+- The scanner image (`datascience-python:9.2.0`, checked November 19, 2026, from the image pulled by digest) has `CMD ["python3"]`, runs as root, and has Python 3.14.10, civis 2.11.0, pandas 3.1.1, PyYAML 6.0.3, and requests 2.34.2. It has no Flask, so the web app tests skip inside it and run in the Service image instead. (changed in 17.16)
 
 ---
 
@@ -1811,4 +1811,45 @@ The counts do not change because the three moved objects are on a listed tag bot
 - Streamlit Services: no known tag, so only a blank or "latest" tag counts.
 - A patch tag (`9.1.1`, `9.2.1`) or an older minor tag (`9.0`) is still pinned. Civis has not said whether objects saved on a minor or patch tag move to the new image in February; that is the known limit, waiting on Civis support.
 - The scanner and Service images (`civisanalytics/datascience-python:9.1.1` and `civisanalytics/civis-services-flask:0.1.0`).
+- Legal text and SECURITY.md "By design".
+
+### 17.16 Scanner image moved to datascience-python 9.2.0 (November 19, 2026)
+
+**Why.** The scanner job ran on `civisanalytics/datascience-python:9.1.1`, whose certifi predates the CA bundle (certifi 2026.10.23) that Civis shipped in datascience-python 9.2.0 after the eMudhra certificate authority compromise. The scanner sends the Civis API key over HTTPS on every Civis API call, and a GitHub token when one is attached. So the scanner image moves to 9.2.0 now, as `v0.1.0-rc13`, before `v0.1.0`. The Service image does not change: `civisanalytics/civis-services-flask:0.1.0` is still its newest tag. Decided by Rob on November 19, 2026.
+
+#### Part A: the image move
+
+| # | Change | Status |
+|---|---|---|
+| 17.16.1 | **Image and package versions.** The scanner job's image is `civisanalytics/datascience-python:9.2.0` (was `9.1.1`): Python 3.14.10 (was 3.14.6), civis 2.11.0 (was 2.10.0), pandas 3.1.1 (was 3.0.5), PyYAML 6.0.3, requests 2.34.2, tenacity 9.2.1 (was 9.1.4), certifi 2026.10.23, and urllib3 2.6.3 (not pinned). `requirements-scanner.txt` names the image and Python version in its header and pins civis, pandas, PyYAML, requests, tenacity, and certifi. `docker/scanner.Dockerfile` names the tag in its comment and pins the digest in `FROM`. README "What the install script sets" gives `9.2.0` for the scanner job's **Tag**, and "Pinned Docker images" gives the new tag, digest, and pushed date. The local `.venv` takes the new pins; its own Python version is unchanged, and the scanner test image is the Python 3.14.10 check. | Decided by Rob on November 19, 2026 |
+| 17.16.2 | **What was checked in civis 2.11.0** (from the civis 2.10.0 and 2.11.0 wheels on PyPI, and again in the pulled image): civis/base.py, civis/_retries.py, and civis/resources/_resources.py are byte-identical in 2.10.0 and 2.11.0 (md5 `206617460ad76006e8621894d8de4768`, `0cb77d59391879987ded4bdfc82e7910`, and `325357d7f5f7b499f9be4aadbafb6730`). So `install_request_timeout`'s `open_session` wrapper, the class-level request lock, and `retry_request` are unchanged. The 2.11.0 API spec adds and removes no path. Archive and share PUT body definitions are renumbered, and optional properties are added (`readOnly` on queries and SQL scripts, `existingTableRows` on CASS/NCOA database output, `awsAccountId` on organization summaries, `analysisId` on report and search result summaries). No call the scanner or the install script makes changed. | Decided by Rob on November 19, 2026 |
+| 17.16.3 | **civis.io changes.** In 2.11.0, `civis_to_csv`'s `unquoted` argument is deprecated (it has no effect, and v3 removes it; Part B adds a rule for it), and S3 error messages from file transfers no longer carry the response body or the URL's query string. 2.10.1 fixed `file_to_civis` completing a multipart upload after a part failed. The scanner calls none of these. | Decided by Rob on November 19, 2026 |
+| 17.16.4 | **tenacity 9.2.1 and pandas 3.1.1.** `tests/test_retries.py` drives `civis_retrying` through civis's own `retry_request` on tenacity 9.2.1, and `tests/test_typed_columns.py` checks the typed result frames rendered with pandas 3.1.1's `to_csv`. Both pass unchanged. | Decided by Rob on November 19, 2026 |
+| 17.16.5 | **certifi pin.** `requirements-scanner.txt` pins `certifi==2026.10.23` with a comment: the scanner does not import it, requests uses it for every HTTPS call the scanner makes, and datascience-python 9.2.0 updated it after the eMudhra certificate authority compromise. The scanner test image's build fails if any pinned version differs (`docker/check_image.py`), so the image check confirms the new bundle is there. | Decided by Rob on November 19, 2026 |
+| 17.16.6 | **Install script.** `install/civis_install.py` sets `SCANNER_IMAGE = ("civisanalytics/datascience-python", "9.2.0")`, equal to `common/release.pinned_image("scanner")` (a test checks it). Nothing else in the script changes. Update mode already patches `docker_image_tag` when the job's tag differs, so an update from `v0.1.0-rc12` plans and patches `fields=docker_image_tag,repo_ref` on the scanner job and `fields=git_repo_ref` on the Service, and `RESULT scanner_job image_set` passes. | Decided by Rob on November 19, 2026 |
+| 17.16.7 | **Setup line 2** compares the job's tag with the pinned tag from `requirements-scanner.txt`, so it now expects `9.2.0`. A job left on `9.1.1` fails line 2 ("Docker Image Tag is not 9.2.0") until it is updated with the install script. | Decided by Rob on November 19, 2026 |
+| 17.16.8 | **Digest.** `docker buildx imagetools inspect civisanalytics/datascience-python:9.1.1` gave the README's `sha256:d6903fdcf6b13801417621ad7522c09a16e1d2c01d11eb398f75ad0f73d974ef`, so the method matches how the earlier digests were read. The same command for `9.2.0` gave one linux/amd64 manifest, `sha256:8a5a9fb50b93cdcd5280acf170ca9d7b1bcfdd9c9d50e13decdd1a18ef5b2956` (read November 19, 2026). Docker Hub's `tag_last_pushed` for `9.2.0` is November 9, 2026. The image was pulled by that digest and run with no network: it reported Python 3.14.10, civis 2.11.0, pandas 3.1.1, PyYAML 6.0.3, requests 2.34.2, tenacity 9.2.1, certifi 2026.10.23, and urllib3 2.6.3, the three civis md5 values in 17.16.2, `CMD ["python3"]`, the root user, and no Flask. | Decided by Rob on November 19, 2026 |
+| 17.16.9 | **Tests.** `tests/civis_fakes.py`: the made-up scanner job's and Service's image tags come from `release.pinned_image`, so the fakes stand for objects set up as the README says. `tests/test_setup_page.py`: the pinned scanner image is `9.2.0`, the README install table's scanner **Tag** row and the Service's **Image Name** and **Tag** row give the pinned values, and the "Docker Image Tag is not ..." case is built from the pinned tag. `tests/test_install_script.py`: `existing_job` stays a job from an earlier release, on `EARLIER_SCANNER_TAG` (`9.1.1`); the install post expects the pinned tag; the update test's patched fields include `docker_image_tag`; the "nothing to change" job is on the pinned tag; and a new test updates a job set up as the README sets it but on `9.1.1` and an earlier `repo_ref`, with `GITHUB_CREDENTIAL` `None`, and checks `PLAN scanner_job: update fields=docker_image_tag,repo_ref`, `WRITE scanner_job: patched fields=docker_image_tag,repo_ref`, `RESULT scanner_job image_set: pass`, and that only those two fields are patched. `tests/test_deploy.py`: `IMAGES` builds both image strings from `release.pinned_image`, and the scanner requirements name Python 3.14.10. `tests/test_start_guard.py` passes unchanged. Every `9.1.1` that stands for a customer object's patch tag (`tests/test_default_tags.py`, the synthetic instance, the preview, `tests/test_shell_python.py`) stays. | Decided by Rob on November 19, 2026 |
+| 17.16.10 | **Docstrings.** The `scanner/ratelimit.py` module, `civis_retrying`, and `install_request_timeout` docstrings, and the module docstrings of `tests/test_request_timeout.py`, `tests/test_retries.py`, and `tests/test_install_script.py`, say civis 2.10 and 2.11, and that civis/base.py, civis/_retries.py, and civis/resources/_resources.py are the same in both. Lines that record what the live test saw on civis 2.10.0 stay as they are. | Decided by Rob on November 19, 2026 |
+
+The plain dry run of the synthetic instance, before and after this part:
+
+```
+Before: INVENTORY lines: python_script listed=12 kept=10, container_script listed=12 kept=9, custom_script listed=8 kept=6,
+        dbt_script listed=4 kept=3, notebook listed=5 kept=4, service listed=5 kept=5, workflow listed=5 kept=5
+        RUN ... status=succeeded objects_total=39 objects_scanned=39 api_calls=103 github_tarball_requests=8
+        github_cache_peak_bytes=1026 github_cache_evictions=0 civis_git_reads=2 civis_git_failures=4
+        notebook_links=4 notebook_link_retries=0 request_timeouts=0
+        affected objects 21, advisory objects 4, findings 43
+After:  the same INVENTORY lines, the same RUN counts, affected objects 21, advisory objects 4, findings 43
+```
+
+Affected and advisory objects are counted as in the test summary (`app/summary.scan_counts`).
+
+#### Not changed
+
+- The Service image: `civisanalytics/civis-services-flask:0.1.0` is still the newest version tag on Docker Hub (its tags are `0.1.0` and `latest`; checked November 19, 2026).
+- `common/release.CURRENT_DEFAULT_TAGS`: it lists the tags Civis saves on customer objects, not the scanner's own image.
+- Every scanner and app code path. No new Civis call, write, or SQL statement kind. `app/` and `common/` still call only civis 2.7.1 methods.
+- The request timeout, the lock, and the retries design (docs/PLAN.md 17.5 and 17.12).
 - Legal text and SECURITY.md "By design".

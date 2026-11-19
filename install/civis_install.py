@@ -75,7 +75,7 @@ import sys  # noqa: E402
 # What the README sets. tests/test_install_script.py checks each against common/release.py.
 REPOSITORY_URL = "https://github.com/ExpeditionData/python-migration-scanner-for-civis-by-ed.git"
 SCANNER_COMMAND = "cd /app && python -m scanner"
-SCANNER_IMAGE = ("civisanalytics/datascience-python", "9.1.1")
+SCANNER_IMAGE = ("civisanalytics/datascience-python", "9.2.0")
 SERVICE_IMAGE = ("civisanalytics/civis-services-flask", "0.1.0")
 HEALTH_PATH = "/healthz"
 DEFAULT_LOOKBACK_DAYS = 400

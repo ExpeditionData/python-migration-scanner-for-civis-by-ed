@@ -22,6 +22,7 @@ from common.schema import TABLES
 from tests.civis_fakes import ROBOT, FakeAPIError, app_service, scanner_job, shares
 
 ALL_TABLES = frozenset(t.name for t in TABLES)
+SCANNER_TAG = release.pinned_image("scanner")[1]
 OTHER = {"id": 12, "name": "Example Owner Casey", "username": "example_owner_casey"}
 
 
@@ -82,17 +83,23 @@ def test_a_setup_that_matches_the_readme_passes_every_line_but_sharing():
 
 
 def test_the_pinned_images_come_from_the_requirements_files():
-    assert release.pinned_image("scanner") == ("civisanalytics/datascience-python", "9.1.1")
+    assert release.pinned_image("scanner") == ("civisanalytics/datascience-python", "9.2.0")
     assert release.pinned_image("service") == ("civisanalytics/civis-services-flask", "0.1.0")
     readme = (release.ROOT / "README.md").read_text(encoding="utf-8")
     for part in ("scanner", "service"):
         name, tag = release.pinned_image(part)
         assert f"`{name}:{tag}`" in readme
+    # The install table (README "What the install script sets") gives the same tags.
+    scanner_name, scanner_tag = release.pinned_image("scanner")
+    service_name, service_tag = release.pinned_image("service")
+    assert f"| Scanner job | **Tag** (Docker section) | `{scanner_tag}` |" in readme
+    assert f"| Scanner job | **Image** (Docker section) | `{scanner_name}` |" in readme
+    assert f"| Service | **Image Name** and **Tag** (Docker section) | `{service_name}`, `{service_tag}` |" in readme
     assert release.REPOSITORY_URL in readme and f"`{release.SCANNER_COMMAND}`" in readme
 
 
 @pytest.mark.parametrize("changes, result, words", [
-    ({"docker_image_tag": "latest"}, "fail", "Docker Image Tag is not 9.1.1"),
+    ({"docker_image_tag": "latest"}, "fail", f"Docker Image Tag is not {SCANNER_TAG}"),
     ({"docker_image_name": "example/other"}, "fail", "Docker Image Name is not"),
     ({"repo_http_uri": "https://github.com/example-org/fork.git"}, "fail", "not this repository"),
     ({"repo_http_uri": "github.com/ExpeditionData/python-migration-scanner-for-civis-by-ed"}, "pass", ""),

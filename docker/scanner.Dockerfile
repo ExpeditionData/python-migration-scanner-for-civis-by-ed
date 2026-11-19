@@ -1,8 +1,8 @@
 # Local testing only. Never used in Civis and never pushed to a registry.
 #
 # The scanner job's image, pinned by digest:
-# civisanalytics/datascience-python:9.1.1 (linux/amd64)
-FROM civisanalytics/datascience-python@sha256:d6903fdcf6b13801417621ad7522c09a16e1d2c01d11eb398f75ad0f73d974ef
+# civisanalytics/datascience-python:9.2.0 (linux/amd64)
+FROM civisanalytics/datascience-python@sha256:8a5a9fb50b93cdcd5280acf170ca9d7b1bcfdd9c9d50e13decdd1a18ef5b2956
 
 # 1. Fail if the image's Python or package versions differ from requirements-scanner.txt.
 # 2. Add pytest (the same pin as requirements-dev.txt) and nothing else.

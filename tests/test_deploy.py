@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+from common import release
+
 ROOT = Path(__file__).resolve().parent.parent
 START = ROOT / "start_service.sh"
 
@@ -65,8 +67,8 @@ def test_start_service_runs_gunicorn_and_installs_nothing():
 
 DOCKER = ROOT / "docker"
 IMAGES = {
-    "scanner": ("civisanalytics/datascience-python:9.1.1", "requirements-scanner.txt", "requirements-dev.txt"),
-    "service": ("civisanalytics/civis-services-flask:0.1.0", "requirements-service.txt", "requirements-dev-service.txt"),
+    "scanner": (":".join(release.pinned_image("scanner")), "requirements-scanner.txt", "requirements-dev.txt"),
+    "service": (":".join(release.pinned_image("service")), "requirements-service.txt", "requirements-dev-service.txt"),
 }
 # Paths that must never reach a build context or an image layer.
 NEVER_IN_IMAGE = ["Context", ".env", ".env.*", ".venv", ".venv*", "dry_run_output", "Claude outputs", ".git",
@@ -111,7 +113,7 @@ def test_dockerignore_keeps_private_and_local_files_out():
 
 
 def test_requirements_name_the_image_python_version():
-    assert check_image.read_requirements(ROOT / "requirements-scanner.txt")[0] == "3.14.6"
+    assert check_image.read_requirements(ROOT / "requirements-scanner.txt")[0] == "3.14.10"
     assert check_image.read_requirements(ROOT / "requirements-service.txt")[0] == "3.12.11"
 
 

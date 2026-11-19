@@ -1,6 +1,7 @@
 """A timeout on every Civis API request (docs/PLAN.md 17.12, Part C).
 
-These tests run civis-python 2.10's own client with ``requests.adapters.HTTPAdapter.send`` stubbed: the stub
+These tests run civis-python's own client (2.10 or 2.11; civis/base.py, civis/_retries.py, and
+civis/resources/_resources.py are the same in both) with ``requests.adapters.HTTPAdapter.send`` stubbed: the stub
 serves the API spec bundled with civis for ``/endpoints`` and made-up JSON for every other path, so no request
 leaves this machine. The API endpoint is a made-up host. They skip on civis 2.7.1 (the Service image), like
 tests/test_retries.py.
@@ -18,7 +19,7 @@ import pytest
 
 civis = pytest.importorskip("civis")
 requests = pytest.importorskip("requests")
-pytest.importorskip("civis._retries")  # civis 2.10 (the scanner image); civis 2.7.1 has no such module.
+pytest.importorskip("civis._retries")  # civis 2.10 and 2.11 (the scanner image); civis 2.7.1 has no such module.
 
 import civis.base  # noqa: E402
 import civis.resources._resources as civis_resources  # noqa: E402

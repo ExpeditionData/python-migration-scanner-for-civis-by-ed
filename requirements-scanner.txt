@@ -1,10 +1,14 @@
 # Packages the scanner uses, at the exact versions inside the pinned scanner
-# image: civisanalytics/datascience-python:9.1.1 (Python 3.14.6).
+# image: civisanalytics/datascience-python:9.2.0 (Python 3.14.10).
 # The scanner installs nothing at run time. This file records what the image
 # provides so local tests run against the same versions.
-civis==2.10.0
-pandas==3.0.5
+civis==2.11.0
+pandas==3.1.1
 pyyaml==6.0.3
 requests==2.34.2
 # A civis dependency in the image; the scanner imports it for its retries policy.
-tenacity==9.1.4
+tenacity==9.2.1
+# Not imported by the scanner. requests uses it for every HTTPS call the scanner
+# makes. datascience-python 9.2.0 updated it after the eMudhra certificate
+# authority compromise, so the image check confirms the new bundle.
+certifi==2026.10.23

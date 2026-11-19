@@ -118,7 +118,8 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   objects. The fourth part, `install/civis_install.py`, is not a package: an
   admin pastes it into a Civis Python script and runs it by hand.
 - **Install script (docs/PLAN.md 17.14).** Standard library and `civis` only
-  (civis 2.10 on Civis's default Python image), no import from this repo,
+  (civis 2.11 on Civis's default Python image since 9.2; the calls it makes
+  are the same in civis 2.10), no import from this repo,
   `main(client, settings=None)`. Settings at the top (`MODE` "check" by
   default, "install", or "update"; `TAG`; `RESULTS_DATABASE`,
   `RESULTS_CREDENTIAL`, `RESULTS_SCHEMA` for install; `GITHUB_CREDENTIAL`,
@@ -144,8 +145,8 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   `None`, from the job's `GITHUB` value), and Setup line 2 checks the job
   against the one that matches its `GITHUB` value (below fail, above
   warning).
-- **Scanner job.** Runs on `civisanalytics/datascience-python:9.1.1` (Python
-  3.14.6, civis 2.10.0). Installs nothing at run time. Inventories Python scripts,
+- **Scanner job.** Runs on `civisanalytics/datascience-python:9.2.0` (Python
+  3.14.10, civis 2.11.0). Installs nothing at run time. Inventories Python scripts,
   container scripts, custom scripts, notebooks, Services, and workflows; reads
   code (inline, notebook file, the own git file of each git-backed Python script
   and workflow through the Civis API, and whole repositories from GitHub only
@@ -486,7 +487,7 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
 Constraints to keep in mind when writing code:
 
 - `app/` and `common/` may only call civis methods that exist in civis 2.7.1. A
-  unit test enforces this. `install/civis_install.py` runs on civis 2.10 and
+  unit test enforces this. `install/civis_install.py` runs on civis 2.10 or 2.11 and
   may call only its four write methods and the listed reads
   (`tests/test_install_script.py`).
 - App text that cites the README names the section in quotes and its step
@@ -760,7 +761,7 @@ environments, dry-run output, `.git`, and caches out of the build. Pull by
 digest first (Docker Hub only); the builds also download pytest from PyPI.
 
 ```
-docker pull civisanalytics/datascience-python@sha256:d6903fdcf6b13801417621ad7522c09a16e1d2c01d11eb398f75ad0f73d974ef
+docker pull civisanalytics/datascience-python@sha256:8a5a9fb50b93cdcd5280acf170ca9d7b1bcfdd9c9d50e13decdd1a18ef5b2956
 docker pull civisanalytics/civis-services-flask@sha256:e8d7a631ab46598caa6735e2dd657763c95eb5c76af7a57510f3d2370f02a20f
 docker build -f docker/scanner.Dockerfile -t pmsc-scanner-test .
 docker build -f docker/service.Dockerfile -t pmsc-service-test .

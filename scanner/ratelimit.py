@@ -15,6 +15,10 @@ until the headroom comes back.
 civis-python's own retry still applies on top of this, with the shorter policy
 in ``civis_retrying`` (docs/PLAN.md 17.5), and every Civis API request has a
 connect and read timeout (``install_request_timeout``, docs/PLAN.md 17.12).
+
+The internals this module depends on are the same in civis 2.10 and 2.11 (the
+scanner image moved to civis 2.11.0 in docs/PLAN.md 17.16): civis/base.py,
+civis/_retries.py, and civis/resources/_resources.py are identical in both.
 """
 
 from __future__ import annotations
@@ -44,8 +48,9 @@ def civis_retrying() -> Any:
 
     civis-python's default retries a request up to 10 tries or 600 seconds. In the
     first live test one request to a slow list took about 10 minutes that way, and
-    civis 2.10's Endpoint._make_request holds one class-level lock (civis.base,
-    shared by every endpoint) for the whole request, retries included, so every
+    civis 2.10 and 2.11's Endpoint._make_request holds one class-level lock
+    (civis.base, shared by every endpoint; civis/base.py and civis/_retries.py are
+    the same in both) for the whole request, retries included, so every
     other API call in the process, including the scanner's worker threads, waited
     for it. This policy stops after RETRY_MAX_TRIES tries or once RETRY_MAX_SECONDS
     have passed (checked after each try), with random exponential waits of at most
@@ -102,7 +107,8 @@ def request_timeouts() -> int:
 def install_request_timeout() -> bool:
     """Give every civis-python API request a timeout. Returns True when installed.
 
-    civis 2.10 makes a new requests session for each request with ``civis.base.open_session`` and sends it
+    civis 2.10 and 2.11 (civis/base.py, civis/_retries.py, and civis/resources/_resources.py are the same in
+    both) make a new requests session for each request with ``civis.base.open_session`` and send it
     with ``sess.send(prepared)`` and no timeout (``Endpoint._make_request``, through
     ``civis._retries.retry_request``); the API spec download when the client is made does the same, with
     ``open_session`` imported by name into ``civis.resources._resources``. This replaces ``open_session``
