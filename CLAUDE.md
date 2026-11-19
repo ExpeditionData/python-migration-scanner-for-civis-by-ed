@@ -453,16 +453,23 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   phase=inventory` every 50 objects or 30 seconds during the detail calls;
   the FATAL step for detail calls is `inventory_details`. Every script ID
   listed is known to workflow references, so no `jobs.get` for it.
-- **Default-image rule (docs/PLAN.md 1.4 and 17.8).** `classify_image` in
-  `scanner/inventory/base.py` (every object type goes through it) counts a
-  known Civis default image as the default when its tag is blank, "latest",
-  the image's current default tag, or that tag's major part
-  (`is_default_tag(image, tag)`). The current tags are in
-  `common/release.CURRENT_DEFAULT_TAGS` (`datascience-python` `9.1` and
-  `civis-jupyter-python3` `5.1`, the tags Civis saved on new objects made
-  with no tag in the live test); update them there when Civis changes its
-  default images. The major tag is derived, never stored. A patch tag
-  (`9.1.1`) or an older minor tag is pinned. Streamlit has no known current
+- **Default-image rule (docs/PLAN.md 1.4, 17.8, and 17.15).** `classify_image`
+  in `scanner/inventory/base.py` (every object type goes through it) counts
+  a known Civis default image as the default when its tag is blank,
+  "latest", a listed tag for that image, a listed tag's major part, or a
+  newer minor tag in a listed major (`is_default_tag(image, tag)`). The
+  listed tags are in `common/release.CURRENT_DEFAULT_TAGS`, a tuple per
+  image, oldest first: `datascience-python` `9.1` and `9.2` and
+  `civis-jupyter-python3` `5.1` and `5.2`, the tags Civis saved on new
+  objects made with no tag in the live test (`5.2` is listed from its
+  release, before it was seen live). A tag stays listed after Civis moves
+  on; add the newest tag there when Civis changes its default images.
+  `default_tag_forms` gives the listed tags, then their majors (derived,
+  never stored). `common/release.is_newer_minor` counts a two-part tag
+  (`9.3`, `9.10`) whose major is listed and whose minor is above the
+  largest listed minor in that major, because Civis may have moved its
+  default to it since the release. A patch tag (`9.1.1`, `9.3.0`), an older
+  minor tag, or a newer major (`10.0`) is pinned. Streamlit has no known
   tag, so Services keep blank or "latest". dbt scripts are checked as
   datascience-python tags. An archived job that an active workflow runs is
   a custom script when its `jobs.get` response has `from_template_id`
@@ -727,10 +734,13 @@ Run the full suite on both Python versions before every commit:
   message; pageshow clears it; a second click adds nothing (docs/PLAN.md
   17.11).
 - `tests/test_default_tags.py` covers the default-image rule for every
-  object type (current tag, major tag, patch and older tags, tags on the
-  wrong image, spaces, a tag inside the image name), the
-  `default_image_only` rule, the synthetic objects saved on the current
-  tags, the preview, and that the README states the same tags.
+  object type (each listed tag, the major tag, newer minor tags, patch and
+  older tags, a newer major, look-alike tags, tags on the wrong image,
+  spaces, a tag inside the image name), `default_tag_forms` and
+  `is_newer_minor`, a monkeypatched tag list, the `default_image_only` rule
+  (including a container on `9.2` with a pinned `pip install`, the retest's
+  case), the synthetic objects saved on listed tags (116, 233, and 404 on
+  `9.2` and `5.2`), the preview, and that the README states the same tags.
 - `tests/test_deploy.py` checks `start_service.sh` (executable bit, LF endings,
   no installs), the Dockerfiles, `.dockerignore`, and `docker/check_image.py`.
   Two of its tests run only inside the test images.

@@ -14,6 +14,7 @@ Terms used on the pages:
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -750,13 +751,35 @@ def findings_rows(objects: list[dict], findings: list[dict], checklist: list[dic
     return rows
 
 
+def _or_list(items) -> str:
+    """ "A", "A or B", or "A, B, or C"."""
+    items = list(items)
+    if len(items) < 3:
+        return " or ".join(items)
+    return ", ".join(items[:-1]) + ", or " + items[-1]
+
+
 def default_tag_help() -> dict:
-    """The current default tags for Findings' "How to read this page", from common/release.CURRENT_DEFAULT_TAGS
-    (docs/PLAN.md 17.8), so the page says what the scanner counts. Image names are shown without the
-    "civisanalytics/" part. The patch example is the first image's current tag plus ".1" (9.1.1 for 9.1)."""
-    images = [{"image": image.rsplit("/", 1)[-1], "tag": tag, "major": release.major_tag(tag)}
-              for image, tag in release.CURRENT_DEFAULT_TAGS.items()]
-    return {"images": images, "patch_example": f"{images[0]['tag']}.1" if images else None}
+    """The default tags for Findings' "How to read this page", from common/release.CURRENT_DEFAULT_TAGS
+    (docs/PLAN.md 17.8 and 17.15), so the page says what the scanner counts. Each image entry gives its name
+    without the "civisanalytics/" part, its listed tags, the first tag's major part, and ``forms``: every tag and
+    major that counts, as "9.1, 9.2, or 9". The patch example is the first image's first tag plus ".1" (9.1.1).
+    The newer example is the first image's major, a dot, and its largest listed minor in that major plus one
+    (9.3 for 9.1 and 9.2)."""
+    images = []
+    for image, tags in release.CURRENT_DEFAULT_TAGS.items():
+        if tags:
+            images.append({"image": image.rsplit("/", 1)[-1], "tags": tuple(tags), "major": release.major_tag(tags[0]),
+                           "forms": _or_list(release.default_tag_forms(image))})
+    patch_example = newer_example = None
+    if images:
+        first = images[0]
+        patch_example = f"{first['tags'][0]}.1"
+        minors = [int(tag.split(".")[1]) for tag in first["tags"]
+                  if re.fullmatch(r"[0-9]+\.[0-9]+", tag) and release.major_tag(tag) == first["major"]]
+        if minors:
+            newer_example = f"{first['major']}.{max(minors) + 1}"
+    return {"images": images, "patch_example": patch_example, "newer_example": newer_example}
 
 
 def _location(finding: dict) -> str:

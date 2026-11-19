@@ -74,17 +74,21 @@ LOOKBACK_PARAMETER = "LOOKBACK_DAYS"
 DEFAULT_LOOKBACK_DAYS = 400
 LOOKBACK_DAYS_RANGE = (1, 3650)
 
-# The current tag of each Civis default image, by image name. Civis saves the then-current default tag on an
-# object made with no tag: in the live test (November 5, 2026), every test Python, container, and custom script
-# created through the API with no tag showed datascience-python tag 9.1, and the test notebook showed
-# civis-jupyter-python3 tag 5.1. Update these when Civis changes its default images. No current tag is known for
-# civisanalytics/civis-services-streamlit, so Services keep the blank or "latest" rule (docs/PLAN.md 17.8).
-# The scanner's default-image rule (scanner/inventory/base.py) and the Findings page's "How to read this page"
-# read them from here.
+# The tags Civis has saved as its default on objects made with no tag, by image name, oldest first. In the live
+# test, objects made on November 5, 2026 showed datascience-python 9.1 and civis-jupyter-python3 5.1, and a
+# container script made on November 19, 2026 showed datascience-python 9.2 (Python 3.14.10, civis-python 2.11.0).
+# civis-jupyter-python3 5.2.0 was released on November 10, 2026 on datascience-python 9.2.0 and is listed before it
+# was seen in the live test. A tag stays on the list after Civis moves on, because objects saved on it were made to
+# follow the default. Add the newest tag when Civis changes its default images. No tag is known for
+# civisanalytics/civis-services-streamlit, so Services keep the blank or "latest" rule (docs/PLAN.md 17.8 and
+# 17.15). The scanner's default-image rule (scanner/inventory/base.py) and the Findings page's "How to read this
+# page" read them from here.
 CURRENT_DEFAULT_TAGS = {
-    "civisanalytics/datascience-python": "9.1",
-    "civisanalytics/civis-jupyter-python3": "5.1",
+    "civisanalytics/datascience-python": ("9.1", "9.2"),
+    "civisanalytics/civis-jupyter-python3": ("5.1", "5.2"),
 }
+# A minor tag: two runs of digits joined by one dot (9.2). ASCII digits only.
+_MINOR_TAG = re.compile(r"[0-9]+\.[0-9]+")
 
 
 def major_tag(tag: str) -> str:
@@ -93,10 +97,26 @@ def major_tag(tag: str) -> str:
 
 
 def default_tag_forms(image: str | None) -> tuple[str, ...]:
-    """The tags, besides blank and "latest", that count as an image's default: its current default tag and that
-    tag's major part. Empty for an image with no known current tag."""
-    current = CURRENT_DEFAULT_TAGS.get(image or "")
-    return (current, major_tag(current)) if current else ()
+    """The tags, besides blank and "latest", that count as an image's default: every listed tag in
+    CURRENT_DEFAULT_TAGS, then each listed tag's major part, with duplicates removed, in that order
+    (("9.1", "9.2", "9") for datascience-python). Empty for an image with no listed tags."""
+    listed = CURRENT_DEFAULT_TAGS.get(image or "", ())
+    return tuple(dict.fromkeys([*listed, *(major_tag(tag) for tag in listed)]))
+
+
+def is_newer_minor(image: str | None, tag: str | None) -> bool:
+    """True when ``tag`` is a minor tag newer than every listed tag in its major: the stripped tag is two runs of
+    digits joined by one dot, its major equals the major of a listed tag for ``image``, and its minor, as an
+    integer, is greater than the largest listed minor in that major (9.3 and 9.10 with 9.1 and 9.2 listed).
+    Civis may have moved its default to it since this release (docs/PLAN.md 17.15). False for an image with no
+    listed tags. Derived, never stored."""
+    tag = (tag or "").strip()
+    if not _MINOR_TAG.fullmatch(tag):
+        return False
+    major, minor = tag.split(".")
+    listed = (t.strip() for t in CURRENT_DEFAULT_TAGS.get(image or "", ()))
+    minors = [int(t.split(".")[1]) for t in listed if _MINOR_TAG.fullmatch(t) and t.split(".")[0] == major]
+    return bool(minors) and int(minor) > max(minors)
 
 
 @lru_cache(maxsize=None)

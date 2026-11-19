@@ -1,10 +1,12 @@
-"""The current default tag and its major tag count as the default image (docs/PLAN.md 17.8, Part C).
+"""Every tag Civis has saved as its default, those tags' major parts, and a newer minor tag in the same major
+count as the default image (docs/PLAN.md 17.8, Part C, and 17.15).
 
-Civis saves the then-current default tag on an object made with no tag (datascience-python 9.1 and
-civis-jupyter-python3 5.1 in the live test). That tag and its major part (9, 5) can move with Civis's default, so
-they count as the default image, like a blank or "latest" tag. A patch tag or an older minor tag names a fixed
-image and counts as pinned. Each object type is built through its own inventory code from a small made-up
-instance. Made-up data only. No Civis calls.
+Civis saves its current default tag on an object made with no tag: datascience-python 9.1 and civis-jupyter-python3
+5.1 in the live test on November 5, 2026, and datascience-python 9.2 on November 19, 2026, after Civis moved its
+default (civis-jupyter-python3 5.2 is listed from its release). Each listed tag, its major part (9, 5), and a newer
+minor tag in that major (9.3, 9.10) can move with Civis's default, so they count as the default image, like a blank
+or "latest" tag. A patch tag or an older minor tag names a fixed image and counts as pinned. Each object type is
+built through its own inventory code from a small made-up instance. Made-up data only. No Civis calls.
 """
 
 from __future__ import annotations
@@ -23,10 +25,11 @@ DATASCIENCE = "civisanalytics/datascience-python"
 JUPYTER = "civisanalytics/civis-jupyter-python3"
 
 # datascience-python tags. Blank and "latest" were the default before this change and still are.
-DS_DEFAULT = ["9.1", "9", " 9.1 ", " 9 ", "", "latest"]
-DS_PINNED = ["9.1.1", "9.0", "9.10", "91", "8", "8.1", "5.1", "5"]
-NB_DEFAULT = ["5.1", "5", " 5.1 ", " 5 ", "", "latest"]
-NB_PINNED = ["5.1.0", "5.0", "4", "9.1", "9"]
+DS_DEFAULT = ["9.1", "9", " 9.1 ", " 9 ", "", "latest", "9.2", " 9.2 ", "9.3", "9.10"]
+DS_PINNED = ["9.1.1", "9.0", "91", "8", "8.1", "5.1", "5", "5.3",
+             "9.2.1", "9.2.0", "9.3.0", "10.0", "9.x", "v9.3", "9."]
+NB_DEFAULT = ["5.1", "5", " 5.1 ", " 5 ", "", "latest", "5.2", "5.3"]
+NB_PINNED = ["5.1.0", "5.0", "4", "9.1", "9", "9.3", "5.2.0"]
 
 PERSON = {"id": 2, "name": "Example Analyst", "username": "example_analyst"}
 
@@ -106,19 +109,28 @@ def impacts(objects: dict, ids) -> dict:
 
 
 def test_the_current_default_tags_are_in_common_release():
-    assert release.CURRENT_DEFAULT_TAGS == {DATASCIENCE: "9.1", JUPYTER: "5.1"}
+    assert release.CURRENT_DEFAULT_TAGS == {DATASCIENCE: ("9.1", "9.2"), JUPYTER: ("5.1", "5.2")}
     assert set(release.CURRENT_DEFAULT_TAGS) <= DEFAULT_IMAGES and STREAMLIT_IMAGE not in release.CURRENT_DEFAULT_TAGS
     assert release.major_tag("9.1") == "9" and release.major_tag("5.1") == "5" and release.major_tag("10") == "10"
-    assert release.default_tag_forms(DATASCIENCE) == ("9.1", "9")
-    assert release.default_tag_forms(JUPYTER) == ("5.1", "5")
+    assert release.default_tag_forms(DATASCIENCE) == ("9.1", "9.2", "9")
+    assert release.default_tag_forms(JUPYTER) == ("5.1", "5.2", "5")
     assert release.default_tag_forms(STREAMLIT_IMAGE) == () and release.default_tag_forms(None) == ()
+    for tag in ("9.3", "9.10", " 9.3 "):
+        assert release.is_newer_minor(DATASCIENCE, tag), tag
+    for tag in ("9.2", "9.1", "9.0", "9.2.1", "9.3.0", "10.0", "9.x", "v9.3", "9.", "9", "5.3", "", None):
+        assert not release.is_newer_minor(DATASCIENCE, tag), tag
+    assert release.is_newer_minor(JUPYTER, "5.3") and not release.is_newer_minor(JUPYTER, "9.3")
+    assert not release.is_newer_minor(STREAMLIT_IMAGE, "9.3") and not release.is_newer_minor(None, "9.3")
 
 
 def test_the_rule_reads_the_tags_from_common_release(monkeypatch):
-    """The scanner derives the major tag from the stored tag, so a new current tag changes both forms."""
-    monkeypatch.setitem(release.CURRENT_DEFAULT_TAGS, DATASCIENCE, "10.2")
-    assert is_default_tag(DATASCIENCE, "10.2") and is_default_tag(DATASCIENCE, "10")
-    assert not is_default_tag(DATASCIENCE, "9.1") and not is_default_tag(DATASCIENCE, "9")
+    """The scanner derives the major tag and the newer minor tags from the listed tags, so a new list changes
+    every form."""
+    monkeypatch.setitem(release.CURRENT_DEFAULT_TAGS, DATASCIENCE, ("10.2",))
+    for tag in ("10.2", "10", "10.3"):
+        assert is_default_tag(DATASCIENCE, tag), tag
+    for tag in ("9.1", "9", "9.3"):
+        assert not is_default_tag(DATASCIENCE, tag), tag
 
 
 @pytest.mark.parametrize("object_type", [ObjectType.PYTHON_SCRIPT, ObjectType.CONTAINER_SCRIPT])
@@ -163,7 +175,7 @@ def test_each_tag_counts_for_its_own_image_only():
     assert classify_image(ObjectType.CONTAINER_SCRIPT, DATASCIENCE, "5.1").impact is Impact.ADVISORY
     assert classify_image(ObjectType.CONTAINER_SCRIPT, DATASCIENCE, "5").impact is Impact.ADVISORY
     assert classify_image(ObjectType.NOTEBOOK, JUPYTER, "9.1").impact is Impact.ADVISORY
-    for tag in ("9.1", "9", "5.1", "5"):
+    for tag in ("9.1", "9.2", "9.3", "9", "5.1", "5.2", "5.3", "5"):
         service = classify_image(ObjectType.SERVICE, STREAMLIT_IMAGE, tag)
         assert (service.impact, service.uses_default_image) == (Impact.ADVISORY, False), tag
         other = classify_image(ObjectType.CONTAINER_SCRIPT, "example-org/custom-etl", tag)
@@ -242,17 +254,38 @@ def test_default_image_only_rules_apply_on_the_current_default_tag():
     assert [rule.id for rule in pinned] == ["PY315-PINNED-PACKAGE-INSTALL"]
     engine = Engine()
     command = "pip install pandas==2.2.3 && python run.py"
-    for tag, expected in (("9.1", True), ("9", True), ("", True), ("9.1.1", False), ("9.0", False)):
+    for tag, expected in (("9.1", True), ("9.2", True), ("9.3", True), ("9", True), ("", True), ("9.1.1", False),
+                          ("9.2.1", False), ("9.0", False)):
         objects, _ = inventoried(instance(tag))
         matches = engine.scan_shell(command, "docker_command").matches
         found = {f.rule_id for f in engine.to_findings(objects[2], matches)}
         assert ("PY315-PINNED-PACKAGE-INSTALL" in found) is expected, tag
 
 
+@pytest.mark.parametrize("tag", ["9.2", "9.1"])
+def test_a_container_saved_on_the_new_default_tag_keeps_the_pinned_install_rule(tag):
+    """The retest's case: a container script made with no tag after Civis moved its default showed
+    datascience-python 9.2, and its docker command installs a pinned package. It is on the default image, so it is
+    Affected and PY315-PINNED-PACKAGE-INSTALL applies (the rule sets its own impact, Advisory). A container made
+    before the move, on 9.1, still gets the same."""
+    data = instance(tag)
+    command = "pip install pandas==2.2.3 && python run.py"
+    data["containers"][0]["docker_command"] = command
+    objects, _ = inventoried(data)
+    obj = objects[2]
+    assert (obj.object_type, obj.docker_image_name, obj.docker_image_tag) == (ObjectType.CONTAINER_SCRIPT, DATASCIENCE,
+                                                                              tag)
+    assert (obj.impact, obj.uses_default_image) == (Impact.AFFECTED, True)
+    engine = Engine()
+    findings = engine.to_findings(obj, engine.scan_shell(command, "docker_command").matches)
+    pinned = [f for f in findings if f.rule_id == "PY315-PINNED-PACKAGE-INSTALL"]
+    assert pinned and all(f.impact is Impact.ADVISORY for f in pinned)
+
+
 # --- The synthetic instance, the dry run, and the preview ------------------------------------------------------
 
 # Synthetic objects saved on the current default tags (scanner/synthetic/synthetic_instance.json).
-ON_DEFAULT_TAGS = {114: "9.1", 209: "9", 233: "9.1", 309: "9.1", 404: "5.1", 405: "5"}
+ON_DEFAULT_TAGS = {114: "9.1", 209: "9", 233: "9.2", 309: "9.2", 404: "5.2", 405: "5"}
 # Synthetic objects on patch tags, still pinned.
 ON_PATCH_TAGS = {102: "8.4.0", 108: "9.1.1", 203: "9.1.1", 403: "5.1.1"}
 
@@ -289,8 +322,23 @@ def test_the_readme_states_the_current_default_tags():
     """README "Affected and Advisory" names the tags in common/release.py, so they change together."""
     from pathlib import Path
 
+    def joined(items) -> str:
+        items = [f"`{item}`" for item in items]
+        return " and ".join(items) if len(items) < 3 else ", ".join(items[:-1]) + ", and " + items[-1]
+
     readme = " ".join((Path(__file__).resolve().parent.parent / "README.md").read_text(encoding="utf-8").split())
-    for image, tag in release.CURRENT_DEFAULT_TAGS.items():
-        assert f"`{image.rsplit('/', 1)[-1]}` `{tag}` or `{release.major_tag(tag)}`" in readme, image
-    first = next(iter(release.CURRENT_DEFAULT_TAGS.values()))
-    assert f"A patch tag such as `{first}.1` names a fixed image" in readme
+    listed = ", ".join(f"`{image.rsplit('/', 1)[-1]}` {joined(tags)}"
+                       for image, tags in release.CURRENT_DEFAULT_TAGS.items())
+    assert f"a tag Civis has saved as its default on new objects: {listed}" in readme
+    majors = dict.fromkeys(release.major_tag(tag) for tags in release.CURRENT_DEFAULT_TAGS.values() for tag in tags)
+    assert f"the major part of those tags: {joined(majors)}" in readme
+    newer = []
+    for image, tags in release.CURRENT_DEFAULT_TAGS.items():
+        major = release.major_tag(tags[-1])
+        example = f"{major}.{max(int(t.split('.')[1]) for t in tags if release.major_tag(t) == major) + 1}"
+        assert release.is_newer_minor(image, example), example
+        newer.append(f"`{example}`")
+    assert f"a newer minor tag in the same major, such as {' or '.join(newer)}, because Civis" in readme
+    first = next(iter(release.CURRENT_DEFAULT_TAGS.values()))[0]
+    older = f"{release.major_tag(first)}.0"
+    assert f"A patch tag such as `{first}.1`, or an older minor tag such as `{older}`, names a fixed image" in readme

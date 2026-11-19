@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from common.models import CivisObject, CoverageCounts, CoverageItem, Impact, ObjectType, ScanStatus, list_failed_note
-from common.release import default_tag_forms
+from common.release import default_tag_forms, is_newer_minor
 from common.urls import object_url
 
 DATASCIENCE_IMAGE = "civisanalytics/datascience-python"
@@ -67,15 +67,17 @@ def normalize_image(name: str | None, tag: str | None) -> tuple[str | None, str 
 
 
 def is_default_tag(image: str | None, tag: str | None) -> bool:
-    """True when ``tag`` follows Civis's default for ``image``: blank, "latest", the image's current default tag,
-    or that tag's major part (common/release.CURRENT_DEFAULT_TAGS; docs/PLAN.md 17.8).
+    """True when ``tag`` follows Civis's default for ``image``: blank, "latest", a tag Civis has saved as its
+    default on new objects, that tag's major part (common/release.default_tag_forms), or a newer minor tag in the
+    same major (common/release.is_newer_minor; docs/PLAN.md 17.8 and 17.15).
 
-    Civis writes the current minor tag itself on an object made with no tag, and a major tag follows Civis's
-    newest image in that family, so both can move with Civis's default. A patch tag (9.1.1) or an older minor
-    tag (9.0) names a fixed image, so it counts as pinned. The tag is checked for its own image only."""
+    Civis writes its current minor tag itself on an object made with no tag, and a major tag follows Civis's
+    newest image in that family, so both can move with Civis's default. A newer minor tag (9.3) counts because
+    Civis may have moved its default to it since this release. A patch tag (9.1.1) or an older minor tag (9.0)
+    still names a fixed image, so it counts as pinned. The tag is checked for its own image only."""
     if tag is None or tag.strip() in ("", "latest"):
         return True
-    return tag.strip() in default_tag_forms(image)
+    return tag.strip() in default_tag_forms(image) or is_newer_minor(image, tag)
 
 
 @dataclass(frozen=True)
@@ -89,11 +91,14 @@ class ImageClass:
 def classify_image(object_type: ObjectType, name: str | None, tag: str | None) -> ImageClass:
     """Apply the approved default-image rule.
 
-    A known Civis default image with a blank tag, "latest", that image's current
-    default tag, or that tag's major part counts as the default image
-    (is_default_tag; decision 1.4, changed in docs/PLAN.md 17.8). For Services,
-    only the Streamlit image counts (decision 12), and it has no known current
-    tag, so only blank or "latest".
+    A known Civis default image with a blank tag, "latest", a tag Civis has
+    saved as that image's default on new objects, that tag's major part, or a
+    newer minor tag in the same major counts as the default image
+    (is_default_tag; decision 1.4, changed in docs/PLAN.md 17.8 and 17.15). A
+    newer minor tag counts because Civis may have moved its default to it since
+    this release; a patch tag or an older minor tag still names a fixed image.
+    For Services, only the Streamlit image counts (decision 12), and it has no
+    known tag, so only blank or "latest".
     """
     name, tag = normalize_image(name, tag)
     effective = name or IMPLIED_IMAGE.get(object_type)

@@ -10,8 +10,9 @@ dbt templates: Civis runs dbt inside a Python container, so a dbt-backed custom
 script is inventoried like a container script when its backing script runs on
 a Civis default Python image. Otherwise it is counted as not Python. The dbt
 script API returns only an image tag, so it is checked as a datascience-python
-tag: blank, "latest", the current default tag, or its major tag
-(common/release.CURRENT_DEFAULT_TAGS) is treated as the Civis default image.
+tag: blank, "latest", a tag Civis has saved as its default, that tag's major
+part, or a newer minor tag in the same major (common/release.CURRENT_DEFAULT_TAGS
+and is_newer_minor) is treated as the Civis default image.
 """
 
 from __future__ import annotations

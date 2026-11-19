@@ -1230,9 +1230,14 @@ def test_findings_explains_how_to_read_the_page(app):
     for words in ("Affected in February:", "Advisory:", "Image unknown:", "High:", "Medium:", "Low:"):
         assert words in text
     # The tag values come from common/release.CURRENT_DEFAULT_TAGS.
-    assert "datascience-python 9.1 or 9, civis-jupyter-python3 5.1 or 5." in text
-    assert "A patch tag such as 9.1.1 names a fixed image, so it counts as Advisory." in text
-    assert "Civis has not said whether objects saved on that tag move to the new image in February." in text
+    assert ('An object counts as on a Civis default image when its image tag is blank, "latest", a tag Civis has '
+            "saved as its default on new objects, that tag's major part, or a newer minor tag in the same major: "
+            "datascience-python 9.1, 9.2, or 9; civis-jupyter-python3 5.1, 5.2, or 5. Civis saves its current default "
+            "tag on new objects that do not choose one, so those objects count as Affected. A newer minor tag such as "
+            "9.3 counts too, because Civis may have moved its default to it since this release. Civis has not said "
+            "whether objects saved on these tags move to the new image in February. A patch tag such as 9.1.1, or an "
+            "older minor tag, names a fixed image, so it counts as Advisory. A Streamlit Service counts only with a "
+            'blank or "latest" tag.') in text
     assert "Set it to All to see rows marked Fixed or Ignored." in text
     # Writing style: no em or en dashes, no inline styles or scripts.
     assert "—" not in section and "–" not in section and "style=" not in section and "<script" not in section
@@ -1243,11 +1248,12 @@ def test_the_help_reads_the_tags_from_common_release(preview, monkeypatch):
 
     monkeypatch.delenv("FLASK_DEBUG", raising=False)
     monkeypatch.setattr(release, "CURRENT_DEFAULT_TAGS",
-                        {"civisanalytics/datascience-python": "10.2", "civisanalytics/civis-jupyter-python3": "6.0"})
+                        {"civisanalytics/datascience-python": ("10.2",), "civisanalytics/civis-jupyter-python3": ("6.0",)})
     text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", _help(make_app(preview).test_client().get("/findings")
                                                              .get_data(as_text=True))))
-    assert "datascience-python 10.2 or 10, civis-jupyter-python3 6.0 or 6." in text
-    assert "A patch tag such as 10.2.1 names a fixed image" in text and "9.1" not in text
+    assert "datascience-python 10.2 or 10; civis-jupyter-python3 6.0 or 6." in text
+    assert "A newer minor tag such as 10.3" in text
+    assert "A patch tag such as 10.2.1" in text and "9.1" not in text
 
 
 def test_the_help_holds_no_civis_values(app):

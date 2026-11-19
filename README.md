@@ -450,12 +450,21 @@ were not found or scanned, so run a new scan to check them. If every list
 fails, the scan stops and Scan history shows it as failed.
 
 **Affected and Advisory.** A finding is "Affected in February" when its
-object runs on a Civis default image with a blank tag, `latest`, the current
-default tag, or that tag's major part (`datascience-python` `9.1` or `9`,
-`civis-jupyter-python3` `5.1` or `5`). The current tag counts because Civis
-saves it on new objects that do not choose one. A patch tag such as `9.1.1`
-names a fixed image, so its findings are Advisory. The Findings page's "How
-to read this page" explains impact, confidence, and status.
+object runs on a Civis default image with one of these tags:
+
+- blank or `latest`
+- a tag Civis has saved as its default on new objects: `datascience-python`
+  `9.1` and `9.2`, `civis-jupyter-python3` `5.1` and `5.2`
+- the major part of those tags: `9` and `5`
+- a newer minor tag in the same major, such as `9.3` or `5.3`, because Civis
+  may have moved its default to it since this release
+
+Civis saves its current default tag on new objects that do not choose one.
+Civis has not said whether objects saved on these tags move to the new image
+in February. A patch tag such as `9.1.1`, or an older minor tag such as
+`9.0`, names a fixed image, so its findings are Advisory. A Streamlit Service
+counts only with a blank or `latest` tag. The Findings page's "How to read
+this page" explains impact, confidence, and status.
 
 **Resuming a stopped scan.** A scan can stop partway: it was canceled, it
 failed (for example on a Civis error), or it hit the 5-day limit for

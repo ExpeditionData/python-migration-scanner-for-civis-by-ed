@@ -4,8 +4,10 @@ Endpoints: scripts.list(type="dbt") and scripts.get_dbt. Civis runs dbt inside
 a Python container, so a dbt script is inventoried when it runs on a Civis
 default Python image, the same rule as dbt templates (Phase 4 question 5).
 The dbt script API returns only an image tag, so it is checked as a
-datascience-python tag: blank, "latest", the current default tag, or its major
-tag (common/release.CURRENT_DEFAULT_TAGS) is treated as the default image.
+datascience-python tag: blank, "latest", a tag Civis has saved as its default,
+that tag's major part, or a newer minor tag in the same major
+(common/release.CURRENT_DEFAULT_TAGS and is_newer_minor) is treated as the
+default image.
 Others are counted as not Python ("dbt").
 
 The code to scan is the git repository: Python models and dependency files in

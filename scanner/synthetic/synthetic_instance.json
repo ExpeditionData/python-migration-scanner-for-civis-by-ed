@@ -323,7 +323,7 @@
         "name": "Example Robot",
         "username": "example_robot"
       },
-      "docker_image_tag": "9.1",
+      "docker_image_tag": "9.2",
       "source": "import civis\nclient = civis.APIClient()\nflags = client.users.list_me()['feature_flags']\n",
       "is_template": true,
       "_listed": false
@@ -752,7 +752,7 @@
         "name": "Example Analyst",
         "username": "example_analyst"
       },
-      "docker_image_tag": "9.1",
+      "docker_image_tag": "9.2",
       "last_run": null,
       "repo_http_uri": "github.com/example-org/example-dbt.git",
       "repo_ref": "main",
@@ -975,7 +975,7 @@
         "username": "example_analyst"
       },
       "docker_image_name": "civisanalytics/civis-jupyter-python3",
-      "docker_image_tag": "5.1",
+      "docker_image_tag": "5.2",
       "notebook_url": "https://example-notebooks.s3-fips.us-east-1.amazonaws.com/notebook-404.ipynb",
       "git_repo_url": null
     },
