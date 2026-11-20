@@ -105,6 +105,39 @@ def test_security_headers_on_every_response(app, url):
     assert "Set-Cookie" not in response.headers
 
 
+V0_1_0_CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; "
+              "connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; "
+              "frame-ancestors 'self' https://platform.civisanalytics.com")
+RETURN_PAGE_TAG = ('<script src="/static/js/return-page.js" defer data-return-overview="/" '
+                   'data-return-pages="/scan /inventory /findings /setup /setup/summary"></script>')
+
+
+@pytest.mark.parametrize("url", PAGES + ["/setup", "/setup/summary", "/no-such-page", "/download/999999"])
+def test_every_page_loads_return_page_js_with_the_remembered_paths(app, url):
+    """docs/PLAN.md 17.19, Part B: one deferred script from the app, its paths from url_for, and the same CSP."""
+    response = app.test_client().get(url)
+    body = response.get_data(as_text=True)
+    assert body.count(RETURN_PAGE_TAG) == 1, url
+    assert response.headers["Content-Security-Policy"] == V0_1_0_CSP
+    assert "Content-Security-Policy-Report-Only" not in response.headers
+    assert response.headers["Referrer-Policy"] == "same-origin"  # A click inside the app has an app referrer.
+    assert not re.search(r"<script(?![^>]*\bsrc=)", body)
+
+
+def test_return_page_paths_follow_the_app_root(preview, monkeypatch):
+    """Nothing assumes the app is served at "/": the paths come from url_for."""
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    body = make_app(preview).test_client().get("/inventory", base_url="http://localhost/tool/") \
+        .get_data(as_text=True)
+    assert ('data-return-overview="/tool/" data-return-pages="/tool/scan /tool/inventory /tool/findings '
+            '/tool/setup /tool/setup/summary"') in body
+    assert app_static("js/return-page.js").is_file()
+
+
+def app_static(path: str) -> Path:
+    return Path(__file__).resolve().parent.parent / "app" / "static" / path
+
+
 def test_pages_have_no_inline_scripts_or_styles(app):
     for url in PAGES:
         body = app.test_client().get(url).get_data(as_text=True)

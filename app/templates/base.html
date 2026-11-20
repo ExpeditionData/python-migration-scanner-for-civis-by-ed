@@ -7,6 +7,8 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
   <script src="{{ url_for('static', filename='js/local-time.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/busy.js') }}" defer></script>
+  {#- js/return-page.js: the GET pages it remembers, so F5 can return to them (docs/PLAN.md 17.19, Part B). -#}
+  <script src="{{ url_for('static', filename='js/return-page.js') }}" defer data-return-overview="{{ url_for('pages.overview') }}" data-return-pages="{{ [url_for('pages.scan'), url_for('pages.inventory'), url_for('pages.findings'), url_for('pages.setup_page'), url_for('pages.setup_summary')] | join(' ') }}"></script>
   {% block scripts %}{% endblock %}
 </head>
 <body>

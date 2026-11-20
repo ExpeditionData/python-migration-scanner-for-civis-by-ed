@@ -18,7 +18,7 @@
   var MAX_TURNED_AWAY = 2;
   var STOP_LINE = "Progress stopped updating because the Civis session for this page expired. " +
     "To see the latest progress, reload the whole Civis page with the browser's reload button (F5 on Windows). " +
-    "Reloading only this frame does not help.";
+    "The app opens on this page again. Reloading only this frame does not help.";
   var JSON_TYPE = /^\s*application\/([a-z0-9.+-]+\+)?json\s*(;|$)/i;
 
   function isJson(response) {

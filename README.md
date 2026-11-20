@@ -531,9 +531,11 @@ expires: Civis's proxy in front of the Service uses a cookie that lasts about
 page renews it. Clicks inside the app do not extend it (measured November
 18, 2026). The app then stops updating and says so. To see the latest progress, reload the whole
 Civis page with the browser's reload button (F5 on Windows). Reloading only
-the app's frame does not help. After the reload, the app opens on the
-Overview page. Civis's "Cookie expired." message on the Service's page means
-the same thing: once the cookie has expired, any click in the app shows
+the app's frame does not help. After the reload, the app opens on the page
+you were on, if you were on it in the last 30 minutes. That includes the page
+you clicked when "Cookie expired." showed. If the browser does not let the app
+keep that note, the app opens on the Overview page. Civis's "Cookie
+expired." message on the Service's page means the same thing: once the cookie has expired, any click in the app shows
 "Cookie expired." in the frame until you reload the whole Civis page. Press
 F5 before you change checklist statuses on the Findings page: a save after
 the cookie expires shows "Cookie expired." and the unsaved statuses are lost.

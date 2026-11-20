@@ -279,7 +279,8 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   with the same code as `v0.1.0-rc14`; its docs remove the README status
   line and drop the results with plain DROP statements instead of CASCADE.
   v0.1.1 finishes the app before it is announced (docs/PLAN.md 17.19); part
-  A identifies objects by type and ID.
+  A identifies objects by type and ID, and part B returns to the same page
+  after the whole Civis page is reloaded.
 - **App flow.** `app/__init__.create_app` -> `app/services.py` (Civis or local
   data layer, job settings cache) -> `app/pages.py` routes -> `app/views.py`
   (pure shaping) -> `app/templates/`. **Objects by type and ID (docs/PLAN.md
@@ -365,10 +366,30 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   not JSON, or not a JSON object). The page never reloads itself because a
   request was turned away: after 2 turned-away polls in a row it stops
   polling and shows the stop line (reload the whole Civis page, F5; reloading
-  only the frame does not help), a success resets the count, a hidden page
-  behaves the same, and nothing uses `sessionStorage` (docs/PLAN.md 17.9;
-  17.8's frame reload is gone). Scan history still reloads once when a scan
-  finishes, right after a successful poll. Findings has a closed "How to read this page" section whose tag
+  only the frame does not help; the app opens on this page again), a
+  success resets the count, a hidden page behaves the same, and
+  `status-requests.js`, `run-scan.js`, and `scan-status.js` use no browser
+  storage (docs/PLAN.md 17.9; 17.8's frame reload is gone). Scan history
+  still reloads once when a scan finishes, right after a successful poll.
+  **Return after F5 (docs/PLAN.md 17.19, Part B).** `app/static/js/return-page.js`,
+  loaded (deferred, no inline script, CSP unchanged) on every page from
+  `base.html`, is the app's only use of browser storage: one `localStorage`
+  entry, `pmsc-return-page`, JSON `{"path", "saved"}` (path and query, time
+  in milliseconds; at most 2,000 characters, else the entry is removed),
+  every use inside try/catch. The script tag's `data-return-overview` and
+  `data-return-pages` give the Overview's path and the other remembered GET
+  pages (Scan history, Inventory, Findings, Setup, support summary) from
+  `url_for`, so nothing assumes the app is at "/". Each remembered page
+  saves its own path and query on load; a plain same-tab click on a link to
+  a remembered page and a GET form sent to one save the target, so a click
+  that lands on "Cookie expired." still has it saved; nothing is saved
+  while the checklist has unsaved changes. On a load of the Overview's own
+  path with an empty or non-app `document.referrer` (Civis loaded the frame;
+  `Referrer-Policy: same-origin` gives every in-app load an app referrer),
+  an entry at most 30 minutes old for a remembered page other than the
+  Overview, a relative path under the app's root (no scheme, no leading
+  "//", no backslash, no whitespace or control characters), gets
+  `location.replace`; otherwise the Overview stays and saves itself. Findings has a closed "How to read this page" section whose tag
   values come from `common/release.py` (`views.default_tag_help`). `app/job_settings.py` parses the
   job's parameters, `app/setup.py` gathers and evaluates the Setup checks,
   `app/summary.py` builds the support summary, and `common/release.py` holds
@@ -800,7 +821,8 @@ Run the full suite on both Python versions before every commit:
   synthetic items by ID use `tests/fake_civis.items_by_id`, which fails if
   two items share an ID.
 - `tests/test_scripts_js.py` runs `busy.js`, `run-scan.js`,
-  `scan-status.js` (the last two after `status-requests.js`), and
+  `scan-status.js` (the last two after `status-requests.js`),
+  `return-page.js` (docs/PLAN.md 17.19, Part B), and
   `copy-summary.js` (its two Copy messages, with a working, failing, or
   missing clipboard; docs/PLAN.md 17.17) under Node with
   a stand-in page (skipped if Node is not installed) and checks the markup
@@ -810,8 +832,8 @@ Run the full suite on both Python versions before every commit:
   answers held until a `release` step, and a reload counter, for the
   status-requests tests: each kind of turned-away answer counts, one keeps
   polling and two in a row stop with the stop line, a success resets the
-  count, no reload and no `sessionStorage` use on either page (hidden or
-  visible, every storage mode), a turned-away POST shows its message and is
+  count, no reload and no `sessionStorage` or `localStorage` use on either
+  page (hidden or visible, every storage mode), a turned-away POST shows its message and is
   sent once, and the reload when a scan finishes (docs/PLAN.md 17.9). The
   stand-in page also has a small DOM (nesting, `createElement`,
   `insertBefore`, `classList`, `closest`, tag and attribute selectors) and a
@@ -821,7 +843,17 @@ Run the full suite on both Python versions before every commit:
   to the page (no " Loading" text); new-tab, modified, hash, and download
   links and the Run scan form get no cue; `data-busy` gets the cue and the
   message; pageshow clears it; a second click adds nothing (docs/PLAN.md
-  17.11).
+  17.11). For `return-page.js`, the stand-in page also has `localStorage`
+  (working, throwing, or missing, with `localUses`), `document.referrer`,
+  `location.search`, a recording `location.replace`, and form `fields`
+  for `FormData`: each remembered page saves itself, a link click and a
+  GET form save their target, other links and POST forms save nothing, the
+  Overview with an empty or Civis referrer and a 5-minute-old entry
+  replaces once with the saved path and query, and nothing happens for an
+  app referrer, an old, future, or unusable entry, storage that throws or
+  is missing, or any page other than the Overview. `tests/test_app.py`
+  checks the script tag on every page, its paths under an app root other
+  than "/", and the unchanged CSP.
 - `tests/test_default_tags.py` covers the default-image rule for every
   object type (each listed tag, the major tag, newer minor tags, patch and
   older tags, a newer major, look-alike tags, tags on the wrong image,

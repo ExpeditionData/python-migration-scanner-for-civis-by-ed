@@ -44,7 +44,11 @@ WORKING = "Working. This can take up to a minute."
 # interval stays waiting). Elements can nest ("children"), and each snapshot gives the text the script added
 # inside an element ("added"), how many elements it added there ("created"), whether the element has the busy
 # trigger class ("cues", 1 or 0), and the body's class. A "submit" step
-# can name its "submitter" button. The page's address is https://app.example.test plus "path".
+# can name its "submitter" button. The page's address is https://app.example.test plus "path" and "search".
+# For return-page.js: "local" seeds localStorage and "localStorage" is its mode ("ok", "throws", or "none", as for
+# sessionStorage); every time a script reaches for window.localStorage counts in localUses; "referrer" sets
+# document.referrer; location.replace(url) records url in "replaced" (the page stays); and a form's "fields" (a list
+# of [name, value]) is what new FormData(form) gives.
 # For copy-summary.js: an element has "value", focus(), and select(); document.getElementById finds an element by its
 # id attribute; "clipboard" is "ok" (navigator.clipboard.writeText resolves and records the text), "rejects", or
 # "none" (no navigator.clipboard); "execCommand" is what document.execCommand("copy") returns (default false); and
@@ -56,7 +60,7 @@ function element(spec) {
   const el = {
     attrs: Object.assign({}, spec.attrs || {}), hidden: !!spec.hidden, disabled: !!spec.disabled,
     textContent: spec.text || "", className: spec.className || "", listeners: {}, tag: spec.tag, children: [],
-    parentNode: null, created: !!spec.created, value: spec.value || "",
+    parentNode: null, created: !!spec.created, value: spec.value || "", fields: spec.fields || [],
     focus() { focused = this; }, select() {},
     getAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attrs, name) ? this.attrs[name] : null; },
     hasAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attrs, name); },
@@ -134,6 +138,24 @@ Date.now = () => clock;
 const responses = scenario.responses.slice();
 const stored = Object.assign({}, scenario.session || {});
 const storageMode = scenario.storage || "ok";
+const local = Object.assign({}, scenario.local || {});
+const localMode = scenario.localStorage || "ok";
+let localUses = 0;
+const replaced = [];
+const localStore = {
+  getItem(key) {
+    if (localMode === "throws") throw new Error("SecurityError");
+    return Object.prototype.hasOwnProperty.call(local, key) ? local[key] : null;
+  },
+  setItem(key, value) {
+    if (localMode === "throws") throw new Error("QuotaExceededError");
+    local[key] = String(value);
+  },
+  removeItem(key) {
+    if (localMode === "throws") throw new Error("SecurityError");
+    delete local[key];
+  },
+};
 const storage = {
   getItem(key) {
     storageUses += 1;
@@ -167,10 +189,19 @@ global.window = {
     if (next.hold) return new Promise((resolve) => held.push(() => resolve(answer(next))));
     return Promise.resolve(answer(next));
   },
-  FormData: function (form) { this.from = form.getAttribute("action"); },
-  location: { pathname: scenario.path || "/", href: "https://app.example.test" + (scenario.path || "/"),
-              reload() { reloads += 1; } },
+  FormData: function (form) {
+    this.from = form.getAttribute("action");
+    this.forEach = (fn) => { for (const [name, value] of form.fields) fn(value, name); };
+  },
+  location: { pathname: scenario.path || "/", search: scenario.search || "", origin: "https://app.example.test",
+              href: "https://app.example.test" + (scenario.path || "/") + (scenario.search || ""),
+              reload() { reloads += 1; }, replace(url) { replaced.push(String(url)); } },
 };
+Object.defineProperty(global.window, "localStorage", { get() {
+  localUses += 1;
+  if (localMode === "throws") throw new Error("SecurityError");
+  return localMode === "none" ? undefined : localStore;
+} });
 // Every mode counts each time a script reaches for window.sessionStorage, so a test can show it is never used.
 Object.defineProperty(global.window, "sessionStorage", { get() {
   storageUses += 1;
@@ -179,6 +210,7 @@ Object.defineProperty(global.window, "sessionStorage", { get() {
 } });
 global.document = {
   hidden: !!scenario.hidden,
+  referrer: scenario.referrer || "",
   body,
   createElement(tag) { return element({ tag, created: true }); },
   querySelector(selector) { return Object.values(els).find((e) => e.matches(selector)) || null; },
@@ -212,7 +244,8 @@ function snapshot() {
                   created: added.length, cues: el.classList.contains("is-busy-trigger") ? 1 : 0 };
   }
   return { els: out, timers: timers.length, fetches: fetches.length, reloads,
-           storage: Object.assign({}, stored), storageUses, bodyClass: body.className };
+           storage: Object.assign({}, stored), storageUses, bodyClass: body.className,
+           local: Object.assign({}, local), localUses, replaced: replaced.slice() };
 }
 (async () => {
   for (const script of scenario.scripts) eval(fs.readFileSync(script, "utf8"));
@@ -253,7 +286,8 @@ NEEDS_STATUS_REQUESTS = ("run-scan.js", "scan-status.js")
 
 
 def run(script: str, elements: dict, steps: list, responses: list | None = None, **page) -> dict:
-    """``page`` sets the stand-in page's other parts: path, storage, session, hidden, and now (see HARNESS)."""
+    """``page`` sets the stand-in page's other parts: path, search, storage, session, localStorage, local,
+    referrer, hidden, and now (see HARNESS)."""
     node = shutil.which("node")
     if node is None:
         pytest.skip("Node.js is not installed")
@@ -539,8 +573,8 @@ def test_a_busy_or_failed_start_says_why():
 # page.
 
 STOP_LINE = ("Progress stopped updating because the Civis session for this page expired. To see the latest "
-             "progress, reload the whole Civis page with the browser's reload button (F5 on Windows). Reloading "
-             "only this frame does not help.")
+             "progress, reload the whole Civis page with the browser's reload button (F5 on Windows). The app "
+             "opens on this page again. Reloading only this frame does not help.")
 POST_TURNED_AWAY = ("Civis did not start the scan. Reload the whole Civis page with the browser's reload button, "
                     "then try again.")
 ENDED = "The scan has ended. Reload the whole Civis page to see its results."
@@ -630,19 +664,24 @@ def test_a_turned_away_poll_never_reloads_or_touches_session_storage(page, hidde
     away = TURNED_AWAY["not-ok"]
     steps = [{"do": "tick"}, {"do": "advance", "ms": 120_000}, {"do": "visibility", "hidden": not hidden},
              {"do": "tick"}, {"do": "visibility", "hidden": hidden}, {"do": "tick"}]
-    out = PAGES[page](steps, [away] * 3, hidden=hidden, storage=storage)
+    out = PAGES[page](steps, [away] * 3, hidden=hidden, storage=storage, localStorage=storage)
     assert all(shot["reloads"] == 0 for shot in out["shots"])
     assert all(shot["storageUses"] == 0 and shot["storage"] == {} for shot in out["shots"])
+    # Nor localStorage (docs/PLAN.md 17.19, Part B: only return-page.js uses it).
+    assert all(shot["localUses"] == 0 and shot["local"] == {} for shot in out["shots"])
     assert stop_text(out) == STOP_LINE and out["shots"][-1]["fetches"] == 2
 
 
 @pytest.mark.parametrize("storage", STORAGE_MODES)
 def test_successful_polls_never_touch_session_storage(storage):
     session = {"pmsc-refresh:/scan": json.dumps({"count": 2, "last": NOW_MS})}  # Left by rc9: ignored.
-    out = scan_history([{"do": "tick"}, {"do": "tick"}], [RUNNING, RUNNING], storage=storage, session=session)
+    out = scan_history([{"do": "tick"}, {"do": "tick"}], [RUNNING, RUNNING], storage=storage, session=session,
+                       localStorage=storage)
     assert out["shots"][-1]["storageUses"] == 0 and out["shots"][-1]["reloads"] == 0
-    out = active_overview([{"do": "tick"}], [status("running", 7)], storage=storage)
+    assert out["shots"][-1]["localUses"] == 0
+    out = active_overview([{"do": "tick"}], [status("running", 7)], storage=storage, localStorage=storage)
     assert out["shots"][-1]["storageUses"] == 0 and out["shots"][-1]["reloads"] == 0
+    assert out["shots"][-1]["localUses"] == 0
 
 
 def test_the_scripts_have_no_reload_on_a_turned_away_answer_and_no_session_storage():
@@ -664,7 +703,7 @@ def test_a_turned_away_run_scan_post_shows_its_message_and_is_not_repeated(kind)
     last = out["shots"][-1]
     assert last["els"]["note"]["text"] == POST_TURNED_AWAY
     assert (last["els"]["button"]["text"], last["els"]["button"]["disabled"]) == ("Run scan", False)
-    assert last["reloads"] == 0 and last["storageUses"] == 0 and last["timers"] == 0
+    assert last["reloads"] == 0 and last["storageUses"] == 0 and last["localUses"] == 0 and last["timers"] == 0
     assert [f["method"] for f in out["fetches"]] == ["POST"]  # Sent once, never again.
 
 
@@ -685,6 +724,7 @@ def test_scan_history_still_reloads_once_when_the_scan_ends_after_a_successful_p
     ended = {"body": {"state": "succeeded", "civis_run_id": 7}}
     out = scan_history([{"do": "tick"}], [ended])
     assert out["shots"][-1]["reloads"] == 1 and out["shots"][-1]["storageUses"] == 0
+    assert out["shots"][-1]["localUses"] == 0
     out = scan_history([{"do": "tick"}, {"do": "tick"}], [TURNED_AWAY["html"], ended])
     assert [shot["reloads"] for shot in out["shots"]] == [0, 0, 1]  # Only the success led to it.
 
@@ -714,6 +754,256 @@ def test_the_messages_follow_the_writing_style_and_show_in_a_checked_color():
         assert not re.search(r"innerHTML|insertAdjacentHTML|document\.write", script)
 
 
+# --- return-page.js: return to the same page after F5 (docs/PLAN.md 17.19, Part B) -------------------------------
+
+RETURN_KEY = "pmsc-return-page"
+REMEMBERED = ("/", "/scan", "/inventory", "/findings", "/setup", "/setup/summary")
+CIVIS_REFERRER = "https://platform.example.test/spa/"
+APP_REFERRER = "https://app.example.test/findings"
+MINUTE_MS = 60_000
+
+
+def return_tag(overview_path: str = "/", pages: tuple[str, ...] = REMEMBERED[1:]) -> dict:
+    """The script tag as base.html writes it: the Overview's path and the other remembered paths, from url_for."""
+    return {"tag": "script", "attrs": {"src": "/static/js/return-page.js", "defer": "",
+                                       "data-return-overview": overview_path, "data-return-pages": " ".join(pages)}}
+
+
+def return_page_elements(**changes) -> dict:
+    """A stand-in app page with every kind of link and form return-page.js looks at."""
+    page = {
+        "body": {"tag": "body"},
+        "script": return_tag(),
+        "skip": {"tag": "a", "attrs": {"href": "#main"}, "text": "Skip to main content"},
+        "brand": {"tag": "a", "attrs": {"href": "/"}, "text": "Python Migration Scanner"},
+        "nav_findings": {"tag": "a", "attrs": {"href": "/findings"}, "text": "Findings"},
+        "nav_setup": {"tag": "a", "attrs": {"href": "/setup", "data-busy": ""}, "text": "Setup"},
+        "next_page": {"tag": "a", "attrs": {"href": "/findings?impact=affected&page=2"}, "text": "Next page"},
+        "summary_link": {"tag": "a", "attrs": {"href": "/setup/summary?run=run-0503"}, "text": "Support summary"},
+        "self_link": {"tag": "a", "attrs": {"href": "/inventory?type=notebook", "target": "_self"},
+                      "children": ["self_text"]},
+        "self_text": {"tag": "span", "text": "Notebooks"},
+        "new_tab": {"tag": "a", "attrs": {"href": "/findings", "target": "_blank"}, "text": "Findings in a new tab"},
+        "download": {"tag": "a", "attrs": {"href": "/download/503", "data-no-busy": ""}, "text": "Download CSV"},
+        "download_attr": {"tag": "a", "attrs": {"href": "/findings", "download": ""}, "text": "Save the page"},
+        "same_page": {"tag": "a", "attrs": {"href": "/inventory?type=notebook#objects"}, "text": "On this page"},
+        "api": {"tag": "a", "attrs": {"href": "/api/scan-status"}, "text": "Status"},
+        "health": {"tag": "a", "attrs": {"href": "/healthz"}, "text": "Health"},
+        "other_site": {"tag": "a", "attrs": {"href": "https://app.example.test.evil.test/findings"}, "text": "Other"},
+        "filters": {"tag": "form", "attrs": {"method": "get", "action": "/findings"},
+                    "fields": [["impact", "affected"], ["owner", "Example Owner"], ["template", ""]],
+                    "children": ["apply"]},
+        "apply": {"tag": "button", "attrs": {"type": "submit"}, "text": "Apply filters"},
+        "inventory_filters": {"tag": "form", "attrs": {"action": "/inventory"}, "fields": [["q", "job_a&b"]]},
+        "checklist": {"tag": "form", "attrs": {"id": "checklist-form", "method": "post", "action": "/findings/save"},
+                      "fields": [["s:101:CV3-EXAMPLE", "fixed"]]},
+        "run_form": {"tag": "form", "attrs": {"method": "POST", "action": "/scan/start"}},
+        "storage_form": {"tag": "form", "attrs": {"method": "post", "action": "/setup/storage"}},
+    }
+    page.update(changes)
+    return page
+
+
+def return_page(steps: list | None = None, path: str = "/inventory", search: str = "", **page) -> dict:
+    elements = page.pop("elements", None) or return_page_elements()
+    return run("return-page.js", elements, steps or [], path=path, search=search, now=NOW_MS, **page)
+
+
+def entry(path: str, minutes_ago: float = 5, saved: int | None = None) -> dict:
+    """A localStorage seed with one saved page."""
+    when = NOW_MS - int(minutes_ago * MINUTE_MS) if saved is None else saved
+    return {RETURN_KEY: json.dumps({"path": path, "saved": when})}
+
+
+def saved_path(shot: dict) -> str | None:
+    raw = shot["local"].get(RETURN_KEY)
+    return None if raw is None else json.loads(raw)["path"]
+
+
+@pytest.mark.parametrize("path", REMEMBERED)
+@pytest.mark.parametrize("search", ["", "?impact=affected&owner=Example+Owner&page=2"])
+def test_each_remembered_page_saves_its_own_path_and_query(path, search):
+    out = return_page(path=path, search=search, referrer=APP_REFERRER)
+    shot = out["shots"][0]
+    assert json.loads(shot["local"][RETURN_KEY]) == {"path": path + search, "saved": NOW_MS}
+    assert shot["replaced"] == [] and shot["reloads"] == 0 and shot["fetches"] == 0
+
+
+@pytest.mark.parametrize("path", ["/download/503", "/api/scan-status", "/healthz", "/no-such-page", "/findings/save"])
+def test_a_page_that_is_not_remembered_saves_nothing(path):
+    shot = return_page(path=path, local=entry("/findings?impact=affected"))["shots"][0]
+    assert shot["local"] == entry("/findings?impact=affected") and shot["replaced"] == []
+
+
+@pytest.mark.parametrize("link, target", [
+    ("nav_findings", "/findings"),
+    ("nav_setup", "/setup"),
+    ("next_page", "/findings?impact=affected&page=2"),
+    ("summary_link", "/setup/summary?run=run-0503"),
+    ("self_text", "/inventory?type=notebook"),  # A click inside the link, with target="_self".
+    ("brand", "/"),
+])
+def test_a_plain_click_on_a_remembered_page_link_saves_its_target(link, target):
+    out = return_page([{"do": "click", "target": link}])
+    assert saved_path(out["shots"][0]) == "/inventory"  # The page saved itself when it loaded.
+    assert saved_path(out["shots"][1]) == target and out["shots"][1]["prevented"] is False
+    assert out["shots"][-1]["replaced"] == []
+
+
+@pytest.mark.parametrize("link, event", [
+    ("new_tab", {}),
+    ("nav_findings", {"ctrlKey": True}),
+    ("nav_findings", {"metaKey": True}),
+    ("nav_findings", {"shiftKey": True}),
+    ("nav_findings", {"altKey": True}),
+    ("nav_findings", {"button": 1}),
+    ("nav_findings", {"defaultPrevented": True}),
+    ("download", {}),
+    ("download_attr", {}),
+    ("skip", {}),
+    ("same_page", {}),
+    ("api", {}),
+    ("health", {}),
+    ("other_site", {}),
+])
+def test_links_that_do_not_open_a_remembered_page_here_save_nothing(link, event):
+    out = return_page([{"do": "click", "target": link, "event": event}], search="?type=notebook")
+    assert saved_path(out["shots"][1]) == "/inventory?type=notebook"  # Still the page's own path.
+
+
+def test_a_get_form_saves_its_target_with_the_fields_it_sends():
+    out = return_page([{"do": "submit", "target": "filters", "submitter": "apply"}])
+    assert saved_path(out["shots"][1]) == "/findings?impact=affected&owner=Example+Owner&template="
+    out = return_page([{"do": "submit", "target": "inventory_filters"}])  # No method attribute: a GET form.
+    assert saved_path(out["shots"][1]) == "/inventory?q=job_a%26b"
+
+
+@pytest.mark.parametrize("form", ["checklist", "run_form", "storage_form"])
+def test_a_post_form_saves_nothing(form):
+    out = return_page([{"do": "submit", "target": form}], path="/findings")
+    assert saved_path(out["shots"][1]) == "/findings"
+
+
+def test_nothing_is_saved_while_the_checklist_has_unsaved_changes():
+    elements = return_page_elements(checklist={"tag": "form", "attrs": {"method": "post", "data-dirty": "true"}})
+    out = return_page([{"do": "click", "target": "nav_setup"}, {"do": "submit", "target": "filters"}],
+                      path="/findings", elements=elements)
+    assert [saved_path(shot) for shot in out["shots"]] == ["/findings"] * len(out["shots"])
+
+
+def test_a_target_over_2000_characters_is_not_kept():
+    long_link = {"tag": "a", "attrs": {"href": "/findings?owner=" + "a" * 2000}, "text": "Long"}
+    out = return_page([{"do": "click", "target": "long"}], elements=return_page_elements(long=long_link))
+    assert saved_path(out["shots"][0]) == "/inventory" and out["shots"][1]["local"] == {}
+
+
+@pytest.mark.parametrize("referrer", ["", CIVIS_REFERRER])
+@pytest.mark.parametrize("search", ["", "?civis=1"])  # The Overview's own query does not matter.
+def test_f5_on_the_overview_returns_to_the_saved_page(referrer, search):
+    saved = "/findings?impact=affected&owner=Example+Owner&page=2"
+    out = return_page(path="/", search=search, referrer=referrer, local=entry(saved, minutes_ago=5))
+    shot = out["shots"][0]
+    assert shot["replaced"] == [saved] and shot["local"] == entry(saved, minutes_ago=5)  # Not overwritten.
+    assert shot["reloads"] == 0 and shot["fetches"] == 0
+
+
+def test_f5_returns_to_the_page_clicked_when_cookie_expired_showed():
+    # The click on Setup landed on "Cookie expired.", so Setup never loaded; its target was saved by the click.
+    clicked = return_page([{"do": "click", "target": "nav_setup"}], path="/findings")["shots"][-1]["local"]
+    out = return_page(path="/", referrer=CIVIS_REFERRER, local=clicked)
+    assert out["shots"][0]["replaced"] == ["/setup"]
+
+
+@pytest.mark.parametrize("referrer", [APP_REFERRER, "https://app.example.test/", "https://app.example.test/setup"])
+def test_an_overview_reached_inside_the_app_never_goes_back(referrer):
+    # The Overview link, the brand link, and the redirect after "Set up results storage" all have an app referrer.
+    out = return_page(path="/", search="?storage=created", referrer=referrer, local=entry("/findings"))
+    assert out["shots"][0]["replaced"] == [] and saved_path(out["shots"][0]) == "/?storage=created"
+
+
+@pytest.mark.parametrize("value", [
+    json.dumps({"path": "/findings", "saved": NOW_MS - 31 * MINUTE_MS}),  # 31 minutes old.
+    json.dumps({"path": "/findings", "saved": NOW_MS + MINUTE_MS}),  # Saved in the future.
+    json.dumps({"path": "/", "saved": NOW_MS}),
+    json.dumps({"path": "/?storage=created", "saved": NOW_MS}),
+    json.dumps({"path": "/api/scan-status", "saved": NOW_MS}),
+    json.dumps({"path": "/download/1", "saved": NOW_MS}),
+    json.dumps({"path": "/healthz", "saved": NOW_MS}),
+    json.dumps({"path": "/findings/save", "saved": NOW_MS}),
+    json.dumps({"path": "https://app.example.test/findings", "saved": NOW_MS}),
+    json.dumps({"path": "https://evil.example.test/findings", "saved": NOW_MS}),
+    json.dumps({"path": "javascript:alert(1)", "saved": NOW_MS}),
+    json.dumps({"path": "//evil.example.test/findings", "saved": NOW_MS}),
+    json.dumps({"path": "/\\evil.example.test/findings", "saved": NOW_MS}),
+    json.dumps({"path": "/findings\\x", "saved": NOW_MS}),
+    json.dumps({"path": "/\t/evil.example.test/findings", "saved": NOW_MS}),
+    json.dumps({"path": "/findings#rules", "saved": NOW_MS}),
+    json.dumps({"path": "/findings?owner=" + "a" * 2000, "saved": NOW_MS}),  # Over 2,000 characters.
+    json.dumps({"path": "/findings"}),
+    json.dumps({"path": "/findings", "saved": str(NOW_MS)}),
+    json.dumps({"saved": NOW_MS}),
+    json.dumps(["/findings", NOW_MS]),
+    json.dumps("/findings"),
+    "null",
+    "{not json",
+    "",
+])
+def test_the_overview_stays_when_the_saved_entry_is_not_usable(value):
+    out = return_page(path="/", referrer=CIVIS_REFERRER, local={RETURN_KEY: value})
+    shot = out["shots"][0]
+    assert shot["replaced"] == [] and saved_path(shot) == "/"  # The Overview saves itself instead.
+
+
+def test_an_entry_30_minutes_old_still_counts():
+    out = return_page(path="/", local=entry("/scan", saved=NOW_MS - 30 * MINUTE_MS))
+    assert out["shots"][0]["replaced"] == ["/scan"]
+
+
+@pytest.mark.parametrize("path", REMEMBERED[1:] + ("/download/503", "/no-such-page"))
+def test_a_page_other_than_the_overview_never_navigates(path):
+    out = return_page(path=path, referrer=CIVIS_REFERRER, local=entry("/findings?impact=affected"))
+    assert out["shots"][0]["replaced"] == [] and out["shots"][0]["reloads"] == 0
+
+
+@pytest.mark.parametrize("mode", ["throws", "none"])
+def test_storage_that_throws_or_is_missing_does_nothing_and_throws_nothing(mode):
+    steps = [{"do": "click", "target": "nav_setup"}, {"do": "submit", "target": "filters"}]
+    for path in ("/", "/findings"):
+        out = return_page(steps, path=path, referrer=CIVIS_REFERRER, localStorage=mode)  # run() fails on a throw.
+        assert all(shot["replaced"] == [] and shot["local"] == {} for shot in out["shots"])
+        assert out["shots"][-1]["localUses"] > 0
+
+
+def test_the_paths_come_from_the_script_tag_so_the_app_can_be_served_below_the_root():
+    tag = return_tag("/tool/", tuple("/tool" + p for p in REMEMBERED[1:]))
+    elements = return_page_elements(script=tag)
+    out = return_page(path="/tool/", referrer="", local=entry("/tool/findings?impact=affected"), elements=elements)
+    assert out["shots"][0]["replaced"] == ["/tool/findings?impact=affected"]
+    for saved in ("/findings", "/tool/../findings", "/toolx/findings"):
+        out = return_page(path="/tool/", referrer="", local=entry(saved), elements=elements)
+        assert out["shots"][0]["replaced"] == [], saved
+    out = return_page(path="/", referrer="", local=entry("/tool/findings"), elements=elements)  # Not its Overview.
+    assert out["shots"][0]["replaced"] == []
+
+
+def test_without_the_script_tag_the_script_does_nothing():
+    elements = return_page_elements()
+    del elements["script"]
+    out = return_page([{"do": "click", "target": "nav_setup"}], path="/", local=entry("/findings"),
+                      elements=elements)
+    assert out["shots"][-1]["replaced"] == [] and out["shots"][-1]["local"] == entry("/findings")
+    assert out["shots"][-1]["localUses"] == 0
+
+
+def test_return_page_js_uses_one_local_storage_key_and_no_session_storage_or_html():
+    script = (JS / "return-page.js").read_text(encoding="utf-8")
+    assert 'var KEY = "pmsc-return-page";' in script and script.count("setItem(") == 1
+    assert "sessionStorage" not in script
+    assert "location.replace(" in script and "location.href =" not in script and "reload(" not in script
+    assert not re.search(r"innerHTML|insertAdjacentHTML|document\.write|eval\(|fetch\(", script)
+    assert "—" not in script and "–" not in script
+
+
 # --- The pages ------------------------------------------------------------------------------------------
 
 
@@ -728,12 +1018,17 @@ def make_app(folder: Path, state: str = "normal"):
     return create_app({"SECRET_KEY": SECRET, "SERVICES": local_services(folder, state), "TESTING": True})
 
 
+RETURN_TAG = ('<script src="/static/js/return-page.js" defer data-return-overview="/" '
+              'data-return-pages="/scan /inventory /findings /setup /setup/summary"></script>')
+
+
 def test_every_page_has_the_working_region_and_loads_busy_js(preview, monkeypatch):
     monkeypatch.delenv("FLASK_DEBUG", raising=False)
     client = make_app(preview).test_client()
     for url in ("/", "/scan", "/inventory", "/findings", "/setup", "/setup/summary"):
         body = client.get(url).get_data(as_text=True)
         assert 'src="/static/js/busy.js"' in body, url
+        assert RETURN_TAG in body, url
         assert '<div class="banner banner-info" data-busy-region role="status" aria-live="polite" hidden></div>' in body
         assert '<a href="/setup"' in body and 'data-busy>Setup</a>' in body
         assert not re.search(r"<script(?![^>]*\bsrc=)", body) and ' style="' not in body

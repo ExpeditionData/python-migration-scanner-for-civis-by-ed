@@ -323,6 +323,13 @@ These are described in [app/security.py](app/security.py) and tested in
 - **Request forgery protection.** Every form submission needs a token tied to
   the viewer's Civis user ID, and the app is designed to refuse requests from
   other websites. The app sets no cookies of its own.
+- **Browser storage.** The app keeps one entry in the browser's local storage
+  for the app's own address: the path and query of the last app page and when
+  it was saved. A query can hold filter values the viewer chose, such as an
+  owner name. The entry is designed to be used only to return to that page
+  after the whole Civis page is reloaded, not to be sent anywhere, and to be
+  replaced by the next page. Code: [app/static/js/return-page.js](app/static/js/return-page.js).
+  Tests: the `return-page.js` tests in [tests/test_scripts_js.py](tests/test_scripts_js.py).
 - **Debug mode is off.** The app is designed to refuse to start if Flask debug
   mode is turned on.
 - **Local preview uses made-up data.** The developer preview
