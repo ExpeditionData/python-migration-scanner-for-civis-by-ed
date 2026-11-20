@@ -459,7 +459,14 @@ ID and backing script ID (the backing script is linked when the scan also
 checked it), and both pages can be filtered by template ID. The Overview says
 how many templates, used by how many custom scripts, have findings. Civis
 also lists each custom script under its backing script's type; the scan
-counts it once, as a custom script.
+counts it once, as a custom script. If the user the scan runs as cannot read
+a template's backing script (Civis answers HTTP 404), for example because the
+template is public and Civis or another organization owns the backing script,
+the scan checks each custom script's code preview instead. The code preview
+is the code the custom script runs, with its arguments filled in. The image
+is set on the backing script, so these custom scripts are marked "partial",
+with default image and impact unknown. If your organization owns the backing
+script, share it with the Robot user and run a new scan.
 
 **If a list stops partway.** The scan first lists every object type from
 Civis. If Civis stops returning one type's list partway (for example with an
