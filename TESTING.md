@@ -276,6 +276,8 @@ finish the step the way the interface allows and record the difference.
   | g | The credential list shows each credential's ID | Where Civis shows a credential's ID. |
   | h | Sharing settings | The control on a script's and a Service's page that opens its sharing. |
 
+  Confirmed after the retest (November 20, 2026): d, f, g, and h match the README.
+
 - **Expected:** The labels match the README.
 - **Record:** for each row that is not removed, "matches" or the label the
   interface shows. Civis interface labels are not client data.

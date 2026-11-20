@@ -29,8 +29,7 @@ It has two parts:
 
 Setup takes about 30 minutes and is described in [Setup](#setup) below. Field
 names are the ones the Civis web interface showed in a live test, or the ones
-used in Civis help articles. Where a name could not be confirmed against the
-Civis web interface, it is followed by "(label to confirm)".
+used in Civis help articles.
 
 ## Security and privacy
 
@@ -192,8 +191,9 @@ You need:
    - Store it in Civis as a **Custom Credential**. Put the token in the
      password field; the user name can be anything, such as `github`.
    - Create the credential while signed in as the Robot user, or share it
-     with the Robot user (label to confirm), so scans that run as the Robot
-     user can use it.
+     with the Robot user (on the credential's page, click the three dots at
+     the top right, then **Share**), so scans that run as the Robot user can
+     use it.
    - Set the credential's ID as `GITHUB_CREDENTIAL` in the install script
      (step 4 of [Install](#install)), instead of attaching the credential by
      hand. The script checks that it is a Custom credential, attaches it to
@@ -205,8 +205,7 @@ You need:
 1. Sign in to Civis as the Robot user. The install script makes the user who
    runs it the owner of the scanner job and the Service, and an update
    changes only objects that user owns.
-2. From the **Code** menu, select **Scripts**, click **New Script**, and choose
-   **Python** (label to confirm).
+2. From the **Code** menu, under **Scripts**, click **Python**.
 3. Open the install script at your release tag:
    `https://github.com/ExpeditionData/python-migration-scanner-for-civis-by-ed/blob/<release tag>/install/civis_install.py`.
    Copy the whole file and paste it as the Python script's code. Read the
@@ -220,7 +219,7 @@ You need:
    | `MODE` | `"check"` |
    | `TAG` | `"<release tag>"`, the tag the file came from |
    | `RESULTS_DATABASE` | The results database's name in quotes, or its ID |
-   | `RESULTS_CREDENTIAL` | The ID of the Robot user's database credential for that database (Civis's credential list shows each credential's ID; label to confirm) |
+   | `RESULTS_CREDENTIAL` | The ID of the Robot user's database credential for that database (open **Admin**, then **Credentials**: the ID is the first column of the list) |
    | `RESULTS_SCHEMA` | The results schema name you chose, in quotes |
    | `GITHUB_CREDENTIAL` | `None` (no token, the normal setup), or your Custom credential's ID |
    | `LOOKBACK_DAYS` | `None` (400 days), or a whole number from 1 to 3650 |
@@ -242,8 +241,8 @@ You need:
    not send them to anyone who supports your setup.
 8. Share both objects with Civis admins only. Civis shares a new job and a
    new Service with the default group of the user who creates them, so on
-   each object's page, open its sharing settings (label to confirm), and
-   remove that group and everyone else who is not a Civis admin. Adding Civis
+   each object's page, click the three dots at the top right, then **Share**,
+   and remove that group and everyone else who is not a Civis admin. Adding Civis
    admins is optional. The Setup page's sharing line (step 4 of
    [Set up results storage and check the setup](#set-up-results-storage-and-check-the-setup))
    shows who has access. Do not schedule the scanner job.

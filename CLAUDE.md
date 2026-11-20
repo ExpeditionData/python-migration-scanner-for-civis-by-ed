@@ -278,10 +278,11 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   sections 10 to 17. `v0.1.0` (docs/PLAN.md 17.18) is the first release,
   with the same code as `v0.1.0-rc14`; its docs remove the README status
   line and drop the results with plain DROP statements instead of CASCADE.
-  v0.1.1 finishes the app before it is announced (docs/PLAN.md 17.19); part
-  A identifies objects by type and ID, part B returns to the same page
-  after the whole Civis page is reloaded, and part C wraps long names in
-  the Findings and Inventory tables so they fit a desktop window.
+  v0.1.1 (docs/PLAN.md 17.19) identifies objects by type and ID, returns to
+  the same page after F5, wraps long names, counts partly scanned reasons in
+  the support summary, and confirms the README's Civis labels; `__version__`
+  is 0.1.1; its first build is tagged `v0.1.1-rc1` and goes on the kept
+  install with update mode.
 - **App flow.** `app/__init__.create_app` -> `app/services.py` (Civis or local
   data layer, job settings cache) -> `app/pages.py` routes -> `app/views.py`
   (pure shaping) -> `app/templates/`. **Objects by type and ID (docs/PLAN.md
