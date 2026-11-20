@@ -159,7 +159,7 @@ class ResultSink(Protocol):
     def other_objects(self) -> int: ...  # Tables and views in the schema that are not this tool's.
     def ensure_tables(self) -> None: ...
     def append(self, table: Table, run_id: str, rows: list[dict]) -> None: ...
-    def finished_object_ids(self, run_id: str) -> set[int]: ...
+    def finished_object_keys(self, run_id: str) -> set[tuple[str, int]]: ...  # (object type, object ID)
     def run_rows(self, run_id: str) -> dict[str, list[dict]]: ...
     def latest_status(self, run_id: str) -> str | None: ...
     def scan_run_rows(self) -> list[dict]: ...  # The resume decision's columns of every scan_runs row.
@@ -211,9 +211,14 @@ class SqliteSink:
         names = [d[0] for d in cursor.description]
         return [dict(zip(names, row)) for row in cursor.fetchall()]
 
-    def finished_object_ids(self, run_id: str) -> set[int]:
-        rows = self._select(f"SELECT DISTINCT object_id FROM {sql.qualified_table(self.schema, OBJECTS.name)} WHERE run_id = ?", (run_id,))
-        return {r["object_id"] for r in rows}
+    def finished_object_keys(self, run_id: str) -> set[tuple[str, int]]:
+        """(object type, object ID) of every object the run saved. Jobs and notebooks, Services, or workflows
+        can share an ID in Civis, so the type is part of the key (docs/PLAN.md 17.19)."""
+        rows = self._select(
+            f"SELECT DISTINCT object_type, object_id FROM {sql.qualified_table(self.schema, OBJECTS.name)} WHERE run_id = ?",
+            (run_id,),
+        )
+        return {(str(r["object_type"]), int(r["object_id"])) for r in rows}
 
     def run_rows(self, run_id: str) -> dict[str, list[dict]]:
         result = {}
@@ -343,11 +348,13 @@ class CivisSink:
         except Exception as exc:
             raise TableWriteError(table.name) from exc
 
-    def finished_object_ids(self, run_id: str) -> set[int]:
+    def finished_object_keys(self, run_id: str) -> set[tuple[str, int]]:
+        """(object type, object ID) of every object the run saved (docs/PLAN.md 17.19)."""
         rows = self._read(
-            f"SELECT DISTINCT object_id FROM {sql.qualified_table(self.schema, OBJECTS.name)} WHERE run_id = {sql.run_id(run_id)}"
+            f"SELECT DISTINCT object_type, object_id FROM {sql.qualified_table(self.schema, OBJECTS.name)} "
+            f"WHERE run_id = {sql.run_id(run_id)}"
         )
-        return {int(r["object_id"]) for r in rows}
+        return {(str(r["object_type"]), int(r["object_id"])) for r in rows}
 
     def run_rows(self, run_id: str) -> dict[str, list[dict]]:
         result = {}
@@ -446,9 +453,11 @@ def report_csv(objects: list[dict], findings: list[dict], rules: RuleSet) -> byt
     non-affiliation statement), each one quoted cell, written as is: the
     formula guard applies to data cells only. The column names are on line 3.
     """
-    by_object: dict[int, list[dict]] = {}
+    # Findings are grouped by (object type, object ID): a job and a notebook, Service, or workflow can share
+    # an ID in Civis (docs/PLAN.md 17.19).
+    by_object: dict[tuple[str, int], list[dict]] = {}
     for finding in findings:
-        by_object.setdefault(int(finding["object_id"]), []).append(finding)
+        by_object.setdefault((str(finding["object_type"]), int(finding["object_id"])), []).append(finding)
     titles = {r.id: r.title for r in rules}
 
     buffer = io.StringIO()
@@ -465,7 +474,7 @@ def report_csv(objects: list[dict], findings: list[dict], rules: RuleSet) -> byt
             "docker_image_name": obj.get("docker_image_name"), "docker_image_tag": obj.get("docker_image_tag"),
             "scan_status": obj.get("scan_status"), "scan_note": obj.get("scan_note"), "workflows": obj.get("workflows"),
         }
-        rows = by_object.get(int(obj["object_id"]))
+        rows = by_object.get((str(obj["object_type"]), int(obj["object_id"])))
         if not rows:
             writer.writerow({k: _cell(v) for k, v in {**base, "row_type": "object"}.items()})
             continue

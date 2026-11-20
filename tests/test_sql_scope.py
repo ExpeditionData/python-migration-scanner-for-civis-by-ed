@@ -122,7 +122,7 @@ def test_scanner_sink_statements_stay_in_the_results_schema():
     sink = CivisSink(object(), io, 31, "results_scan", 41)
     sink.other_objects()
     sink.ensure_tables()
-    sink.finished_object_ids("run-1")
+    sink.finished_object_keys("run-1")
     sink.run_rows("run-1")
     sink.latest_status("run-1")
     sink.checklist_pairs()

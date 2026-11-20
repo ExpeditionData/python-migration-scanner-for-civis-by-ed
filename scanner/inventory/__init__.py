@@ -60,7 +60,7 @@ from common.models import CoverageItem, ObjectType, WorkflowRef
 from scanner import scan_log
 from scanner.inventory import custom, notebooks
 from scanner.inventory.base import (
-    Inventory, InventoryContext, InventoryItem, ListFailed, ListFailure, field_of, in_window,
+    JOB_TYPES, Inventory, InventoryContext, InventoryItem, ListFailed, ListFailure, field_of, in_window,
 )
 from scanner.inventory.containers import container_item, list_container_scripts
 from scanner.inventory.custom import TemplateCache, custom_item, list_custom_scripts
@@ -83,7 +83,7 @@ _LISTS = (
 )
 # Script lists whose rows can be custom scripts made from a template (from_template_id set).
 _COPY_TYPES = frozenset({ObjectType.PYTHON_SCRIPT, ObjectType.CONTAINER_SCRIPT, ObjectType.DBT_SCRIPT})
-SCRIPT_TYPES = (ObjectType.PYTHON_SCRIPT, ObjectType.CONTAINER_SCRIPT, ObjectType.CUSTOM_SCRIPT, ObjectType.DBT_SCRIPT)
+SCRIPT_TYPES = JOB_TYPES
 # The list-row check for rows that cannot run Python, by type.
 _ROW_NOT_PYTHON = {ObjectType.CUSTOM_SCRIPT: custom.row_not_python, ObjectType.NOTEBOOK: notebooks.row_not_python}
 
@@ -204,10 +204,12 @@ def build_inventory(client: Any, civis_git: Any = None, step: Callable[[str], No
     step("inventory_archived_jobs")
     known = {field_of(row, "id") for t in SCRIPT_TYPES for row in listed[t].rows}
     _add_archived_jobs_run_by_workflows(ctx, references, known, templates)
-    by_id = inventory.by_id()
+    # References are job IDs, so they map only to job items, never to a notebook, Service, or workflow with
+    # the same ID (docs/PLAN.md 17.19).
+    jobs = inventory.jobs_by_id()
     for job_id, refs in references.items():
-        item = by_id.get(job_id)
-        if item is not None and item.obj.object_type is not ObjectType.WORKFLOW:
+        item = jobs.get(job_id)
+        if item is not None:
             item.obj.workflows = sorted(refs, key=lambda r: r.workflow_id)
     return inventory
 
@@ -292,7 +294,8 @@ def _add_archived_jobs_run_by_workflows(
 ) -> None:
     """``listed_ids`` holds every ID seen in a script list (read, template copy, or not Python): those are
     not archived, so a workflow reference to one needs no jobs.get."""
-    known = listed_ids | {item.obj.object_id for item in ctx.inventory.items}
+    # Job items only: a notebook, Service, or workflow with the same ID is not the job (docs/PLAN.md 17.19).
+    known = listed_ids | set(ctx.inventory.jobs_by_id())
     builders = {
         ObjectType.PYTHON_SCRIPT: python_item,
         ObjectType.CONTAINER_SCRIPT: container_item,

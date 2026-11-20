@@ -14,7 +14,7 @@ from scanner.inventory.base import classify_image, normalize_image, schedule_sum
 from scanner.inventory.users import USERS_ACTIVE_NOTE, USERS_NONE_NOTE, load_users, scanning_user
 from scanner.inventory.workflows import SAVED_COPY_NOTE, parse_definition
 from scanner.retrieval.civis_git import TAG_READ_AT_BRANCH, CivisGitFiles
-from tests.fake_civis import FakeAPIError, FakeClient
+from tests.fake_civis import FakeAPIError, FakeClient, items_by_id
 
 
 # A scan on this day with the default 400-day LOOKBACK_DAYS, as the runner passes it (docs/PLAN.md 17.6).
@@ -30,12 +30,12 @@ def built():
 
 def obj(built, object_id):
     _, inventory = built
-    return inventory.by_id()[object_id].obj
+    return items_by_id(inventory)[object_id].obj
 
 
 def item(built, object_id):
     _, inventory = built
-    return inventory.by_id()[object_id]
+    return items_by_id(inventory)[object_id]
 
 
 def test_inventoried_ids_by_type(built):
@@ -70,7 +70,7 @@ def test_counts_cover_archived_and_non_python(built):
 
 def test_archived_jobs_are_skipped_unless_an_active_workflow_runs_them(built):
     _, inventory = built
-    assert 104 not in inventory.by_id()  # Archived and only used by an archived workflow.
+    assert 104 not in items_by_id(inventory)  # Archived and only used by an archived workflow.
     archived = obj(built, 105)
     assert archived.archived is True
     assert archived.workflow_ids == [601]
@@ -107,7 +107,7 @@ def test_standalone_dbt_scripts_follow_the_image_rule(built):
     assert (dbt.uses_default_image, dbt.impact, dbt.git_path) == (True, Impact.AFFECTED, "warehouse")
     assert dbt.url.endswith("/spa/#/scripts/dbt/231")
     _, inventory = built
-    assert 232 not in inventory.by_id()
+    assert 232 not in items_by_id(inventory)
 
 
 def test_dbt_templates_follow_the_backing_image(built):
@@ -117,7 +117,7 @@ def test_dbt_templates_follow_the_backing_image(built):
         221, "github.com/example-org/example-dbt.git", "main", "warehouse"
     )
     _, inventory = built
-    assert 307 not in inventory.by_id()  # dbt on a pinned image: counted as not Python.
+    assert 307 not in items_by_id(inventory)  # dbt on a pinned image: counted as not Python.
 
 
 @pytest.mark.parametrize(
@@ -174,7 +174,7 @@ def test_owners_from_the_active_list_by_default(built):
 
 def test_owners_include_deactivated_users_when_all_can_be_listed():
     inventory = build_inventory(_users_allowed())
-    by_id = inventory.by_id()
+    by_id = items_by_id(inventory)
     assert (by_id[101].obj.owner_active, by_id[102].obj.owner_active, by_id[403].obj.owner_active) == (True, False, False)
     assert by_id[102].obj.owner_name == "Example Former Analyst"
     assert (inventory.users_source, inventory.users_note) == ("all", None)
@@ -182,7 +182,7 @@ def test_owners_include_deactivated_users_when_all_can_be_listed():
 
 def test_owners_unknown_when_no_user_list_can_be_read():
     inventory = build_inventory(_users_allowed({"all": 403, "active": 503}))
-    by_id = inventory.by_id()
+    by_id = items_by_id(inventory)
     assert {by_id[i].obj.owner_active for i in (101, 102, 403)} == {None}
     assert (by_id[101].obj.owner_name, by_id[102].obj.owner_name) == ("Example Analyst", "Example Former Analyst")
     assert inventory.users_source == "none"
@@ -265,7 +265,7 @@ def test_api_usage(built):
 
 def test_hidden_objects_are_skipped(built):
     _, inventory = built
-    assert 103 not in inventory.by_id()  # Hidden in the synthetic instance.
+    assert 103 not in items_by_id(inventory)  # Hidden in the synthetic instance.
 
 
 def test_templates_are_read_once_per_template():
@@ -417,13 +417,13 @@ def git_inventory(data):
 
 def test_git_backed_workflow_is_parsed_from_its_git_file():
     client, inventory, reader = git_inventory(git_workflow_data())
-    workflow = inventory.by_id()[601]
+    workflow = items_by_id(inventory)[601]
     assert [t.task for t in workflow.code["inline_tasks"]] == ["from_git"]
     assert "civis.ml" in workflow.code["inline_tasks"][0].source
     assert (workflow.obj.git_repo, workflow.obj.git_ref, workflow.obj.git_path) == (
         "https://github.com/example-org/example-workflows.git", "main", "workflows/daily.yml")
     assert workflow.obj.scan_status is not ScanStatus.PARTIAL and workflow.obj.scan_note is None
-    by_id = inventory.by_id()
+    by_id = items_by_id(inventory)
     assert by_id[102].obj.workflow_ids == [601]  # Job references come from the git file too,
     assert 601 not in by_id[201].obj.workflow_ids  # not from the saved definition.
     assert (reader.reads, reader.failures) == (2, 1)  # 601 and 605 are read; 606 fails (synthetic instance).
@@ -431,19 +431,19 @@ def test_git_backed_workflow_is_parsed_from_its_git_file():
 
 def test_git_backed_workflow_falls_back_to_its_saved_definition():
     _, inventory, reader = git_inventory(git_workflow_data(file_error=403))
-    workflow = inventory.by_id()[601]
+    workflow = items_by_id(inventory)[601]
     assert [t.task for t in workflow.code["inline_tasks"]] == ["inline_step", "inline_container_step"]
     assert workflow.obj.scan_status is ScanStatus.PARTIAL
     assert workflow.obj.scan_note == (
         "The workflow's own file could not be read through Civis (HTTP 403). " + SAVED_COPY_NOTE
     )
-    assert inventory.by_id()[201].obj.workflow_ids == [601]
+    assert items_by_id(inventory)[201].obj.workflow_ids == [601]
     assert (reader.reads, reader.failures) == (1, 2)  # 605 is read; 606 fails (synthetic instance).
 
 
 def test_git_backed_workflow_that_only_runs_jobs_reports_a_failed_read_in_coverage():
     _, inventory, _ = git_inventory(git_workflow_data(604, commits_error=404))
-    assert 604 not in inventory.by_id()
+    assert 604 not in items_by_id(inventory)
     notes = [c.reason for c in inventory.coverage if (c.object_type, c.object_id) == (ObjectType.WORKFLOW, 604)]
     assert notes == ["The workflow's own file could not be read through Civis (HTTP 404). " + SAVED_COPY_NOTE]
 
@@ -461,7 +461,7 @@ def test_get_git_is_called_once_per_active_workflow():
 
 def test_synthetic_git_backed_objects():
     client, inventory, reader = git_inventory(copy.deepcopy(FakeClient.from_fixture("synthetic_instance.json").data))
-    by_id = inventory.by_id()
+    by_id = items_by_id(inventory)
     assert [t.task for t in by_id[605].code["inline_tasks"]] == ["from_git"]  # Not the saved "old_step".
     assert by_id[109].obj.workflow_ids == [605]
     assert by_id[606].obj.scan_status is ScanStatus.PARTIAL and SAVED_COPY_NOTE in by_id[606].obj.scan_note
@@ -479,7 +479,7 @@ def test_git_backed_workflow_on_a_tag_is_partial_with_a_note():
     data = git_workflow_data()
     data["workflows_git"]["601"].update({"git_ref": "v1.0.0", "git_ref_type": "tag"})
     _, inventory, _ = git_inventory(data)
-    workflow = inventory.by_id()[601]
+    workflow = items_by_id(inventory)[601]
     assert [t.task for t in workflow.code["inline_tasks"]] == ["from_git"]
     assert workflow.obj.scan_status is ScanStatus.PARTIAL
     assert workflow.obj.scan_note == TAG_READ_AT_BRANCH.format(item="workflow")
@@ -497,7 +497,7 @@ def test_template_copies_are_skipped_in_their_own_list_and_counted(built):
     assert c[ObjectType.PYTHON_SCRIPT].template_copies == 1  # 304.
     assert c[ObjectType.DBT_SCRIPT].template_copies == 1  # 306.
     assert c[ObjectType.CUSTOM_SCRIPT].template_copies == 0
-    by_id = inventory.by_id()
+    by_id = items_by_id(inventory)
     for object_id in (301, 302, 304, 306):
         assert by_id[object_id].obj.object_type is ObjectType.CUSTOM_SCRIPT
 
@@ -520,7 +520,7 @@ def test_every_object_id_is_inventoried_once(built):
     objects by ID, so an instance with template copies must give one item per ID."""
     _, inventory = built
     ids = [it.obj.object_id for it in inventory.items]
-    assert len(ids) == len(set(ids)) == len(inventory.by_id())
+    assert len(ids) == len(set(ids)) == len(items_by_id(inventory))
 
 
 def test_every_listed_script_id_is_known_to_workflow_references():
@@ -536,8 +536,8 @@ def test_every_listed_script_id_is_known_to_workflow_references():
     client = FakeClient(data)
     inventory = build_inventory(client)
     assert not {301, 303} & {a[0] for a, _ in client.called("jobs.get")}
-    assert inventory.by_id()[301].obj.workflow_ids == [607]
-    assert inventory.by_id()[301].obj.object_type is ObjectType.CUSTOM_SCRIPT
+    assert items_by_id(inventory)[301].obj.workflow_ids == [607]
+    assert items_by_id(inventory)[301].obj.object_type is ObjectType.CUSTOM_SCRIPT
 
 
 # --- LOOKBACK_DAYS in inventory (docs/PLAN.md 17.6, Part B) -----------------------------------------
@@ -566,7 +566,7 @@ def test_scripts_outside_the_window_are_counted_and_not_read(built):
     c = inventory.counts
     assert (c[ObjectType.PYTHON_SCRIPT].outside_window, c[ObjectType.CONTAINER_SCRIPT].outside_window,
             c[ObjectType.CUSTOM_SCRIPT].outside_window, c[ObjectType.DBT_SCRIPT].outside_window) == (1, 1, 1, 0)
-    by_id = inventory.by_id()
+    by_id = items_by_id(inventory)
     assert not {113, 207, 308} & set(by_id)
     detail_ids = {a[0] for name, a, _ in client.calls if name.startswith("scripts.get_")}
     assert not {113, 207, 308} & detail_ids
@@ -579,12 +579,12 @@ def test_notebooks_services_and_workflows_are_always_kept(built):
     _, inventory = built
     c = inventory.counts
     assert all(c[t].outside_window == 0 for t in (ObjectType.NOTEBOOK, ObjectType.SERVICE, ObjectType.WORKFLOW))
-    assert {401, 403, 501, 502, 503, 601} <= set(inventory.by_id())
+    assert {401, 403, 501, 502, 503, 601} <= set(items_by_id(inventory))
 
 
 def test_without_a_cutoff_every_script_is_kept():
     inventory = build_inventory(FakeClient.from_fixture("synthetic_instance.json"))
-    assert {113, 207, 308} <= set(inventory.by_id())
+    assert {113, 207, 308} <= set(items_by_id(inventory))
     assert all(counts.outside_window == 0 for counts in inventory.counts.values())
 
 
@@ -599,9 +599,9 @@ def test_a_workflow_reference_to_a_script_outside_the_window_calls_no_jobs_get()
     client = FakeClient(data)
     inventory = build_inventory(client, cutoff=CUTOFF)
     assert 113 not in {a[0] for a, _ in client.called("jobs.get")}
-    assert 113 not in inventory.by_id()
+    assert 113 not in items_by_id(inventory)
     # Archived jobs that active workflows run are still found and read.
-    assert inventory.by_id()[105].obj.archived is True
+    assert items_by_id(inventory)[105].obj.archived is True
 
 
 def test_there_is_no_early_stop_on_sorted_lists():
@@ -609,7 +609,7 @@ def test_there_is_no_early_stop_on_sorted_lists():
     every page is read and every row is checked."""
     data = copy.deepcopy(FakeClient.from_fixture("synthetic_instance.json").data)
     old_but_ran = {
-        "id": 114, "name": "Example yearly job", "type": "Python", "archived": False, "hidden": False,
+        "id": 117, "name": "Example yearly job", "type": "Python", "archived": False, "hidden": False,
         "author": {"id": 2, "name": "Example Analyst", "username": "example_analyst"},
         "updated_at": "2023-01-01T00:00:00Z",
         "last_run": {"id": 9014, "state": "succeeded", "finished_at": "2026-01-02T00:00:00Z"},
@@ -617,7 +617,7 @@ def test_there_is_no_early_stop_on_sorted_lists():
     }
     data["python3"].append(old_but_ran)  # Last in the list, after rows outside the window.
     inventory = build_inventory(FakeClient(data), cutoff=CUTOFF)
-    assert 114 in inventory.by_id()
+    assert items_by_id(inventory)[117].obj.name == "Example yearly job"
 
 
 # --- Inventory counts and progress (docs/PLAN.md 17.6, Part C) ------------------------------------------
@@ -742,7 +742,7 @@ def test_an_archived_custom_script_on_a_container_template_works_the_same_way():
          "from_template_id": 31, "archived": True, "hidden": False},
     )])
     inventory = build_inventory(FakeClient(data))
-    archived = inventory.by_id()[312]
+    archived = items_by_id(inventory)[312]
     assert archived.obj.object_type is ObjectType.CUSTOM_SCRIPT and archived.obj.archived is True
     assert archived.obj.workflow_ids == [609] and archived.obj.backing_script_id == 211
     assert archived.code["backing_docker_command"] == "python template.py"
@@ -765,7 +765,7 @@ def test_archived_python_container_and_dbt_jobs_are_unchanged():
           "hidden": False}),
     ])
     inventory = build_inventory(FakeClient(data))
-    by_id = inventory.by_id()
+    by_id = items_by_id(inventory)
     kinds = {i: by_id[i].obj.object_type for i in (105, 210, 234)}
     assert kinds == {105: ObjectType.PYTHON_SCRIPT, 210: ObjectType.CONTAINER_SCRIPT, 234: ObjectType.DBT_SCRIPT}
     assert all(by_id[i].obj.archived for i in kinds)

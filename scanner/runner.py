@@ -233,12 +233,14 @@ def _run_scan(
     scan_log.run_status(run_id, "running")
     state.run_id = run_id
 
-    finished: set[int] = set()
+    # (object type, object ID) of the objects this run already saved. A job and a notebook, Service, or
+    # workflow can share an ID in Civis, so the ID alone is not enough (docs/PLAN.md 17.19).
+    finished: set[tuple[str, int]] = set()
     previous: dict[str, list[dict]] = {"objects": [], "findings": [], "coverage": []}
     if config.run_id and tables.ok:
         if tables.run("scan_runs", lambda: sink.latest_status(run_id)) == "succeeded":
             raise AlreadyFinished(run_id)  # Only a dry run's --run-id can name a finished scan.
-        finished = tables.run("objects", lambda: sink.finished_object_ids(run_id)) or set()
+        finished = tables.run("objects", lambda: sink.finished_object_keys(run_id)) or set()
         previous = tables.run("objects", lambda: sink.run_rows(run_id)) or previous
         first_start = [s for r, s in (tables.run("scan_runs", sink.run_starts) or []) if r == run_id]
         if first_start:
@@ -270,7 +272,7 @@ def _run_scan(
     scan_log.phase("inventory", "done")
 
     step("code_and_logs")
-    todo = [item for item in inventory.items if item.obj.object_id not in finished]
+    todo = [item for item in inventory.items if (str(item.obj.object_type), item.obj.object_id) not in finished]
     result = RunResult(run_id=run_id, status="running", skipped_as_done=total - len(todo))
     engine = Engine()
     results: list[ObjectResult] = []
@@ -450,7 +452,8 @@ def _dedupe_findings(rows: list[dict]) -> list[dict]:
     seen = set()
     unique = []
     for row in rows:
-        key = (int(row["object_id"]), row["rule_id"], row["file"], row["line_number"], row["source"])
+        key = (str(row["object_type"]), int(row["object_id"]), row["rule_id"], row["file"], row["line_number"],
+               row["source"])
         if key not in seen:
             seen.add(key)
             unique.append(row)
@@ -509,6 +512,7 @@ def _inventory_coverage_rows(inventory, results: list[ObjectResult], previous: l
 
 def _new_checklist_rows(sink: ResultSink, run_id: str, findings: list[dict], when: datetime) -> None:
     """Insert an "open" row for each object and rule pair that has no row yet. Never overwrite."""
+    # Keyed by object ID and rule ID only: checklist_status has no object_type column (docs/PLAN.md 17.19).
     existing = sink.checklist_pairs()
     pairs = sorted({(int(f["object_id"]), f["rule_id"]) for f in findings} - existing)
     rows = [

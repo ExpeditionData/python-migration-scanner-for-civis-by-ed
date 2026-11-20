@@ -19,7 +19,7 @@ from common.rule_loader import load_rules
 from scanner.engine import Engine
 from scanner.inventory import build_inventory
 from scanner.inventory.base import DEFAULT_IMAGES, STREAMLIT_IMAGE, classify_image, is_default_tag
-from tests.fake_civis import FakeClient
+from tests.fake_civis import FakeClient, items_by_id
 
 DATASCIENCE = "civisanalytics/datascience-python"
 JUPYTER = "civisanalytics/civis-jupyter-python3"
@@ -292,7 +292,7 @@ ON_PATCH_TAGS = {102: "8.4.0", 108: "9.1.1", 203: "9.1.1", 403: "5.1.1"}
 
 def test_the_synthetic_objects_on_the_current_default_tags_are_affected():
     inventory = build_inventory(FakeClient.from_fixture("synthetic_instance.json"))
-    objects = inventory.by_id()
+    objects = items_by_id(inventory)
     for object_id, tag in ON_DEFAULT_TAGS.items():
         obj = objects[object_id].obj
         assert (obj.impact, obj.uses_default_image, obj.docker_image_tag) == (Impact.AFFECTED, True, tag), object_id

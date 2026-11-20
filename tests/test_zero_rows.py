@@ -76,7 +76,7 @@ def test_other_read_errors_are_not_zero_rows_in_the_app():
 
 @pytest.mark.parametrize("method, args, expected", [
     ("other_objects", (), 0),
-    ("finished_object_ids", (RUN,), set()),
+    ("finished_object_keys", (RUN,), set()),
     ("run_rows", (RUN,), {"objects": [], "findings": [], "coverage": []}),
     ("latest_status", (RUN,), None),
     ("checklist_pairs", (), set()),
@@ -142,8 +142,8 @@ def test_a_resume_with_no_saved_rows_starts_from_the_beginning():
     result, log, _ = _scan(io, run_id=RUN)
     assert result.status == "succeeded" and result.tables_ok
     assert not [line for line in log if line.startswith(("TABLE_WRITE_FAILED", "FATAL"))]
-    for text in ("SELECT status, recorded_at", "SELECT DISTINCT object_id FROM", "MIN(started_at)"):
-        assert _empty_read(io, text), text  # latest_status, finished_object_ids, and run_starts.
+    for text in ("SELECT status, recorded_at", "SELECT DISTINCT object_type, object_id FROM", "MIN(started_at)"):
+        assert _empty_read(io, text), text  # latest_status, finished_object_keys, and run_starts.
     assert _empty_read(io, f"FROM {SCHEMA}.findings WHERE run_id")  # run_rows.
 
 

@@ -39,6 +39,9 @@ NON_PYTHON_IMAGES = frozenset({SHINY_IMAGE})
 _REGISTRY_PREFIXES = ("docker.io/", "index.docker.io/", "registry-1.docker.io/", "registry.hub.docker.com/")
 
 LIST_PAGE_SIZE = 50
+# Civis numbers these as jobs, in one ID series apart from notebooks, Services, and workflows, so a job and
+# one of those can have the same ID (docs/PLAN.md 17.19).
+JOB_TYPES = (ObjectType.PYTHON_SCRIPT, ObjectType.CONTAINER_SCRIPT, ObjectType.CUSTOM_SCRIPT, ObjectType.DBT_SCRIPT)
 
 
 def field_of(obj: Any, key: str, default: Any = None) -> Any:
@@ -181,8 +184,15 @@ class Inventory:
             self.counts[object_type] = CoverageCounts(object_type)
         return self.counts[object_type]
 
-    def by_id(self) -> dict[int, InventoryItem]:
-        return {item.obj.object_id: item for item in self.items}
+    def jobs_by_id(self) -> dict[int, InventoryItem]:
+        """The job items (Python, container, custom, and dbt scripts) by ID. Jobs share one ID series in Civis,
+        apart from notebooks, Services, and workflows, so a job ID never maps to one of those (docs/PLAN.md
+        17.19). Workflow references are job IDs."""
+        return {item.obj.object_id: item for item in self.items if item.obj.object_type in JOB_TYPES}
+
+    def by_key(self) -> dict[tuple[ObjectType, int], InventoryItem]:
+        """Every item by (object type, object ID)."""
+        return {(item.obj.object_type, item.obj.object_id): item for item in self.items}
 
 
 class InventoryContext:

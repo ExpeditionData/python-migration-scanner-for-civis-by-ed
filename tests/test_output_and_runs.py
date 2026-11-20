@@ -141,7 +141,8 @@ class FakeFuture:
 class FakeCivisIO:
     def __init__(self, read_rows=None, fail_on=None):
         self.calls = []
-        self.read_rows = read_rows or [["object_id"], ["101"], ["102"]]
+        self.read_rows = read_rows or [["object_type", "object_id"], ["python_script", "101"], ["notebook", "101"],
+                                        ["python_script", "102"]]
         self.fail_on = fail_on
 
     def query_civis(self, sql, database, **kwargs):
@@ -173,7 +174,7 @@ def test_civis_sink_sql_is_safe_and_append_only():
     sink = CivisSink(object(), fake, "analytics", "migration_scan", 77)
     sink.ensure_tables()
     sink.append(FINDINGS, "run-1", [{"object_id": 1, "rule_id": "CV3-ML", "file": "x.py"}])
-    assert sink.finished_object_ids("run-1") == {101, 102}
+    assert sink.finished_object_keys("run-1") == {("python_script", 101), ("notebook", 101), ("python_script", 102)}
     statements = [c[1] for c in fake.calls if c[0] in ("query", "read")]
     assert all(s.startswith("CREATE TABLE IF NOT EXISTS migration_scan.") for s in statements[:5])
     assert "WHERE run_id = 'run-1'" in statements[-1]
@@ -186,7 +187,7 @@ def test_civis_sink_sql_is_safe_and_append_only():
     deletes = [c[1] for c in fake.calls if c[0] == "query" and c[1].startswith("DELETE")]
     assert len(deletes) == 5 and all("'run-0'" in d for d in deletes)
     with pytest.raises(Exception):
-        sink.finished_object_ids("x'; DROP TABLE y; --")
+        sink.finished_object_keys("x'; DROP TABLE y; --")
 
 
 def test_civis_sink_reports_which_table_failed():
@@ -221,7 +222,7 @@ def test_report_csv_lists_every_object_and_blocks_formulas():
         {"object_id": 2, "object_type": "python_script", "name": "+cmd", "scan_status": "not_scanned", "scan_note": "@risk"},
     ]
     findings = [
-        {"object_id": 1, "rule_id": "CV3-ML", "file": "-x.py", "line_number": 3, "severity": "high",
+        {"object_id": 1, "object_type": "python_script", "rule_id": "CV3-ML", "file": "-x.py", "line_number": 3, "severity": "high",
          "confidence": "high", "source": "code", "fix_guidance": "Pin civis.", "impact": "affected"},
     ]
     rows = report_rows(report_csv(objects, findings, load_rules()).decode("utf-8-sig"))
