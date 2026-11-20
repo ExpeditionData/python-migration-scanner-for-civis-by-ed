@@ -289,7 +289,8 @@ DELETE FROM results_schema.checklist_status USING results_schema.checklist_statu
 DELETE FROM results_schema.scan_runs WHERE run_id IN ('<run_id>');
 ```
 
-  To remove everything, drop the schema.
+  To remove everything, follow [README](README.md#remove-the-tool) "Remove the
+  tool".
 
 ## Web app protections
 

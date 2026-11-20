@@ -8,6 +8,11 @@ inside a **test organization's** Civis environment, and for its retest on
 README setup and every fact that could not be confirmed from documentation
 (docs/PLAN.md marks these "confirm in Phase 7").
 
+The first live test and the retest are done. `v0.1.0` followed them, with
+the same code as `v0.1.0-rc14`. The retest's install (its scanner job,
+Service, and results schema) was kept for real use and moved to `v0.1.0`, so
+it was not removed. This file stays as the record of those tests.
+
 ## Rules for this test
 
 - **Run it only inside Civis**, in a test organization, with that

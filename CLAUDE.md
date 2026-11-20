@@ -39,6 +39,11 @@ be made public at any time.
   aggregate counts, or error messages with client details removed. If something
   pasted into the session looks like client data, stop and say so instead of
   using it.
+- **The organization that hosted the live test stays anonymous.** No
+  committed file, commit message, tag message, release note, issue, or pull
+  request names it or points to it (no name, short name, Civis instance or
+  hostname, user name, database name, partition label, or object ID).
+  Generic phrases such as "a live test" are fine.
 - **The tool treats everything in Civis as read-only** (Rob, November 4,
   2026). The only things it writes are: the results schema and the five
   tables it creates in it, rows in those tables, runs of the scanner job
@@ -81,8 +86,12 @@ be made public at any time.
   Service moved to `v0.1.0-rc12` for a scan with the GitHub token, and move
   to `v0.1.0-rc13` (scanner image 9.2.0) for the last scan with the token
   and the support summary. After the retest, the install was kept for real
-  use, and it moves to `v0.1.0-rc14`. Create a tag or a GitHub Release only
-  when Rob's prompt says to.
+  use; it moved to `v0.1.0-rc14`, then to `v0.1.0`. `v0.1.0` is the first
+  release and has a GitHub Release. Every later release gets a tag and a
+  GitHub Release whose notes say whether a setting, a parameter, or an
+  environment variable was added or changed (README "Update to a new
+  release", step 1). Create a tag or a GitHub Release only when Rob's prompt
+  says to.
 - Commit after each completed step, with a clear message that says what changed
   and why.
 - Before every commit, review the staged files (`git diff --cached --name-only`
@@ -266,7 +275,9 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   the test summary to the support summary; after the retest the install was
   kept for real use and moves to `v0.1.0-rc14`.
   Implementation choices not in the approved plan are in docs/PLAN.md
-  sections 10 to 17.
+  sections 10 to 17. `v0.1.0` (docs/PLAN.md 17.18) is the first release,
+  with the same code as `v0.1.0-rc14`; its docs remove the README status
+  line and drop the results with plain DROP statements instead of CASCADE.
 - **App flow.** `app/__init__.create_app` -> `app/services.py` (Civis or local
   data layer, job settings cache) -> `app/pages.py` routes -> `app/views.py`
   (pure shaping) -> `app/templates/`. Data layer:
@@ -494,8 +505,8 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   a custom script when its `jobs.get` response has `from_template_id`
   (checked before the type words), and is built with `custom_item` and the
   scan's one `TemplateCache`.
-- **Live test.** TESTING.md is the checklist for the first live test and the
-  retest. Records are pass or fail and aggregate counts only.
+- **Live test.** TESTING.md is the record of the first live test and the
+  retest, both done. Records are pass or fail and aggregate counts only.
 
 Constraints to keep in mind when writing code:
 

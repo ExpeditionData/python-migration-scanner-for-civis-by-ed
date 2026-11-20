@@ -5,8 +5,6 @@ by, or supported by Civis Analytics. "Civis" and "Civis Platform" are
 trademarks of Civis Analytics, used here only to identify the platform this
 tool works with.
 
-**Status: release candidate.** This version is still being tested in Civis Platform. Wait for the v0.1.0 release before you use it.
-
 A free, open-source tool that Civis Platform customers run inside their own
 Civis environment. It finds scripts, notebooks, workflows, Services, and
 container scripts affected by the February 2027 Civis default image update
@@ -609,9 +607,23 @@ To add or remove a GitHub token, or to change `LOOKBACK_DAYS` or
    right of its page and choose **Archive**, the last item.
 2. The CSV reports stay attached to the archived job's runs. Keep the archived
    job shared with Civis admins only.
-3. Drop the results schema, for example `DROP SCHEMA results_schema CASCADE;`
-   with your schema's name. Run it with the `RESULTS_DB` credential (its
-   database user owns the schema), or ask a database admin.
+3. Drop the five result tables, then the schema. Replace `results_schema`
+   with your schema's name:
+
+   ```sql
+   DROP TABLE results_schema.checklist_status;
+   DROP TABLE results_schema.coverage;
+   DROP TABLE results_schema.findings;
+   DROP TABLE results_schema.objects;
+   DROP TABLE results_schema.scan_runs;
+   DROP SCHEMA results_schema;
+   ```
+
+   Run them with the `RESULTS_DB` credential (its database user owns the
+   schema and the tables), or ask a database admin. `DROP SCHEMA` without
+   `CASCADE` stops with an error if anything else is in the schema, so
+   nothing outside this tool is dropped. If it stops, find out what else is
+   in the schema before you go on.
 4. If you made a GitHub token, delete the Custom Credential in Civis and revoke
    the token in GitHub.
 5. Archive any copy of the install script's Python script that is still in
