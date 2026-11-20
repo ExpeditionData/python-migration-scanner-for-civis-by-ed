@@ -135,6 +135,8 @@ class Results(Protocol):
     def check(self) -> str: ...  # "ok" or "no_tables"; raises ResultsUnavailable
     def scan_runs(self) -> list[dict]: ...
     def rows(self, table: str, run_id: str) -> list[dict]: ...
+    # Scan history's counts per run ID: affected, advisory, and fixed for the newer run of each pair (17.17).
+    def history_counts(self, run_ids: list[str], pairs: list[tuple[str, str]]) -> dict[str, dict]: ...
     def checklist(self) -> list[dict]: ...
     def save_checklist(self, run_id: str, entries: list[tuple[int, str, str]], changed_by: str, when: datetime) -> None: ...
     def setup_storage(self) -> StorageSetup: ...  # Creates the schema if missing, then the five tables.
@@ -177,6 +179,25 @@ def normalize_row(table: str, row: dict) -> dict:
         else:
             result[name] = str(value)
     return result
+
+
+def history_counts_from_rows(run_ids: list[str], impact_rows: list[dict], fixed_rows: list[dict]) -> dict[str, dict]:
+    """Scan history's counts from the rows of common/schema.history_impact_sql and history_fixed_sql.
+
+    Every run ID in ``run_ids`` gets affected and advisory (0 and 0 with no row: a scan with no findings). A run
+    ID that is the newer side of a pair also gets fixed. Values arrive as text from query_civis and as integers
+    from SQLite. A row for a run ID not in ``run_ids`` is ignored. A missing column raises KeyError."""
+    wanted = set(run_ids)
+    counts: dict[str, dict] = {r: {"affected": 0, "advisory": 0} for r in run_ids}
+    for row in impact_rows:
+        run_id = row["run_id"]
+        if run_id in wanted:
+            counts[run_id] = {"affected": int(row["affected_objects"]), "advisory": int(row["advisory_objects"])}
+    for row in fixed_rows:
+        run_id = row["run_id"]
+        if run_id in wanted:
+            counts[run_id]["fixed"] = int(row["fixed_pairs"])
+    return counts
 
 
 # ---------------------------------------------------------------------------

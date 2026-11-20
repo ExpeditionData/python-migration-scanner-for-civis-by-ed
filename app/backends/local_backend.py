@@ -20,10 +20,13 @@ from pathlib import Path
 from typing import Any
 
 from common.models import ObjectType, list_failed_note
-from common.schema import CHECKLIST_STATUS, COVERAGE, SCAN_RUNS, TABLES
+from common.schema import (
+    CHECKLIST_STATUS, COVERAGE, FINDINGS, SCAN_RUNS, TABLES, history_fixed_sql, history_impact_sql,
+)
 from common import sql
 from app.backends.base import (
-    ChecklistSaveError, JobRun, LogLine, ResultsUnavailable, StorageFacts, StorageSetup, normalize_row,
+    ChecklistSaveError, JobRun, LogLine, ResultsUnavailable, StorageFacts, StorageSetup, history_counts_from_rows,
+    normalize_row,
 )
 from common import release
 from common.schema import admin_schema_sql
@@ -199,6 +202,24 @@ class LocalResults:
 
     def checklist(self) -> list[dict]:
         return self._select(CHECKLIST_STATUS.name, None)
+
+    def history_counts(self, run_ids: list[str], pairs: list[tuple[str, str]]) -> dict[str, dict]:
+        """The same two statements as in Civis (docs/PLAN.md 17.17), on the SQLite file, with the same state
+        guards as ``_select``: no findings where ``_select`` returns no rows, and only the newest scan's findings
+        in the first-scan states."""
+        if not run_ids:
+            return {}
+        if self.check() != "ok" or self.state in FRESH_STATES + ("no-scan",):
+            return history_counts_from_rows(run_ids, [], [{"run_id": newer, "fixed_pairs": 0} for _, newer in pairs])
+        with self._lock, self._connect() as conn:
+            if self.state in ("first-scan-running", "first-scan-cancelled"):
+                # A temporary view is found before the main table of the same name, on this connection only.
+                first = self._running_run_id(conn)
+                keep = f"run_id = {sql.run_id(first)}" if first else "0"
+                conn.execute(f"CREATE TEMP VIEW {FINDINGS.name} AS SELECT * FROM main.{FINDINGS.name} WHERE {keep}")
+            impact = [dict(r) for r in conn.execute(history_impact_sql(None, run_ids)).fetchall()]
+            fixed = [dict(r) for r in conn.execute(history_fixed_sql(None, pairs)).fetchall()] if pairs else []
+        return history_counts_from_rows(run_ids, impact, fixed)
 
     def _select(self, table: str, run_id: str | None) -> list[dict]:
         if table not in TABLE_NAMES:

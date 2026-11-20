@@ -274,7 +274,12 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   (text values, converted by column type; `read_civis_sql` when a result
   has 100 rows or more, so `scan_runs` after 50 scans) and a per-request memo on `g`, cleared by any write; the
   objects, findings, coverage, and checklist rows use `read_civis_sql`, and
-  each page reads only the tables it shows (docs/PLAN.md 17.6). Inventory
+  each page reads only the tables it shows (docs/PLAN.md 17.6). Scan history
+  reads per-scan counts with two aggregate reads through `query_civis`
+  (`common/schema.history_impact_sql` and `history_fixed_sql`, at most 10 rows
+  each; docs/PLAN.md 17.17), cached until the list of completed scans changes
+  (`CachedResults.history_counts`, 4 entries, no expiry), and reads no run
+  table. Inventory
   and Findings show each custom script's template and backing script IDs,
   link the backing script only when it is in the same scan (its stored
   link; no URL pattern is guessed), and filter by template ID; the Overview
@@ -718,10 +723,20 @@ Run the full suite on both Python versions before every commit:
   to 504), and no numbered "Run N" label left.
 - `tests/test_read_counts.py` checks how many `civis.io` reads each page
   sends, cold and warm, and the `query_civis` preview limit, fallback,
-  conversion, and request memo. The recording fake's `query_civis` answers a
+  conversion, and request memo, and Scan history with 9 and 11 completed
+  scans (4 small reads on the first load, none after; docs/PLAN.md 17.17).
+  The recording fake's `query_civis` answers a
   SELECT like civis 2.7.1 (`result_columns` and text `result_rows`, zero rows
   normal); its `reads` holds every read, `full_reads` and `small_reads` split
-  them, and `queries` holds writes only.
+  them, and `queries` holds writes only. It answers Scan history's two count
+  reads from an `affected_objects` or `fixed_pairs` key, else by running the
+  SQL on SQLite over its own `<schema>.findings` rows.
+- `tests/test_history_counts.py` checks Scan history's two aggregate
+  statements (docs/PLAN.md 17.17) against a copy of rc13's Python counts on
+  SQLite (named cases and 200 seeded random cases), their text, scope, and
+  refused values, `history_counts_from_rows`, `CivisResults.history_counts`,
+  and the `CachedResults` entry (one read for concurrent first loads, no
+  expiry, 4 entries, cleared by `clear()`, kept by a checklist save).
 - `tests/test_scripts_js.py` runs `busy.js`, `run-scan.js`, and
   `scan-status.js` (the last two after `status-requests.js`) under Node with
   a stand-in page (skipped if Node is not installed) and checks the markup

@@ -12,9 +12,11 @@ import copy
 import csv
 import io
 import re
+import sqlite3
 from typing import Any
 
 from common import release
+from common.schema import FINDINGS
 
 try:
     from civis.base import CivisJobFailure, EmptyResultError
@@ -234,6 +236,7 @@ def query_result(rows: list[list] | None, preview_rows: int = 10) -> FakeRespons
     return FakeResponse({"id": 1, "state": "succeeded", "result_columns": list(header), "result_rows": text})
 
 
+FINDINGS_HEADER = list(FINDINGS.column_names)
 _TABLE_NAME = re.compile(r"FROM\s+([A-Za-z_][\w]*)\.([A-Za-z_]\w*)", re.IGNORECASE)
 
 
@@ -250,6 +253,12 @@ class RecordingIO:
     SELECT the way civis 2.7.1 does: the query's Response with
     ``result_columns`` and up to ``preview_rows`` text ``result_rows``, where
     zero rows is normal.
+
+    Scan history's two count reads (SQL with ``affected_objects`` or
+    ``fixed_pairs``, docs/PLAN.md 17.17) are answered before the key loop: from
+    a key ``affected_objects`` or ``fixed_pairs`` that the SQL contains, else by
+    running the SQL on an in-memory SQLite database loaded with the fake's own
+    ``<schema>.findings`` rows, so every test's /scan load stays realistic.
 
     ``reads`` holds every read, by either function: ``full_reads`` those by
     read_civis_sql and ``small_reads`` the SELECTs sent with query_civis.
@@ -294,8 +303,34 @@ class RecordingIO:
             self.empty_reads.append(sql)
             raise
 
+    def _history_rows(self, sql) -> list[list]:
+        """Scan history's two count reads (docs/PLAN.md 17.17). A key ``affected_objects`` or ``fixed_pairs`` that
+        the SQL contains gives exact rows; otherwise the SQL runs on an in-memory SQLite database loaded with this
+        fake's own ``<schema>.findings`` rows (none without that key; an empty value is NULL), with
+        ``<schema>.findings`` read as ``findings``. Values come back as text, as query_civis gives them."""
+        for key in ("affected_objects", "fixed_pairs"):
+            if key in self.tables and key in sql:
+                return self.tables[key]
+        match = re.search(r"FROM\s+([A-Za-z_]\w*)\.findings\b", sql)
+        schema = match.group(1) if match else ""
+        given = self.tables.get(f"{schema}.findings") or [FINDINGS_HEADER]
+        header, body = list(given[0]), given[1:]
+        conn = sqlite3.connect(":memory:")
+        try:
+            conn.execute(f"CREATE TABLE findings ({', '.join(header)})")
+            if body:
+                conn.executemany(f"INSERT INTO findings VALUES ({', '.join('?' * len(header))})",
+                                 [[None if v == "" else v for v in row] for row in body])
+            cursor = conn.execute(sql.replace(f"{schema}.findings", "findings") if schema else sql)
+            columns = [d[0] for d in cursor.description]
+            return [columns] + [[None if v is None else str(v) for v in row] for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
     def _rows(self, sql) -> list[list] | None:
         """The header row and rows for a read, or None when no key matches."""
+        if "affected_objects" in sql or "fixed_pairs" in sql:
+            return self._history_rows(sql)
         if "pg_catalog.pg_views" in sql:  # The dedicated-schema check: tables and views with a kind column.
             rows = [["kind", "name"]]
             namespace = self.tables.get("pg_catalog.pg_namespace", [["nspname"]])[1:]

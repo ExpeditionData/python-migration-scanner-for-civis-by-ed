@@ -1,7 +1,9 @@
 """The data layer inside Civis, using only civis 2.7.1 calls (the Service image).
 
 Reads whose result is small by design (the catalog check of the schema and
-its tables, Setup line 9's row counts, and the scan_runs rows) use
+its tables, Setup line 9's row counts, the scan_runs rows, and Scan
+history's two count reads, each at most one row per completed scan it lists,
+docs/PLAN.md 17.17) use
 ``civis.io.query_civis`` and take the result from the query's preview rows,
 asking for 100. The civis 2.10 API spec gives 1,000 as the maximum, but civis
 2.7.1's own ``query_civis`` docstring says "No more than 100 rows can be
@@ -45,11 +47,11 @@ from common import sql
 from common.civis_errors import is_empty_result
 from common.schema import (
     CHECKLIST_STATUS, SCAN_RUNS, TABLES, admin_owner_sql, admin_schema_sql, checklist_insert_sql, create_schema_sql,
-    other_object_count, schema_objects_sql,
+    history_fixed_sql, history_impact_sql, other_object_count, schema_objects_sql,
 )
 from app.backends.base import (
     LOG_PAGE, ChecklistSaveError, JobRun, LogLine, ResultsUnavailable, StorageFacts, StorageSetup, error_token,
-    normalize_row,
+    history_counts_from_rows, normalize_row,
     plain,
 )
 from app.job_settings import JobSettings, parse_job, unreadable
@@ -240,6 +242,18 @@ class CivisResults:
 
     def checklist(self) -> list[dict]:
         return self._table_rows(CHECKLIST_STATUS.name, None)
+
+    def history_counts(self, run_ids: list[str], pairs: list[tuple[str, str]]) -> dict[str, dict]:
+        """Scan history's counts in two small reads (docs/PLAN.md 17.17): one row per run ID at most, and at most
+        10 run IDs, far below PREVIEW_ROWS. No read for no run IDs, and no second read for no pairs."""
+        if not run_ids:
+            return {}
+        try:
+            impact = self._small(history_impact_sql(self.schema, run_ids))
+            fixed = self._small(history_fixed_sql(self.schema, pairs)) if pairs else []
+            return history_counts_from_rows(run_ids, impact, fixed)
+        except Exception:
+            raise ResultsUnavailable("error") from None
 
     def _table_rows(self, table: str, run_id: str | None) -> list[dict]:
         if table not in TABLE_NAMES:

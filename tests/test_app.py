@@ -1569,3 +1569,27 @@ def test_resume_window_needs_run_scan_and_a_valid_lookback():
                    {"job_problem": "not_scanner_job"}, {"results_state": "schema_missing"}):
         assert views.resume_window(views.Situation(**{**base, **change}), at, __version__) is None, change
     assert views.resume_window(views.Situation(**base), at, "0.0.1") is None  # Another version.
+
+
+# --- Scan history counts (docs/PLAN.md 17.17) ----------------------------------------------
+
+
+@pytest.mark.parametrize("state", LOCAL_STATES)
+def test_scan_history_rows_match_rc13_in_every_preview_state(preview, monkeypatch, state):
+    """/scan loads, and its history rows equal the ones rc13's Python counts give from the preview's own rows."""
+    from app import pages
+    from tests.test_history_counts import _rc13_counts
+
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    app = make_app(preview, state)
+    assert app.test_client().get("/scan").status_code == 200
+    with app.test_request_context("/scan"):
+        situation = pages.load_situation()
+        svc = pages.services()
+        completed = [s for s in situation.scans if s.status == "succeeded"][:pages.HISTORY_LIMIT]
+        run_ids = [s.run_id for s in completed]
+        pairs = list(zip(run_ids[::-1], run_ids[::-1][1:]))
+        findings = [f for run_id in run_ids for f in svc.results.rows("findings", run_id)]
+        reference = views.history(situation, _rc13_counts(findings, run_ids, pairs))
+        counts = svc.results.history_counts(run_ids, pairs) if run_ids else {}
+        assert views.history(situation, counts) == reference

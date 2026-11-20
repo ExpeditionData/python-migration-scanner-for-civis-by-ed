@@ -2,6 +2,10 @@
 
 - A finished run's objects, findings, and coverage never change, so they are
   kept until the cache is full (a few runs).
+- Scan history's counts (``history_counts``, docs/PLAN.md 17.17) never expire:
+  a completed scan's findings never change, and the key (the run IDs and pairs
+  asked for) changes when a scan completes or RETENTION_DAYS removes one. The
+  last few keys are kept, least recently used dropped first.
 - The scan run list, the checklist, and the schema check are kept for a short
   time. Saving checklist changes clears the checklist cache at once.
 
@@ -26,6 +30,7 @@ from typing import Any
 
 SHORT_SECONDS = 20.0
 MAX_RUN_TABLES = 12
+MAX_HISTORY_COUNTS = 4  # Scan history count results kept, one per list of completed scans.
 
 
 class CachedResults:
@@ -37,6 +42,7 @@ class CachedResults:
         self._lock = threading.Lock()
         self._short: dict[str, tuple[float, Any]] = {}
         self._tables: OrderedDict[tuple[str, str], list[dict]] = OrderedDict()
+        self._history: OrderedDict[tuple, dict[str, dict]] = OrderedDict()
         self._loading: dict[Any, threading.Lock] = {}
         self._generation = 0  # Bumped by every save and clear; older loads are not stored.
         self.reads = 0
@@ -84,6 +90,21 @@ class CachedResults:
                         self._tables.popitem(last=False)
             return value
 
+    def history_counts(self, run_ids: list[str], pairs: list[tuple[str, str]]) -> dict[str, dict]:
+        key = ("history", tuple(run_ids), tuple(tuple(p) for p in pairs))
+        with self._key_lock(key):
+            with self._lock:
+                if key in self._history:
+                    self._history.move_to_end(key)
+                    return self._history[key]
+            value = self.provider().history_counts(run_ids, pairs)
+            with self._lock:
+                self.reads += 1
+                self._history[key] = value
+                while len(self._history) > MAX_HISTORY_COUNTS:
+                    self._history.popitem(last=False)
+            return value
+
     def save_checklist(self, run_id: str, entries: list[tuple[int, str, str]], changed_by: str, when: datetime) -> None:
         self.provider().save_checklist(run_id, entries, changed_by, when)
         with self._lock:
@@ -105,3 +126,4 @@ class CachedResults:
             self._generation += 1
             self._short.clear()
             self._tables.clear()
+            self._history.clear()

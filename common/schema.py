@@ -165,6 +165,52 @@ def other_object_count(rows) -> int:
     dedicated to the tool (or does not exist). A view with one of our table names counts as another object.
     Only the count leaves this function; the names are never kept, shown, or logged."""
     return sum(1 for row in rows if not (row.get("kind") == "table" and str(row.get("name")) in TABLE_NAMES))
+
+
+def _findings_table(schema: str | None) -> str:
+    """The findings table: qualified with the results schema, or unqualified when ``schema`` is None (the local
+    preview's SQLite file)."""
+    return sql.identifier(FINDINGS.name) if schema is None else sql.qualified_table(schema, FINDINGS.name)
+
+
+def history_impact_sql(schema: str | None, run_ids: list[str]) -> str:
+    """Scan history's affected and advisory object counts for each run ID, in one read (docs/PLAN.md 17.17).
+
+    An object counts as affected when any of its findings has impact "affected", and as advisory otherwise (the
+    same rule as app/views._object_impacts). A run with no findings returns no row. Objects are counted by
+    object ID only, as on the Overview. The statement uses no ``COUNT(*)`` and qualifies no column with an
+    alias, because the SQL scope check reads ``word.word`` as a schema name."""
+    if not run_ids:
+        raise sql.UnsafeValueError("No run IDs.")
+    table = _findings_table(schema)
+    ids = ", ".join(sql.run_id(r) for r in run_ids)
+    return (
+        "SELECT run_id, SUM(affected) AS affected_objects, SUM(1 - affected) AS advisory_objects FROM "
+        "(SELECT run_id, object_id, MAX(CASE WHEN impact = 'affected' THEN 1 ELSE 0 END) AS affected "
+        f"FROM {table} WHERE run_id IN ({ids}) GROUP BY run_id, object_id) AS per_object GROUP BY run_id"
+    )
+
+
+def history_fixed_sql(schema: str | None, pairs: list[tuple[str, str]]) -> str:
+    """Scan history's "Fixed since last run" for each (older run ID, newer run ID) pair, in one read
+    (docs/PLAN.md 17.17): how many (object ID, rule ID) pairs the older scan found that the newer one did not.
+
+    EXCEPT removes duplicates, so this is the size of the set difference, as before. Each part returns one row,
+    keyed by the newer run ID. Uses ``COUNT(1)`` and no alias-qualified column (see history_impact_sql)."""
+    if not pairs:
+        raise sql.UnsafeValueError("No run ID pairs.")
+    table = _findings_table(schema)
+    parts = []
+    for number, (older, newer) in enumerate(pairs, start=1):
+        old_id, new_id = sql.run_id(older), sql.run_id(newer)
+        parts.append(
+            f"SELECT {new_id} AS run_id, COUNT(1) AS fixed_pairs FROM "
+            f"(SELECT object_id, rule_id FROM {table} WHERE run_id = {old_id} "
+            f"EXCEPT SELECT object_id, rule_id FROM {table} WHERE run_id = {new_id}) AS fixed_{number}"
+        )
+    return " UNION ALL ".join(parts)
+
+
 DATABASE_USER_PLACEHOLDER = "<database user>"
 
 

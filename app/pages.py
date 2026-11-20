@@ -391,18 +391,12 @@ def scan():
     svc = services()
     run = situation.active_run or (situation.runs[0] if situation.runs else None)
     progress = _progress(run)
-    counts = {}
     completed = [s for s in situation.scans if s.status == "succeeded"][:HISTORY_LIMIT]
-    for scan_run in completed:
-        objects = svc.results.rows("objects", scan_run.run_id)
-        findings = svc.results.rows("findings", scan_run.run_id)
-        impacts = views._object_impacts(findings)
-        counts[scan_run.run_id] = {
-            "affected": sum(1 for v in impacts.values() if v == "affected"),
-            "advisory": sum(1 for v in impacts.values() if v == "advisory"),
-            "pairs": views.finding_pairs(findings),
-            "objects": len(objects),
-        }
+    # Two aggregate reads for every listed scan's counts, cached until the list changes (docs/PLAN.md 17.17).
+    run_ids = [s.run_id for s in completed]
+    oldest_first = run_ids[::-1]
+    pairs = list(zip(oldest_first, oldest_first[1:]))
+    counts = svc.results.history_counts(run_ids, pairs) if run_ids else {}
     scan_run = situation.scan_for(run)
     lookback = (scan_run.parameters.get("lookback_days") if scan_run else None) or release.DEFAULT_LOOKBACK_DAYS
     notice = NOTICES.get(request.args.get("notice", ""))

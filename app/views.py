@@ -455,18 +455,12 @@ def _rule(rules: RuleSet, rule_id: str):
 # ---------------------------------------------------------------------------
 
 
-def finding_pairs(findings: list[dict]) -> set[tuple[int, str]]:
-    return {(f["object_id"], f["rule_id"]) for f in findings}
-
-
 def history(situation: Situation, counts: dict[str, dict]) -> list[dict]:
-    """Rows for the scan history table. ``counts`` maps run ID to affected, advisory, and pairs."""
+    """Rows for the scan history table. ``counts`` maps run ID to affected, advisory, and, for a scan with an
+    earlier completed scan in the list, fixed (Results.history_counts, docs/PLAN.md 17.17)."""
     rows = []
     seen = set()
-    completed = [s for s in reversed(situation.scans) if s.status == "succeeded" and s.run_id in counts]
-    fixed_since: dict[str, int] = {}
-    for previous, scan in zip(completed, completed[1:]):
-        fixed_since[scan.run_id] = len(counts[previous.run_id]["pairs"] - counts[scan.run_id]["pairs"])
+    fixed_since: dict[str, int] = {run_id: data["fixed"] for run_id, data in counts.items() if "fixed" in data}
 
     def row_for(scan: ScanRun | None, run: JobRun | None) -> dict:
         started = (run.started_at or run.created_at) if run else None

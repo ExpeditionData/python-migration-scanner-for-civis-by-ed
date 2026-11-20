@@ -4,8 +4,8 @@ Drives every code path that sends SQL, with a recording fake civis.io:
 
 - the scanner's result sink: create tables, appends, resume reads (the resume decision's scan_runs
   and summary-row reads too), and the RETENTION_DAYS deletes
-- the app's reads (every page), the checklist save, the "Set up results storage" button,
-  the Setup page, and the test summary
+- the app's reads (every page, including Scan history's two count reads, docs/PLAN.md 17.17), the checklist
+  save, the "Set up results storage" button, the Setup page, and the test summary
 
 Each statement must start with CREATE SCHEMA IF NOT EXISTS, CREATE TABLE IF NOT EXISTS, SELECT, INSERT, or
 DELETE; name only the results schema's five tables, or read pg_catalog.pg_namespace, pg_catalog.pg_tables, or
@@ -176,6 +176,9 @@ def test_app_statements_stay_in_the_results_schema(monkeypatch):
     kinds = {" ".join(s.split()[:2]) for s in io.statements}
     assert {"SELECT 'schema'", "SELECT *", "INSERT INTO", "CREATE TABLE"} <= kinds
     assert any("pg_catalog.pg_namespace" in s and "pg_catalog.pg_views" in s for s in io.small_reads)
+    # Scan history's impact read (docs/PLAN.md 17.17) is among the statements checked above. This made-up data has
+    # one completed scan, so there is no fixed read; the next test covers it.
+    assert any("affected_objects" in s for s in io.small_reads)
 
     # A missing schema: the button also sends CREATE SCHEMA IF NOT EXISTS.
     empty = RecordingIO()
@@ -186,6 +189,19 @@ def test_app_statements_stay_in_the_results_schema(monkeypatch):
     app.test_client().post("/setup/storage", data={"csrf_token": token})
     assert f"CREATE SCHEMA IF NOT EXISTS {schema}" in empty.statements
     _assert_in_scope(empty, schema)
+
+
+def test_scan_history_count_reads_stay_in_the_results_schema(monkeypatch):
+    """/scan with two completed scans sends both of Scan history's count reads (docs/PLAN.md 17.17)."""
+    pytest.importorskip("flask")
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    from tests.test_read_counts import SCHEMA, _app, _io
+
+    io = _io()
+    assert _app(io).test_client().get("/scan").status_code == 200
+    history = [s for s in io.small_reads if "affected_objects" in s or "fixed_pairs" in s]
+    assert len(history) == 2 and any("fixed_pairs" in s for s in history)
+    _assert_in_scope(io, SCHEMA)
 
 
 def test_every_sql_sending_call_is_covered_here():
