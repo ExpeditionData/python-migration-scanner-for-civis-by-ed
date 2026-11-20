@@ -282,14 +282,20 @@ class Situation:
 # ---------------------------------------------------------------------------
 
 
-def _object_impacts(findings: list[dict]) -> dict[int, str]:
-    impact: dict[int, str] = {}
+def object_key(row: dict) -> tuple[str | None, int | None]:
+    """An object's key, (object type, object ID). Civis numbers jobs apart from notebooks, Services, and
+    workflows, so a job and one of those can have the same ID (docs/PLAN.md 17.19)."""
+    return (row.get("object_type"), row.get("object_id"))
+
+
+def _object_impacts(findings: list[dict]) -> dict[tuple[str | None, int | None], str]:
+    impact: dict[tuple[str | None, int | None], str] = {}
     for f in findings:
-        oid = f["object_id"]
+        key = object_key(f)
         if f.get("impact") == "affected":
-            impact[oid] = "affected"
+            impact[key] = "affected"
         else:
-            impact.setdefault(oid, "advisory")
+            impact.setdefault(key, "advisory")
     return impact
 
 
@@ -316,7 +322,7 @@ def overview(objects: list[dict], findings: list[dict], coverage: list[dict], ch
         stats["scanned"] += status == "scanned"
         stats["partial"] += status == "partial"
         stats["not_scanned"] += status in ("not_scanned", "pending")
-        stats[impacts.get(obj["object_id"], "none")] += 1
+        stats[impacts.get(object_key(obj), "none")] += 1
     order = [t.value for t in ObjectType]
     types = [
         {"key": t, "label": TYPE_LABELS_PLURAL.get(t, t), **{k: by_type[t].get(k, 0) for k in
@@ -342,14 +348,16 @@ def overview(objects: list[dict], findings: list[dict], coverage: list[dict], ch
                         key=lambda r: order.index(r["object_type"]) if r.get("object_type") in order else len(order))
     ]
 
-    pairs = {(f["object_id"], f["rule_id"]) for f in findings}
+    # The rows the Findings page shows, one per object type, object ID, and rule, each with the status of its
+    # object ID and rule: the checklist has no object type (docs/PLAN.md 17.19).
+    rows = {(*object_key(f), f["rule_id"]) for f in findings}
     status_of = current_checklist(checklist)
-    progress = Counter(_status(status_of.get(p)) for p in pairs)
-    total_pairs = len(pairs)
+    progress = Counter(_status(status_of.get((object_id, rule_id))) for _, object_id, rule_id in rows)
+    total_pairs = len(rows)
 
-    objects_by_rule: dict[str, set[int]] = defaultdict(set)
+    objects_by_rule: dict[str, set[tuple[str | None, int | None]]] = defaultdict(set)
     for f in findings:
-        objects_by_rule[f["rule_id"]].add(f["object_id"])
+        objects_by_rule[f["rule_id"]].add(object_key(f))
     issues = []
     for rule_id, ids in sorted(objects_by_rule.items(), key=lambda kv: (-len(kv[1]), kv[0]))[:5]:
         rule = _rule(rules, rule_id)
@@ -373,7 +381,7 @@ def overview(objects: list[dict], findings: list[dict], coverage: list[dict], ch
         "users_note": users_note,
         "list_failures": list_failures,
         "checklist": {
-            "total": total_pairs, "objects": len({p[0] for p in pairs}),
+            "total": total_pairs, "objects": len({(t, o) for t, o, _ in rows}),
             "open": progress.get("open", 0), "fixed": progress.get("fixed", 0), "ignored": progress.get("ignored", 0),
             "fixed_pct": _pct(progress.get("fixed", 0), total_pairs),
             "ignored_pct": _pct(progress.get("ignored", 0), total_pairs),
@@ -573,17 +581,23 @@ TEMPLATE_SENTENCE = ("Custom scripts run their template's code. Fixing the templ
 BACKING_TYPES = ("python_script", "container_script", "dbt_script")
 
 
-def template_info(obj: dict, by_id: dict[int, dict]) -> dict | None:
+def backing_scripts(objects: list[dict]) -> dict[int, dict]:
+    """The scan's objects that can be a backing script (BACKING_TYPES), by ID. They are all jobs, which share one
+    ID series, so a notebook, Service, or workflow with the same ID is never among them (docs/PLAN.md 17.19)."""
+    return {o["object_id"]: o for o in objects if o.get("object_type") in BACKING_TYPES}
+
+
+def template_info(obj: dict, backing_by_id: dict[int, dict]) -> dict | None:
     """A custom script's template ID and backing script ID, and a link to the backing script, where the fix is
     made. The objects row stores the backing script's ID but not its type, and a Civis link needs the type, so the
     link is the backing script's own stored link, used only when that script is in the same scan. Otherwise the
-    IDs are shown as text; no link pattern is guessed."""
+    IDs are shown as text; no link pattern is guessed. ``backing_by_id`` is backing_scripts(objects)."""
     if obj.get("object_type") != "custom_script":
         return None
     template_id, backing_id = obj.get("template_id"), obj.get("backing_script_id")
     if template_id is None and backing_id is None:
         return None
-    backing = by_id.get(backing_id) if backing_id is not None else None
+    backing = backing_by_id.get(backing_id) if backing_id is not None else None
     url = backing.get("url") if backing and backing.get("object_type") in BACKING_TYPES else None
     return {"template_id": template_id, "backing_id": backing_id, "backing_url": url or None}
 
@@ -604,7 +618,7 @@ def template_findings_text(objects: list[dict], findings: list[dict]) -> str | N
               if o.get("object_type") == "custom_script" and o.get("template_id") is not None}
     if not custom:
         return None
-    with_findings = {f["object_id"] for f in findings} & set(custom)
+    with_findings = {f["object_id"] for f in findings if f.get("object_type") == "custom_script"} & set(custom)
     templates = {custom[object_id] for object_id in with_findings}
     n, m = len(templates), len(with_findings)
     return (f"{n:,} template{'' if n == 1 else 's'}, used by {m:,} custom script{'' if m == 1 else 's'}, "
@@ -634,9 +648,9 @@ def paginate(rows: list, page: int) -> Page:
 
 
 def inventory(objects: list[dict], findings: list[dict], filters: dict) -> list[dict]:
-    counts = Counter(f["object_id"] for f in findings)
+    counts = Counter(object_key(f) for f in findings)
     query = (filters.get("q") or "").strip().lower()
-    by_id = {o["object_id"]: o for o in objects}
+    backing = backing_scripts(objects)
     template = template_filter(filters.get("template"))
     rows = []
     for obj in objects:
@@ -657,7 +671,7 @@ def inventory(objects: list[dict], findings: list[dict], filters: dict) -> list[
         rows.append({
             "object_id": obj["object_id"],
             "custom": obj.get("object_type") == "custom_script",
-            "template": template_info(obj, by_id),
+            "template": template_info(obj, backing),
             "name": obj.get("name") or f"Object {obj['object_id']}",
             "url": obj.get("url"),
             "type": TYPE_LABELS.get(obj.get("object_type"), obj.get("object_type")),
@@ -666,7 +680,7 @@ def inventory(objects: list[dict], findings: list[dict], filters: dict) -> list[
             "default": {"default": "Yes", "custom": "No", "unknown": "Unknown"}[default_key],
             "default_key": default_key,
             "last_run": when_date(obj.get("last_run_at")) if obj.get("last_run_at") else "Never",
-            "findings": counts.get(obj["object_id"], 0),
+            "findings": counts.get(object_key(obj), 0),
             "status": SCAN_STATUS_LABELS.get(status, status),
             "status_key": status,
             "reason": obj.get("scan_note") if status != "scanned" else None,
@@ -685,17 +699,22 @@ _LEVELS = {"high": 3, "medium": 2, "low": 1}
 
 
 def findings_rows(objects: list[dict], findings: list[dict], checklist: list[dict], rules: RuleSet, filters: dict) -> list[dict]:
-    """One row per object and rule, the unit the checklist tracks, with every location listed."""
-    by_object = {o["object_id"]: o for o in objects}
+    """One row per object (type and ID) and rule, with every location listed.
+
+    The checklist tracks an object ID and a rule (checklist_status has no object type; docs/PLAN.md 17.19). When
+    two rows share an object ID and a rule, only the first in the page's sort order has the status control; the
+    other has ``shared_status`` True and shows the status as text, so the form never sends a field name twice."""
+    by_object = {object_key(o): o for o in objects}
+    backing = backing_scripts(objects)
     template = template_filter(filters.get("template"))
     status_of = current_checklist(checklist)
-    grouped: dict[tuple[int, str], list[dict]] = defaultdict(list)
+    grouped: dict[tuple[str | None, int, str], list[dict]] = defaultdict(list)
     for f in findings:
-        grouped[(f["object_id"], f["rule_id"])].append(f)
+        grouped[(*object_key(f), f["rule_id"])].append(f)
 
     rows = []
-    for (object_id, rule_id), items in grouped.items():
-        obj = by_object.get(object_id, {})
+    for (object_type, object_id, rule_id), items in grouped.items():
+        obj = by_object.get((object_type, object_id), {})
         rule = _rule(rules, rule_id)
         impact = "affected" if any(i.get("impact") == "affected" for i in items) else (
             "advisory" if any(i.get("impact") == "advisory" for i in items) else "unknown")
@@ -723,11 +742,12 @@ def findings_rows(objects: list[dict], findings: list[dict], checklist: list[dic
         rows.append({
             "key": f"{object_id}:{rule_id}",
             "object_id": object_id,
+            "object_type": object_type,
             "object_name": obj.get("name") or f"Object {object_id}",
             "object_url": obj.get("url"),
-            "type": TYPE_LABELS.get(obj.get("object_type"), obj.get("object_type") or ""),
-            "custom": obj.get("object_type") == "custom_script",
-            "template": template_info(obj, by_object),
+            "type": TYPE_LABELS.get(object_type, object_type or ""),
+            "custom": object_type == "custom_script",
+            "template": template_info(obj, backing),
             "owner": owner,
             "rule_id": rule_id,
             "title": rule.title if rule else rule_id,
@@ -741,8 +761,16 @@ def findings_rows(objects: list[dict], findings: list[dict], checklist: list[dic
             "changed_at": when_date((current or {}).get("changed_at")) if status != "open" and current else None,
             "workflows": workflow_names(items[0].get("workflows")),
         })
-    rows.sort(key=lambda r: (r["object_name"].lower(), r["object_id"], r["rule_id"]))
+    rows.sort(key=lambda r: (r["object_name"].lower(), r["object_id"], r["rule_id"], r["object_type"] or ""))
+    with_control: set[str] = set()
+    for row in rows:
+        row["shared_status"] = row["key"] in with_control
+        with_control.add(row["key"])
     return rows
+
+
+SHARED_STATUS_NOTE = ("This object has the same ID as another object of a different type, so they share one "
+                      "checklist status.")
 
 
 def _or_list(items) -> str:
@@ -783,8 +811,8 @@ def _location(finding: dict) -> str:
 
 
 def owners(objects: list[dict], findings: list[dict]) -> list[str]:
-    with_findings = {f["object_id"] for f in findings}
-    return sorted({o.get("owner_name") for o in objects if o["object_id"] in with_findings and o.get("owner_name")})
+    with_findings = {object_key(f) for f in findings}
+    return sorted({o.get("owner_name") for o in objects if object_key(o) in with_findings and o.get("owner_name")})
 
 
 def checklist_changes(form: Iterable[tuple[str, str]], valid_rules: set[str]) -> list[tuple[int, str, str]]:

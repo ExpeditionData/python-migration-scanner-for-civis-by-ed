@@ -132,6 +132,10 @@
             <td>{{ row.confidence }}</td>
             <td class="fix">{{ row.fix }}</td>
             <td>
+              {% if row.shared_status %}
+              <div>{{ {"open": "Open", "fixed": "Fixed", "ignored": "Ignored"}.get(row.status, row.status) }}</div>
+              <div class="cell-sub">{{ shared_status_note }}</div>
+              {% else %}
               <label class="sr-only" for="s-{{ loop.index }}">Status for {{ row.object_name }}, rule {{ row.rule_id }}</label>
               <input type="hidden" name="o:{{ row.key }}" value="{{ row.status }}">
               <select class="status-select" id="s-{{ loop.index }}" name="s:{{ row.key }}" data-original="{{ row.status }}"{% if not can_save %} disabled{% endif %}>
@@ -139,6 +143,7 @@
                 <option value="{{ value }}"{% if row.status == value %} selected{% endif %}>{{ label }}</option>
                 {% endfor %}
               </select>
+              {% endif %}
               {% if row.changed_by %}<div class="cell-sub">By {{ row.changed_by }}, {{ local_time(row.changed_at) }}</div>{% endif %}
             </td>
           </tr>

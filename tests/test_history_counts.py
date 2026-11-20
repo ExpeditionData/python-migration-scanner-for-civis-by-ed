@@ -2,7 +2,8 @@
 
 rc13 read every listed scan's whole objects and findings tables and counted in Python. The two statements in
 common/schema.py must give the same affected, advisory, and fixed counts. A reference copy of rc13's logic is kept
-here, and the statements run on SQLite (``schema=None``) against made-up findings.
+here, with objects identified by object type and object ID since v0.1.1 (docs/PLAN.md 17.19), and the statements
+run on SQLite (``schema=None``) against made-up findings.
 """
 
 from __future__ import annotations
@@ -23,34 +24,37 @@ from tests.test_sql_scope import scope_problems
 COLUMNS = FINDINGS.column_names
 RULES = ("CV3-ML", "CV3-IO", "PY315-A", "PY315-B")
 IMPACTS = ("affected", "advisory", "unknown", "", None)
+# Random cases mostly use one type, so objects often share an ID with one of another type.
+OBJECT_TYPES = ("python_script", "python_script", "python_script", "notebook", "service", "workflow")
 
 
 # ---------------------------------------------------------------------------
-# rc13's logic (app/views._object_impacts and views.finding_pairs), copied as the reference
+# rc13's logic (app/views._object_impacts and views.finding_pairs), copied as the reference, with the object
+# type added to the key (docs/PLAN.md 17.19)
 # ---------------------------------------------------------------------------
 
 
-def _rc13_object_impacts(findings: list[dict]) -> dict:
+def _reference_object_impacts(findings: list[dict]) -> dict:
     impact: dict = {}
     for f in findings:
-        oid = f["object_id"]
+        key = (f["object_type"], f["object_id"])
         if f.get("impact") == "affected":
-            impact[oid] = "affected"
+            impact[key] = "affected"
         else:
-            impact.setdefault(oid, "advisory")
+            impact.setdefault(key, "advisory")
     return impact
 
 
-def _rc13_counts(rows: list[dict], run_ids: list[str], pairs: list[tuple[str, str]]) -> dict[str, dict]:
+def _reference_counts(rows: list[dict], run_ids: list[str], pairs: list[tuple[str, str]]) -> dict[str, dict]:
     by_run = {r: [f for f in rows if f["run_id"] == r] for r in run_ids}
     counts = {}
     for run_id, findings in by_run.items():
-        impacts = _rc13_object_impacts(findings)
+        impacts = _reference_object_impacts(findings)
         counts[run_id] = {"affected": sum(1 for v in impacts.values() if v == "affected"),
                           "advisory": sum(1 for v in impacts.values() if v == "advisory")}
     for older, newer in pairs:
-        old = {(f["object_id"], f["rule_id"]) for f in by_run[older]}
-        new = {(f["object_id"], f["rule_id"]) for f in by_run[newer]}
+        old = {(f["object_type"], f["object_id"], f["rule_id"]) for f in by_run[older]}
+        new = {(f["object_type"], f["object_id"], f["rule_id"]) for f in by_run[newer]}
         counts[newer]["fixed"] = len(old - new)
     return counts
 
@@ -60,8 +64,8 @@ def _rc13_counts(rows: list[dict], run_ids: list[str], pairs: list[tuple[str, st
 # ---------------------------------------------------------------------------
 
 
-def _finding(run_id: str, object_id, rule_id: str, impact) -> dict:
-    return {"run_id": run_id, "object_id": object_id, "object_type": "python_script", "rule_id": rule_id,
+def _finding(run_id: str, object_id, rule_id: str, impact, object_type: str = "python_script") -> dict:
+    return {"run_id": run_id, "object_id": object_id, "object_type": object_type, "rule_id": rule_id,
             "file": "inline source", "line_number": 1, "impact": impact, "source": "code"}
 
 
@@ -89,7 +93,7 @@ def _pairs(run_ids: list[str]) -> list[tuple[str, str]]:
 
 def _check(rows: list[dict], run_ids: list[str]) -> dict[str, dict]:
     pairs = _pairs(run_ids)
-    expected = _rc13_counts(rows, run_ids, pairs)
+    expected = _reference_counts(rows, run_ids, pairs)
     assert _sql_counts(rows, run_ids, pairs) == expected
     return expected
 
@@ -134,19 +138,46 @@ def test_a_fixed_finding_and_a_rule_moved_to_another_object():
     assert counts["run-b"] == {"affected": 0, "advisory": 1, "fixed": 2}
 
 
+def test_a_script_and_a_notebook_with_the_same_id_are_two_objects():
+    """Civis numbers jobs apart from notebooks, Services, and workflows (docs/PLAN.md 17.19)."""
+    rows = [_finding("run-a", 7, "CV3-ML", "affected"), _finding("run-a", 7, "CV3-ML", "advisory", "notebook")]
+    assert _check(rows, ["run-a"])["run-a"] == {"affected": 1, "advisory": 1}
+
+
+def test_a_service_and_a_workflow_with_a_jobs_id_are_three_objects():
+    rows = [_finding("run-a", 7, "CV3-IO", "advisory"), _finding("run-a", 7, "CV3-IO", "advisory", "service"),
+            _finding("run-a", 7, "PY315-A", "affected", "workflow")]
+    assert _check(rows, ["run-a"])["run-a"] == {"affected": 1, "advisory": 2}
+
+
+def test_a_fix_on_one_of_two_objects_with_the_same_id_counts_once():
+    rows = [_finding("run-a", 7, "CV3-ML", "affected"), _finding("run-a", 7, "CV3-ML", "affected", "notebook"),
+            # run-b: the script's finding is fixed; the notebook's is not.
+            _finding("run-b", 7, "CV3-ML", "affected", "notebook")]
+    counts = _check(rows, ["run-a", "run-b"])
+    assert counts["run-b"] == {"affected": 1, "advisory": 0, "fixed": 1}
+
+
+def test_a_finding_that_moves_to_another_type_with_the_same_id_is_fixed():
+    rows = [_finding("run-a", 7, "CV3-ML", "affected"), _finding("run-b", 7, "CV3-ML", "affected", "service")]
+    counts = _check(rows, ["run-a", "run-b"])
+    assert counts["run-b"] == {"affected": 1, "advisory": 0, "fixed": 1}
+
+
 def test_run_ids_not_asked_for_are_left_out():
     rows = [_finding("run-a", 1, "CV3-ML", "affected"), _finding("run-z", 1, "CV3-ML", "affected")]
     assert set(_check(rows, ["run-a"])) == {"run-a"}
 
 
-def test_random_cases_match_rc13():
+def test_random_cases_match_the_reference():
     rng = random.Random(20261120)
     for _ in range(200):
         run_ids = [f"run-{n}" for n in range(rng.randint(1, 10))]
         rows = []
         for run_id in run_ids:
             for _ in range(rng.choice((0, 0, 1, 3, 8, 15))):
-                rows.append(_finding(run_id, rng.choice((None, 1, 2, 3, 4, 5)), rng.choice(RULES), rng.choice(IMPACTS)))
+                rows.append(_finding(run_id, rng.choice((None, 1, 2, 3, 4, 5)), rng.choice(RULES), rng.choice(IMPACTS),
+                                     rng.choice(OBJECT_TYPES)))
         if rows and rng.random() < 0.3:
             rows += rng.sample(rows, k=min(len(rows), 3))  # Duplicate rows.
         rows.append(_finding("run-other", 1, "CV3-ML", "affected"))  # A scan not asked for.
@@ -169,16 +200,18 @@ def test_both_statements_stay_in_the_results_schema():
 def test_the_statements_as_sent():
     assert history_impact_sql("results", ["run-1", "run-2"]) == (
         "SELECT run_id, SUM(affected) AS affected_objects, SUM(1 - affected) AS advisory_objects FROM "
-        "(SELECT run_id, object_id, MAX(CASE WHEN impact = 'affected' THEN 1 ELSE 0 END) AS affected "
-        "FROM results.findings WHERE run_id IN ('run-1', 'run-2') GROUP BY run_id, object_id) AS per_object "
-        "GROUP BY run_id"
+        "(SELECT run_id, object_type, object_id, MAX(CASE WHEN impact = 'affected' THEN 1 ELSE 0 END) AS affected "
+        "FROM results.findings WHERE run_id IN ('run-1', 'run-2') GROUP BY run_id, object_type, object_id) "
+        "AS per_object GROUP BY run_id"
     )
     assert history_fixed_sql(None, [("run-1", "run-2"), ("run-2", "run-3")]) == (
-        "SELECT 'run-2' AS run_id, COUNT(1) AS fixed_pairs FROM (SELECT object_id, rule_id FROM findings "
-        "WHERE run_id = 'run-1' EXCEPT SELECT object_id, rule_id FROM findings WHERE run_id = 'run-2') AS fixed_1"
+        "SELECT 'run-2' AS run_id, COUNT(1) AS fixed_pairs FROM (SELECT object_type, object_id, rule_id FROM findings "
+        "WHERE run_id = 'run-1' EXCEPT SELECT object_type, object_id, rule_id FROM findings WHERE run_id = 'run-2') "
+        "AS fixed_1"
         " UNION ALL "
-        "SELECT 'run-3' AS run_id, COUNT(1) AS fixed_pairs FROM (SELECT object_id, rule_id FROM findings "
-        "WHERE run_id = 'run-2' EXCEPT SELECT object_id, rule_id FROM findings WHERE run_id = 'run-3') AS fixed_2"
+        "SELECT 'run-3' AS run_id, COUNT(1) AS fixed_pairs FROM (SELECT object_type, object_id, rule_id FROM findings "
+        "WHERE run_id = 'run-2' EXCEPT SELECT object_type, object_id, rule_id FROM findings WHERE run_id = 'run-3') "
+        "AS fixed_2"
     )
     for statement in (history_impact_sql("results", TEN), history_fixed_sql("results", _pairs(TEN))):
         assert "COUNT(*)" not in statement

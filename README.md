@@ -437,7 +437,10 @@ people the app is shared with. The tool itself runs no `GRANT` statement.
    label stays the same when older runs are deleted.
 4. When the scan finishes, review the Overview, Inventory, and Findings pages.
    Change checklist statuses on the Findings page and click **Save changes**.
-   Each change is saved with your Civis user name and the time.
+   Each change is saved with your Civis user name and the time. Objects of
+   different types can share an ID in Civis (a script and a notebook, for
+   example), and two such objects with the same finding share one checklist
+   status; the Findings page says so on the row.
 5. To get the report, click **Download CSV** in the app. It saves the full
    report to your computer (see [Security and privacy](#security-and-privacy)).
 

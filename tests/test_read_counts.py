@@ -193,8 +193,9 @@ def _many(count: int, exact: bool = True) -> tuple[RecordingIO, list[str], FakeC
         "pg_catalog.pg_namespace": [["nspname"], [SCHEMA]],
         "pg_catalog.pg_tables": [["tablename"]] + [[t.name] for t in TABLES],
         f"{SCHEMA}.scan_runs": scan_runs,
-        f"{SCHEMA}.objects": [["run_id", "object_id"]] + [[r, "101"] for r in run_ids],
-        f"{SCHEMA}.findings": [["run_id", "object_id", "rule_id", "impact"]] + [[r, "101", "CV3-ML", "affected"] for r in run_ids],
+        f"{SCHEMA}.objects": [["run_id", "object_id", "object_type"]] + [[r, "101", "python_script"] for r in run_ids],
+        f"{SCHEMA}.findings": [["run_id", "object_id", "object_type", "rule_id", "impact"]]
+        + [[r, "101", "python_script", "CV3-ML", "affected"] for r in run_ids],
     }
     if exact:
         tables["affected_objects"] = [["run_id", "affected_objects", "advisory_objects"]] + [

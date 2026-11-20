@@ -1105,20 +1105,22 @@ def _template_rows():
         {"object_id": 306, "object_type": "custom_script", "name": "Custom D", "template_id": 34,
          "backing_script_id": None, "url": "https://civis.test/306"},
     ]
-    findings = [{"object_id": i, "rule_id": "CV3-ML", "impact": "affected", "file": "f", "line_number": 1}
-                for i in (304, 305, 301)]
+    findings = [{"object_id": i, "object_type": "custom_script", "rule_id": "CV3-ML", "impact": "affected",
+                 "file": "f", "line_number": 1} for i in (304, 305, 301)]
     return objects, findings
 
 
 def test_template_info_links_the_backing_script_only_when_the_scan_stored_its_link():
     objects, _ = _template_rows()
     by_id = {o["object_id"]: o for o in objects}
-    assert views.template_info(by_id[304], by_id) == {"template_id": 33, "backing_id": 108,
-                                                       "backing_url": "https://civis.test/108"}
+    backing = views.backing_scripts(objects)
+    assert set(backing) == {108}
+    assert views.template_info(by_id[304], backing) == {"template_id": 33, "backing_id": 108,
+                                                         "backing_url": "https://civis.test/108"}
     # 211 is not in the scan: its type, and so its link, is not known. The IDs are shown as text.
-    assert views.template_info(by_id[301], by_id) == {"template_id": 31, "backing_id": 211, "backing_url": None}
-    assert views.template_info(by_id[306], by_id)["backing_id"] is None
-    assert views.template_info(by_id[108], by_id) is None  # Not a custom script.
+    assert views.template_info(by_id[301], backing) == {"template_id": 31, "backing_id": 211, "backing_url": None}
+    assert views.template_info(by_id[306], backing)["backing_id"] is None
+    assert views.template_info(by_id[108], backing) is None  # Not a custom script.
 
 
 def test_the_overview_line_counts_templates_and_custom_scripts_with_findings():
@@ -1576,9 +1578,10 @@ def test_resume_window_needs_run_scan_and_a_valid_lookback():
 
 @pytest.mark.parametrize("state", LOCAL_STATES)
 def test_scan_history_rows_match_rc13_in_every_preview_state(preview, monkeypatch, state):
-    """/scan loads, and its history rows equal the ones rc13's Python counts give from the preview's own rows."""
+    """/scan loads, and its history rows equal the ones rc13's Python counts give from the preview's own rows
+    (with objects by type and ID, docs/PLAN.md 17.19)."""
     from app import pages
-    from tests.test_history_counts import _rc13_counts
+    from tests.test_history_counts import _reference_counts
 
     monkeypatch.delenv("FLASK_DEBUG", raising=False)
     app = make_app(preview, state)
@@ -1590,7 +1593,7 @@ def test_scan_history_rows_match_rc13_in_every_preview_state(preview, monkeypatc
         run_ids = [s.run_id for s in completed]
         pairs = list(zip(run_ids[::-1], run_ids[::-1][1:]))
         findings = [f for run_id in run_ids for f in svc.results.rows("findings", run_id)]
-        reference = views.history(situation, _rc13_counts(findings, run_ids, pairs))
+        reference = views.history(situation, _reference_counts(findings, run_ids, pairs))
         counts = svc.results.history_counts(run_ids, pairs) if run_ids else {}
         assert views.history(situation, counts) == reference
 

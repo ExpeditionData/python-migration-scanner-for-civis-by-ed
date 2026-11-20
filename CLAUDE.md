@@ -278,9 +278,28 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   sections 10 to 17. `v0.1.0` (docs/PLAN.md 17.18) is the first release,
   with the same code as `v0.1.0-rc14`; its docs remove the README status
   line and drop the results with plain DROP statements instead of CASCADE.
+  v0.1.1 finishes the app before it is announced (docs/PLAN.md 17.19); part
+  A identifies objects by type and ID.
 - **App flow.** `app/__init__.create_app` -> `app/services.py` (Civis or local
   data layer, job settings cache) -> `app/pages.py` routes -> `app/views.py`
-  (pure shaping) -> `app/templates/`. Data layer:
+  (pure shaping) -> `app/templates/`. **Objects by type and ID (docs/PLAN.md
+  17.19).** Civis numbers jobs apart from notebooks, Services, and workflows,
+  so a job and one of those can share an ID. The app identifies an object by
+  (object type, object ID) (`views.object_key`): the Overview's affected,
+  advisory, per-type, and top-issue counts, the support summary's counts,
+  Scan history's two statements, Inventory's findings counts, Findings' rows
+  (one per object type, object ID, and rule), and the owners filter. The
+  Overview's template line counts only `custom_script` findings, and the
+  backing script is looked up only among `BACKING_TYPES` objects
+  (`views.backing_scripts`). The checklist stays keyed by object ID and rule
+  ID (`checklist_status` has no `object_type` column, and ALTER TABLE is
+  outside the SQL scope): the form's field names `s:<object ID>:<rule ID>`
+  and `o:<object ID>:<rule ID>` and `checklist_changes` are unchanged, and
+  when two Findings rows share an object ID and a rule, only the first in
+  sort order has the status control; the other shows the status as text
+  with the note `views.SHARED_STATUS_NOTE`. The Overview's checklist
+  progress counts Findings' rows, each with its (object ID, rule ID)
+  status. Data layer:
   `app/backends/civis_backend.py` (civis 2.7.1 calls only: `CivisResults`,
   `CivisJobs`, `CivisSetup`), `local_backend.py` (dry-run preview files and
   a made-up job and Service), `cache.py`. Reads that are small by design
@@ -291,8 +310,9 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   objects, findings, coverage, and checklist rows use `read_civis_sql`, and
   each page reads only the tables it shows (docs/PLAN.md 17.6). Scan history
   reads per-scan counts with two aggregate reads through `query_civis`
-  (`common/schema.history_impact_sql` and `history_fixed_sql`, at most 10 rows
-  each; docs/PLAN.md 17.17), cached until the list of completed scans changes
+  (`common/schema.history_impact_sql`, grouped by run ID, object type, and
+  object ID, and `history_fixed_sql`, which compares (object type, object ID,
+  rule ID); at most 10 rows each; docs/PLAN.md 17.17 and 17.19), cached until the list of completed scans changes
   (`CachedResults.history_counts`, 4 entries, no expiry), and reads no run
   table. Inventory
   and Findings show each custom script's template and backing script IDs,
@@ -370,8 +390,18 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   Contrast is checked by `tests/test_app.py`.
 - **Scanner flow.** `scanner/__main__.py` -> `runner.run_scan` -> inventory ->
   `process.process_item` per object (retrieval, engine, logs) ->
-  `checkpoint.Checkpointer` -> `output` sinks. **Resume (docs/PLAN.md
-  17.13).** After the schema check and `ensure_tables`, before the "running"
+  `checkpoint.Checkpointer` -> `output` sinks. **Objects by type and ID
+  (docs/PLAN.md 17.19).** Jobs (Python, container, custom, and dbt scripts,
+  `scanner/inventory/base.JOB_TYPES`) share one ID series apart from
+  notebooks, Services, and workflows, so the scanner identifies an object by
+  (object type, object ID): resume (`sink.finished_object_keys`, `SELECT
+  DISTINCT object_type, object_id`), `runner._dedupe_findings`, and the CSV
+  report's grouping. Workflow references are job IDs, so they map only to
+  job items (`Inventory.jobs_by_id()`; `by_key()` gives every item by type
+  and ID), and the archived-job lookup's known IDs are job items only. The
+  checklist stays keyed by object ID and rule ID: the new "open" rows, the
+  `existing` pairs (`sink.checklist_pairs`), and the retention cleanup.
+  **Resume (docs/PLAN.md 17.13).** After the schema check and `ensure_tables`, before the "running"
   row, `runner._resume_decision` reads the `scan_runs` rows
   (`sink.scan_run_rows`), the stopped scan's newest Civis run of this job
   (`scripts.get_containers_runs` through the `BudgetedClient`; state and end
@@ -476,7 +506,8 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   resume uses its first start); notebooks, Services, and workflows are always
   kept. Then the detail calls. `LOOKBACK_DAYS` defaults to 400
   (`common/release.DEFAULT_LOOKBACK_DAYS`, range 1 to 3650) and still decides
-  whose run log is read. One object ID is one inventory item. Coverage gets
+  whose run log is read. One object type and ID is one inventory item
+  (docs/PLAN.md 17.19). Coverage gets
   `outside_window` and `template_copies` rows per type (`found_count`, no
   column change). One `INVENTORY type=... listed= kept= outside_window=
   template_copies= not_python=` line per listed type, then `PROGRESS
@@ -747,11 +778,27 @@ Run the full suite on both Python versions before every commit:
   reads from an `affected_objects` or `fixed_pairs` key, else by running the
   SQL on SQLite over its own `<schema>.findings` rows.
 - `tests/test_history_counts.py` checks Scan history's two aggregate
-  statements (docs/PLAN.md 17.17) against a copy of rc13's Python counts on
-  SQLite (named cases and 200 seeded random cases), their text, scope, and
+  statements (docs/PLAN.md 17.17 and 17.19) against a copy of rc13's Python
+  counts, with objects keyed by object type and object ID, on SQLite (named
+  cases, including objects of different types with the same ID, and 200
+  seeded random cases with mixed object types), their text, scope, and
   refused values, `history_counts_from_rows`, `CivisResults.history_counts`,
   and the `CachedResults` entry (one read for concurrent first loads, no
   expiry, 4 entries, cleared by `clear()`, kept by a checklist save).
+- `tests/test_shared_ids.py` and `tests/test_shared_ids_app.py` cover
+  objects of different types with the same ID (docs/PLAN.md 17.19). The
+  scanner tests add made-up notebooks to a copy of the synthetic instance
+  (which itself has no shared IDs; the file is unchanged): one with Python
+  script 101's ID and one with archived job 105's ID. They check both
+  objects' rows and findings, the workflow on the job only, the CSV
+  grouping, a stop after the script and a resume that scans the notebook,
+  the archived job still read, and the dedupe. The app tests check the
+  Overview, Scan history, support summary, Inventory, backing script,
+  owners, and Findings views on made-up rows, and on the preview with an
+  added notebook: two Findings rows, one status control, the note, no field
+  name twice, and a save that writes one checklist row. Tests that look up
+  synthetic items by ID use `tests/fake_civis.items_by_id`, which fails if
+  two items share an ID.
 - `tests/test_scripts_js.py` runs `busy.js`, `run-scan.js`,
   `scan-status.js` (the last two after `status-requests.js`), and
   `copy-summary.js` (its two Copy messages, with a working, failing, or

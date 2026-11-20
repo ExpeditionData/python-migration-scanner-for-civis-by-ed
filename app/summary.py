@@ -245,12 +245,14 @@ def scan_counts(objects: list[dict], findings: list[dict]) -> dict:
         key = {"scanned": "scanned", "partial": "partial", "not_scanned": "not_scanned", "pending": "not_scanned"}.get(status)
         if key:
             by_type.setdefault(_label(row.get("object_type"), OBJECT_TYPES), Counter())[key] += 1
+    # By (object type, object ID): a job and a notebook can share an ID (docs/PLAN.md 17.19).
     impact: dict[Any, str] = {}
     for row in findings:
+        key = (row.get("object_type"), row.get("object_id"))
         if row.get("impact") == "affected":
-            impact[row.get("object_id")] = "affected"
+            impact[key] = "affected"
         else:
-            impact.setdefault(row.get("object_id"), "advisory")
+            impact.setdefault(key, "advisory")
     return {
         "by_type": by_type,
         "affected": sum(1 for v in impact.values() if v == "affected"),
