@@ -279,8 +279,9 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   with the same code as `v0.1.0-rc14`; its docs remove the README status
   line and drop the results with plain DROP statements instead of CASCADE.
   v0.1.1 finishes the app before it is announced (docs/PLAN.md 17.19); part
-  A identifies objects by type and ID, and part B returns to the same page
-  after the whole Civis page is reloaded.
+  A identifies objects by type and ID, part B returns to the same page
+  after the whole Civis page is reloaded, and part C wraps long names in
+  the Findings and Inventory tables so they fit a desktop window.
 - **App flow.** `app/__init__.create_app` -> `app/services.py` (Civis or local
   data layer, job settings cache) -> `app/pages.py` routes -> `app/views.py`
   (pure shaping) -> `app/templates/`. **Objects by type and ID (docs/PLAN.md
@@ -637,14 +638,18 @@ serves the app on 127.0.0.1 only:
 Open http://127.0.0.1:8050. Add `--state no-scan` (or `first-scan-running`, `first-scan-cancelled`,
 `failed`, `tables-failed`, `schema-missing`, `no-job-id`, `job-unreadable`,
 `database-unrecognized`, `schema-refused`, `tables-missing`,
-`setup-failures`, `not-scanner-job`, `schema-shared`, or `list-failed`) to see the empty and
-error states. `not-scanner-job` points SCANNER_JOB_ID at another job, and
+`setup-failures`, `not-scanner-job`, `schema-shared`, `list-failed`, or
+`long-names`) to see the empty and error states. `not-scanner-job` points SCANNER_JOB_ID at another job, and
 `schema-shared` has a results schema that holds other tables. `schema-missing`,
 `schema-refused`, and `tables-missing` look like a new install with the "Set
 up results storage" button (`schema-refused` shows the statement for a
 database admin); `setup-failures` makes several Setup page lines fail.
 `list-failed` gives every scan a made-up `list_failed` coverage row (custom
 scripts, 150 rows, HTTP 503), so the Overview shows its warning.
+`long-names` shows the normal data with every object name (90 characters),
+owner name (33), workflow name (60), and finding file (78) replaced by
+made-up text with no spaces, to check that the Findings and Inventory tables
+fit a desktop window (docs/PLAN.md 17.19, Part C).
 `first-scan-cancelled` also shows the Overview's resume line for 24 hours
 after the preview was built. Local preview refuses to start if
 `CIVIS_API_KEY` is set.
@@ -784,6 +789,9 @@ Run the full suite on both Python versions before every commit:
   preview's canceled scan's CSV link and no-report page, the Overview's
   list warning in the `list-failed` state (escaped, from `list_failed` rows
   only), and local preview mode, and the templates display and filter.
+  It also checks the long-word table rules in `app.css`, the Findings and
+  Inventory column order those rules count on, and the `long-names` state on
+  every page (docs/PLAN.md 17.19, Part C).
 - `tests/test_run_labels.py` covers the run labels (docs/PLAN.md 17.9): the
   same after the oldest runs are removed, a resumed scan's first Civis run
   ID, the "Scan <run ID>" fallback, the preview's four scans (Civis runs 501

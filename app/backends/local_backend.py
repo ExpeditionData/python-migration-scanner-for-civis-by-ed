@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+import zlib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -38,7 +39,7 @@ STATES = (
     "normal", "no-scan", "first-scan-running", "first-scan-cancelled", "failed", "tables-failed", "schema-missing",
     "no-job-id",
     "job-unreadable", "database-unrecognized", "schema-refused", "tables-missing", "setup-failures",
-    "not-scanner-job", "schema-shared", "list-failed",
+    "not-scanner-job", "schema-shared", "list-failed", "long-names",
 )
 # States that look like a new install: no scans yet, and the results storage is not set up.
 FRESH_STATES = ("schema-missing", "schema-refused", "tables-missing", "schema-shared")
@@ -53,6 +54,64 @@ PREVIEW_TAG = "v0.1.0-rc3"
 PREVIEW_SERVICE_ID = 9200
 # list-failed: every scan's custom script list stopped after 150 rows with HTTP 503 (docs/PLAN.md 17.12).
 PREVIEW_LIST_FAILED = (ObjectType.CUSTOM_SCRIPT, 150, 503, "CivisAPIError")
+# long-names: the normal data with long made-up words, to check that tables fit a desktop window (docs/PLAN.md
+# 17.19, Part C). Underscores and no spaces, as in many real object names.
+LONG_OBJECT_NAME = 90
+LONG_OWNER_NAME = 33
+LONG_WORKFLOW_NAME = 60
+LONG_FILE = 78
+_LONG_FILLER = "_quarterly_member_outreach_refresh_pipeline_with_a_long_made_up_name_for_layout_checks" * 2
+
+
+def _long_word(prefix: str, length: int) -> str:
+    """``prefix`` (kept whole, so names stay distinct) padded with made-up filler to ``length`` characters."""
+    return (prefix + _LONG_FILLER)[:length] if len(prefix) < length else prefix
+
+
+def long_object_name(object_type: str, object_id: Any) -> str:
+    return _long_word(f"example_{object_type}_{object_id}", LONG_OBJECT_NAME)
+
+
+def long_owner_name(owner_id: Any) -> str:
+    return _long_word("example_long_owner_name_", LONG_OWNER_NAME - 9) + f"{int(owner_id or 0) % 10**9:09d}"
+
+
+def long_workflow_name(workflow_id: Any) -> str:
+    return _long_word(f"example_workflow_{workflow_id}", LONG_WORKFLOW_NAME)
+
+
+def long_file(file: Any) -> str:
+    """A made-up path of LONG_FILE characters, the same for the same original label."""
+    suffix = f"/module_{zlib.crc32(str(file or '').encode('utf-8')):010d}.py"
+    folders = "example_repository/a_long_folder_name_for_layout_checks/nested_package_directory_name"
+    return folders[:LONG_FILE - len(suffix)] + suffix
+
+
+def _long_workflows(value: Any) -> Any:
+    """The workflows JSON list with every name replaced. Anything that does not parse is kept as it is."""
+    if not value:
+        return value
+    try:
+        items = json.loads(value)
+    except (TypeError, ValueError):
+        return value
+    if not isinstance(items, list):
+        return value
+    return json.dumps([dict(item, name=long_workflow_name(item.get("id"))) if isinstance(item, dict) else item
+                       for item in items])
+
+
+def long_names_row(table: str, row: dict) -> dict:
+    """The long-names state: one row of ``objects`` or ``findings`` with every object name, owner name, workflow
+    name, and finding file replaced by long made-up text. Other tables and columns are unchanged."""
+    if table == "objects":
+        row = dict(row, name=long_object_name(row.get("object_type"), row.get("object_id")),
+                   workflows=_long_workflows(row.get("workflows")))
+        if row.get("owner_name"):
+            row["owner_name"] = long_owner_name(row.get("owner_id"))
+    elif table == "findings":
+        row = dict(row, file=long_file(row.get("file")), workflows=_long_workflows(row.get("workflows")))
+    return row
 
 
 def preview_job(job_id: int, state: str = "normal") -> dict:
@@ -238,6 +297,8 @@ class LocalResults:
                 # before it wrote one).
                 first = self._running_run_id(conn)
                 rows = [r for r in rows if r.get("run_id") == first]
+            if self.state == "long-names":
+                rows = [long_names_row(table, r) for r in rows]
             if self.state == "list-failed" and table == COVERAGE.name and run_id is not None:
                 object_type, rows_read, status, error_name = PREVIEW_LIST_FAILED
                 rows.append(normalize_row(table, {

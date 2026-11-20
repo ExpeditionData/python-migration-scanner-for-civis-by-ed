@@ -1414,7 +1414,8 @@ def test_table_wrap_clips_the_screen_reader_text_inside_it():
     assert ".table-wrap { overflow-x: auto; position: relative; }" in css
 
 
-@pytest.mark.parametrize("state", ["normal", "failed", "tables-failed", "first-scan-cancelled", "setup-failures"])
+@pytest.mark.parametrize("state", ["normal", "failed", "tables-failed", "first-scan-cancelled", "setup-failures",
+                                   "long-names"])
 def test_every_table_and_its_screen_reader_text_sit_in_a_table_wrap(preview, monkeypatch, state):
     monkeypatch.delenv("FLASK_DEBUG", raising=False)
     client = make_app(preview, state).test_client()
@@ -1429,6 +1430,109 @@ def test_every_table_and_its_screen_reader_text_sit_in_a_table_wrap(preview, mon
     assert tables >= 1
     if state == "normal":  # Findings, Inventory, Scan history, Setup, and the Overview's tables.
         assert tables >= 5 and sr_only >= 2  # Findings' status labels and Scan history's CSV link text.
+
+
+# --- Long names wrap in tables (docs/PLAN.md 17.19, Part C) ----------------------------------------------------
+
+INVENTORY_TABLE = 'section[aria-label="Inventory"]'
+LONG_NAME_RULES = (
+    '.findings-table td,\nsection[aria-label="Inventory"] td { overflow-wrap: anywhere; }',
+    '.findings-table thead th,\nsection[aria-label="Inventory"] thead th { white-space: normal; overflow-wrap: normal; }',
+    '.findings-table td:first-child,\nsection[aria-label="Inventory"] td:first-child { min-width: 10em; }',
+    '.findings-table td.fix { min-width: 12em; }',
+    '.findings-table .mono { overflow-wrap: normal; }',
+    '.findings-table td:nth-child(4),\n.findings-table td:nth-child(5),\nsection[aria-label="Inventory"] td:nth-child(2),\n'
+    'section[aria-label="Inventory"] td:nth-child(5),\nsection[aria-label="Inventory"] td:nth-child(6),\n'
+    'section[aria-label="Inventory"] td:nth-child(7),\nsection[aria-label="Inventory"] td:nth-child(8) '
+    '{ white-space: nowrap; }',
+    'section[aria-label="Inventory"] td .cell-sub,\nsection[aria-label="Inventory"] td .reason { white-space: normal; }',
+    ".locations { margin: 0; padding: 0; list-style: none; font-family: var(--mono); font-size: 12px; }",
+)
+# The columns the nth-child rules count on: Impact and Confidence on Findings; Type, Default image, Last run,
+# Findings, and Scan status on Inventory.
+FINDINGS_COLUMNS = ["Object", "Rule", "Location", "Impact", "Confidence", "How to fix", "Status"]
+INVENTORY_COLUMNS = ["Name", "Type", "Owner", "Image and tag", "Default image", "Last run", "Findings", "Scan status",
+                     "Run by workflows"]
+
+
+def test_long_words_wrap_in_the_findings_and_inventory_tables():
+    css = (Path(__file__).resolve().parent.parent / "app/static/css/app.css").read_text(encoding="utf-8")
+    for rule in LONG_NAME_RULES:
+        assert rule in css, rule
+    # What forced Findings wider is gone: the table's minimum width and the locations' nowrap.
+    assert ".findings-table { min-width" not in css and "min-width: 1000px" not in css
+    assert not re.search(r"\.locations \{[^}]*nowrap", css)
+    # Short values stay on one line: badges and the Status control (a select never breaks).
+    assert re.search(r"\.badge \{[^}]*white-space: nowrap;", css)
+    assert "status-select" not in css.split("/* Long words in the Findings")[1].split(".badge {")[0]
+    # The Overview and Scan history tables hold no names and keep nowrap; phone width still scrolls in the box.
+    assert ".nowrap td, .nowrap tbody th { white-space: nowrap; }" in css
+    assert ".table-wrap { overflow-x: auto; position: relative; }" in css
+
+
+@pytest.mark.parametrize("state", ["normal", "long-names"])
+def test_the_column_order_matches_the_nth_child_rules(preview, monkeypatch, state):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    client = make_app(preview, state).test_client()
+    for url, table, columns in (("/findings", r'<table class="findings-table">', FINDINGS_COLUMNS),
+                                ("/inventory", r'<section class="card card-flush" aria-label="Inventory">\s*'
+                                               r'<div class="table-wrap">\s*<table>', INVENTORY_COLUMNS)):
+        body = client.get(url).get_data(as_text=True)
+        start = re.search(table, body)
+        assert start, url
+        head = body[start.end():body.index("</thead>", start.end())]
+        assert [html.unescape(h) for h in re.findall(r'<th scope="col"[^>]*>([^<]*)</th>', head)] == columns, url
+    assert make_app(preview, state).test_client().get("/inventory").get_data(as_text=True) \
+        .count('aria-label="Inventory"') == 1
+
+
+def test_long_names_state_renders_every_page(preview, monkeypatch):
+    """The long-names preview state: the normal data with long made-up names, on every page."""
+    from app.backends import local_backend as lb
+
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    client = make_app(preview, "long-names").test_client()
+    for url in PAGES + ["/findings?status=all", "/setup", "/setup/summary", "/inventory?type=workflow"]:
+        assert client.get(url).status_code == 200, url
+    inventory = client.get("/inventory").get_data(as_text=True)
+    findings = client.get("/findings?status=all").get_data(as_text=True)
+    names = re.findall(r'rel="noopener noreferrer">(example_[a-z_]+_\d+_[a-z_]+)<span class="sr-only">', inventory)
+    assert names and all(len(name) == lb.LONG_OBJECT_NAME and " " not in name for name in names)
+    owners = set(re.findall(r"example_long_owner_name_\d{9}", inventory))
+    assert owners and all(len(owner) == lb.LONG_OWNER_NAME for owner in owners)
+    assert re.search(r"example_workflow_\d+_quarterly", inventory)
+    files = re.findall(r"<li>(example_repository/[^<,]+)", findings)
+    assert files and all(len(f) == lb.LONG_FILE for f in files)
+    # Same data as the normal state, only the text changes: the same counts on every page.
+    normal = make_app(preview).test_client()
+    count = (r"Showing \d+ to \d+ of \d+ \w+|Python objects found \d+|"
+             r"Checklist progress \d+ findings across \d+ objects")
+    for url, expected in (("/", 2), ("/inventory", 1), ("/findings?status=all", 1)):
+        shown = re.findall(count, text_of(client.get(url)))
+        assert len(shown) == expected and shown == re.findall(count, text_of(normal.get(url))), url
+    assert text_of(normal.get("/scan")) == text_of(client.get("/scan"))  # Scan history shows no names.
+
+
+def test_long_names_rows_are_made_up_and_keep_other_columns():
+    from app.backends.local_backend import long_file, long_names_row, long_object_name, long_owner_name
+
+    row = {"run_id": "r1", "object_id": 101, "object_type": "python_script", "name": "Example job", "owner_id": 12,
+           "owner_name": "Example Owner", "workflows": json.dumps([{"id": 601, "name": "Example flow"}]), "impact": "a"}
+    out = long_names_row("objects", row)
+    assert row["name"] == "Example job"  # The input row is not changed.
+    assert out["name"] == long_object_name("python_script", 101) and len(out["name"]) == 90
+    assert out["owner_name"] == long_owner_name(12) and len(out["owner_name"]) == 33
+    flows = json.loads(out["workflows"])
+    assert [f["id"] for f in flows] == [601] and len(flows[0]["name"]) == 60 and " " not in flows[0]["name"]
+    assert {k: v for k, v in out.items() if k not in ("name", "owner_name", "workflows")} == \
+        {k: v for k, v in row.items() if k not in ("name", "owner_name", "workflows")}
+    assert long_names_row("objects", dict(row, owner_name=None))["owner_name"] is None
+    assert long_names_row("objects", dict(row, workflows="not json"))["workflows"] == "not json"
+    finding = long_names_row("findings", {"file": "cell 3", "line_number": 4, "workflows": None})
+    assert finding == {"file": long_file("cell 3"), "line_number": 4, "workflows": None} and len(finding["file"]) == 78
+    assert long_file("cell 3") != long_file("cell 4")
+    assert long_object_name("notebook", 101) != long_object_name("python_script", 101)
+    assert long_names_row("scan_runs", {"run_id": "r1"}) == {"run_id": "r1"}
 
 
 # --- Resume a stopped scan (docs/PLAN.md 17.13) ---------------------------------------------------------------

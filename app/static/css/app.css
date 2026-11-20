@@ -367,9 +367,35 @@ body.is-loading .button-primary.is-busy-trigger,
 body.is-loading .button-primary.is-busy-trigger:hover { color: #ffffff; background: var(--busy-trigger); }
 .reason { font-size: 13px; color: var(--affected); margin-top: 2px; max-width: 360px; white-space: normal; }
 .cell-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
-.findings-table { min-width: 1000px; }
 .fix { font-size: 13px; max-width: 260px; }
-.locations { margin: 0; padding: 0; list-style: none; font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+.locations { margin: 0; padding: 0; list-style: none; font-family: var(--mono); font-size: 12px; }
+/* Long words in the Findings and Inventory tables (docs/PLAN.md 17.19, Part C). Object names often have no spaces
+   (underscores instead), so a long name made the whole table wider than the window and pushed Status out of view.
+   Names, owners, workflows, template and backing script text, images, and file locations may break anywhere; the
+   column headers wrap between words; the Object and Name columns keep a minimum width, so a long name breaks into
+   lines instead of a column a few characters wide; and short values (type, impact, confidence, dates, counts,
+   status, badges) stay on one line. The Status control is one select, which never breaks; the text under it wraps.
+   The Overview and Scan history tables hold no names, only counts, rule IDs, and run labels, and keep "nowrap".
+   At phone width, a table still scrolls inside its box. Findings columns: Object, Rule, Location, Impact,
+   Confidence, How to fix, Status. Inventory columns: Name, Type, Owner, Image and tag, Default image, Last run,
+   Findings, Scan status, Run by workflows (tests/test_app.py checks both orders). */
+.findings-table td,
+section[aria-label="Inventory"] td { overflow-wrap: anywhere; }
+.findings-table thead th,
+section[aria-label="Inventory"] thead th { white-space: normal; overflow-wrap: normal; }
+.findings-table td:first-child,
+section[aria-label="Inventory"] td:first-child { min-width: 10em; }
+.findings-table td.fix { min-width: 12em; }
+.findings-table .mono { overflow-wrap: normal; }
+.findings-table td:nth-child(4),
+.findings-table td:nth-child(5),
+section[aria-label="Inventory"] td:nth-child(2),
+section[aria-label="Inventory"] td:nth-child(5),
+section[aria-label="Inventory"] td:nth-child(6),
+section[aria-label="Inventory"] td:nth-child(7),
+section[aria-label="Inventory"] td:nth-child(8) { white-space: nowrap; }
+section[aria-label="Inventory"] td .cell-sub,
+section[aria-label="Inventory"] td .reason { white-space: normal; }
 
 .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .badge-affected { background: var(--affected-bg); color: var(--affected); }

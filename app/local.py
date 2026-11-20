@@ -17,8 +17,10 @@ Safety rules (SECURITY.md, "How we build and test it"):
 normal, no-scan, first-scan-running, first-scan-cancelled, failed,
 tables-failed, schema-missing, no-job-id, job-unreadable,
 database-unrecognized, schema-refused, tables-missing, setup-failures,
-not-scanner-job, schema-shared, and list-failed (one type's list stopped
-partway, so the Overview shows its warning).
+not-scanner-job, schema-shared, list-failed (one type's list stopped
+partway, so the Overview shows its warning), and long-names (the normal data
+with long made-up object, owner, and workflow names and file paths, to check
+that the tables fit a desktop window).
 """
 
 from __future__ import annotations
