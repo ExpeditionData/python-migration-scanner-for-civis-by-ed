@@ -2,7 +2,7 @@
 // take a few seconds and the browser shows nothing until the next page arrives (docs/PLAN.md 17.9, Part D):
 //   - a plain click (left button, no modifier keys, default not prevented) on a same-origin link that loads
 //     another app page in this tab, and the sending of a form (the Inventory and Findings filters, the Findings
-//     "Save changes" form, the test summary's run choice, and "Set up results storage");
+//     "Save changes" form, the support summary's run choice, and "Set up results storage");
 //   - the cue (docs/PLAN.md 17.11, Part A): the "is-busy-trigger" class on the clicked link or on the sent form's
 //     submit button (gray, no underline or hover change, and the progress cursor, from app.css), aria-busy="true"
 //     on main, and the "is-loading" class on body (the progress cursor and dimmed main content, from app.css). The
@@ -13,7 +13,7 @@
 //     the browser will ask before leaving;
 //   - a second click while the cue shows adds nothing.
 // Links and forms with data-busy also show "Working. This can take up to a minute." in the page's busy region,
-// as before: the Scan history and Setup links, Build test summary, Back to Setup, the summary's run choice, and the
+// as before: the Scan history and Setup links, Support summary, Back to Setup, the summary's run choice, and the
 // "Set up results storage" button. Coming back to the page from the browser's history removes everything.
 // Plain JavaScript, loaded from the app itself (no inline scripts or styles; see the CSP). The message is set with
 // textContent only. Without JavaScript, every link and form still works; only the cue is missing.

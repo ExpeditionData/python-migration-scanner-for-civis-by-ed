@@ -603,7 +603,7 @@ def setup_page():
 
 @bp.get("/setup/summary")
 def setup_summary():
-    """The test summary: counts, fixed labels, and error types only (app/summary.py). Reads only."""
+    """The support summary: counts, fixed labels, and error types only (app/summary.py). Reads only."""
     from app import setup, summary
 
     svc = services()

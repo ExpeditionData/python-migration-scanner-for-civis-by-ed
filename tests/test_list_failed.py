@@ -228,7 +228,7 @@ def test_no_exception_text_reaches_the_log_tables_csv_or_summary(tmp_path, log_s
         assert MARK not in output and "made-up message" not in output, where
 
 
-# --- The test summary ------------------------------------------------------------------------------------
+# --- The support summary ------------------------------------------------------------------------------------
 
 
 def test_summary_counts_list_failed_lines_and_lists_each_type():

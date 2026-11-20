@@ -232,7 +232,7 @@ def test_a_timed_out_all_users_list_falls_back_and_is_counted(stub):
     assert users_calls == [TIMEOUT, TIMEOUT, TIMEOUT]
 
 
-# --- The RUN line and the test summary -------------------------------------------------------------------
+# --- The RUN line and the support summary -------------------------------------------------------------------
 
 
 def test_the_run_line_and_the_summary_carry_request_timeouts(tmp_path, log_stream, monkeypatch):

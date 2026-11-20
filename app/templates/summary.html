@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Test summary{% endblock %}
+{% block title %}Support summary{% endblock %}
 {% block scripts %}<script src="{{ url_for('static', filename='js/copy-summary.js') }}" defer></script>{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Test summary</h1>
+    <h1>Support summary</h1>
     <p class="subtitle">Counts, fixed labels, and error types only, so you can share it with whoever supports your setup. It holds no names, addresses, code, or log text. Read it before you send it.</p>
   </div>
   <div class="actions">
@@ -25,11 +25,11 @@
     <button type="submit" class="button button-secondary">Build summary</button>
   </form>
   {% endif %}
-  <label for="summary-text" class="sr-only">Test summary text</label>
+  <label for="summary-text" class="sr-only">Support summary text</label>
   <textarea id="summary-text" class="summary-text" rows="30" readonly spellcheck="false">{{ text }}</textarea>
   <p class="actions-row">
     <button type="button" id="copy-summary" class="button button-primary" hidden>Copy</button>
-    <span id="copy-status" class="note" role="status" aria-live="polite">Select the text and copy it, then paste it into your message.</span>
+    <span id="copy-status" class="note" role="status" aria-live="polite">Select the text and copy it.</span>
   </p>
 </section>
 {% endblock %}

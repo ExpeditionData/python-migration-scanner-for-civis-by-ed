@@ -100,7 +100,7 @@ README setup and every fact that could not be confirmed from documentation
 5. Attach the GitHub token (item 4.8), then item 5.2 (the second scan), the
    second-scan part of item 4.8, and item 1.4.
 6. Items 4.4, 4.5, and 5.3 to 5.5.
-7. Item 5.7: build the final test summary, copy it, and send it with these
+7. Item 5.7: build the final support summary, copy it, and send it with these
    results.
 
 Item 5.6 was not part of the first test. Its step 1 is part of the retest and
@@ -156,7 +156,7 @@ its step 2 removes them at the end of the retest.
 7. Item 5.6 step 2 for the first test's job and Service: README "Remove the
    tool" steps 1 and 2. Step 3 (drop the results schema) does not apply,
    because the new install uses that schema.
-8. Item 5.7: the test summary for the retest.
+8. Item 5.7: the support summary for the retest.
 
 ### Default tags on v0.1.0-rc12
 
@@ -284,7 +284,7 @@ finish the step the way the interface allows and record the difference.
   run for memory or disk errors, and read its peak memory and CPU if Civis
   shows them. Read the GitHub counts on the last line of the run log of the
   first scan with the token attached (the second scan, item 4.8), or from the
-  test summary's `run_line` for that scan (item 5.7). The first scan has no
+  support summary's `run_line` for that scan (item 5.7). The first scan has no
   token, so its GitHub counts are zero.
   On the retest, also open the Setup page after each update: with the token,
   and again after the update with `GITHUB_CREDENTIAL` `"clear"`.
@@ -337,7 +337,7 @@ finish the step the way the interface allows and record the difference.
   default group was removed from both objects. Sharing the scanner job did not
   change its repository: the Setup page's line 2 passes in item 1.10.
 - **Record:** pass or fail for each object. The user and group counts come
-  from the Setup page's line 6 (item 1.10) and the test summary.
+  from the Setup page's line 6 (item 1.10) and the support summary.
 
 ### 1.8 Results schema check before setup
 
@@ -375,7 +375,7 @@ finish the step the way the interface allows and record the difference.
   the Setup page.
 - **Expected:** After any outcome, the Overview page shows "No scan yet"
   and **Run scan** is on. On the retest, Setup line 9 passes (the schema
-  holds only this tool's five tables) and the test summary shows
+  holds only this tool's five tables) and the support summary shows
   `results_schema_dedicated: yes`. This confirms the check finds the schema on
   Redshift. Nothing else changes in Civis.
 - **Record:** whether the first click reported that the schema already existed
@@ -395,7 +395,7 @@ finish the step the way the interface allows and record the difference.
 - **Expected:** Lines 1 to 5, 7, and 9 pass. Line 2 shows "Resource profile:
   without_token (500 CPU, 2048 MB, 1 GB)" under it. Line 4 shows the
   `RESULTS_DB` value shape `object`, the same as item 1.5. Line 9 says the
-  schema holds only this tool's five tables (it is dedicated), and the test
+  schema holds only this tool's five tables (it is dedicated), and the support
   summary shows `results_schema_dedicated: yes`. Line 7 is "review" instead
   of a pass if Civis added the deploying user's GitHub token to the Service as
   `REPO_HTTP_TOKEN`. Line 6 (sharing) is "review". Line 8 (frame rule) is a
@@ -506,7 +506,7 @@ Only for troubleshooting, or if item 2.1 failed.
 ### 3.4 Scan results
 
 - **Steps:** When the scan finishes, press F5 (reload the whole Civis page),
-  then build the test summary (item 5.7) for this scan; without the reload,
+  then build the support summary (item 5.7) for this scan; without the reload,
   the frame can show "Cookie expired.". Its `run_line`, `objects_by_type`, and `findings` lines give the
   counts below, so you do not need to copy them from the run log. Then read
   the counts on the Overview page.
@@ -541,7 +541,7 @@ Only for troubleshooting, or if item 2.1 failed.
 
 ### 3.6 The run log holds only structured lines
 
-- **Steps:** The test summary's `log_errors` and `log_other_lines` lines count
+- **Steps:** The support summary's `log_errors` and `log_other_lines` lines count
   these for you. Scanner lines start with `RUN`, `PHASE`, `PROGRESS`,
   `CHECKPOINT`, `FINDINGS`, `OBJECT_ERROR`, `CIVIS_GIT_FAILED`,
   `PARSE_ERROR`, `TABLE_WRITE_FAILED`, `OUTPUT_FAILED`, `FATAL`, `USERS`,
@@ -599,7 +599,7 @@ Only for troubleshooting, or if item 2.1 failed.
   contact.", notebooks whose reason is "The notebook file could not be
   downloaded. The request was refused (HTTP 403).", and notebooks with any
   other reason. Read `notebook_links` and `notebook_link_retries` from the
-  test summary's `run_line`.
+  support summary's `run_line`.
 - **Expected:** Python notebooks with a file are scanned; none refused for
   their host or with HTTP 403. `notebook_links` is about the number of Python
   notebooks (one fresh link each, right before its download), and
@@ -639,7 +639,7 @@ Only for troubleshooting, or if item 2.1 failed.
 
 - **Steps:** After at least two scans, pick the older run's ID (the
   `run_id=` value in the `RUN run_id=... status=running` line near the top of
-  that run's log, or from the test summary's select list, which shows each
+  that run's log, or from the support summary's select list, which shows each
   scan as "Civis run <ID> (<run ID>)"). In a Civis query
   against the results database, count that run's rows in each of the five
   tables, run the manual deletion SQL from SECURITY.md for that run ID, and
@@ -655,7 +655,7 @@ Only for troubleshooting, or if item 2.1 failed.
 - **Steps:** Do item 5.1 first. On a later day than an earlier scan, run the
   install script with `MODE` `"update"`, the same tag, and `RETENTION_DAYS`
   set to `1` (README "Update to a new release"), and click **Run scan** in the
-  app. Read `runs_in_scan_runs` from the test summary before and after; it
+  app. Read `runs_in_scan_runs` from the support summary before and after; it
   replaces a manual count of runs in `scan_runs`. Then run the update again
   with `RETENTION_DAYS` set to `"clear"`.
 - **Expected:** Scans started more than one day earlier are deleted from all
@@ -690,11 +690,11 @@ Only for troubleshooting, or if item 2.1 failed.
 
 - **Steps:**
   1. The first scan (item 3.1) runs with no GitHub token, on purpose. After
-     it, read `civis_git_reads` and `civis_git_failures` from the test
+     it, read `civis_git_reads` and `civis_git_failures` from the support
      summary's `run_line`, and the `CIVIS_GIT_FAILED` counts by error type and
      status from its `log_errors` lines (for example
      `CIVIS_GIT_FAILED CivisAPIError status=403: 3`).
-  2. Read the summary's `testing_4_8` lines for the scan. They give
+  2. Read the summary's `git_backed_objects` lines for the scan. They give
      `git_backed`, `read_through_civis`, and `civis_read_failed` per object
      type, computed the same way as the query below. **Once, for the first
      scan only,** also run the query as a manual cross-check, in a Civis
@@ -763,7 +763,7 @@ Only for troubleshooting, or if item 2.1 failed.
 ### 5.1 Checklist save with the Civis-Username header
 
 - **Steps:** On the Findings page, change two statuses and click **Save
-  changes**. Reload. Read `checklist_rows_by_people` from the test summary; it
+  changes**. Reload. Read `checklist_rows_by_people` from the support summary; it
   replaces a manual count of `checklist_status` rows where `changed_by` is not
   `scanner`.
 - **Expected:** The dropdowns are enabled (the app sees your user name), the
@@ -861,11 +861,11 @@ Step 1 is part of the retest and moves the first test's job and Service from
 - **Record:** pass or fail per step; the `RESULT` lines by label (no IDs);
   `run_id_removed`; Setup lines 2, 4, and 7.
 
-### 5.7 Test summary
+### 5.7 Support summary
 
 - **Steps:** Press F5 (reload the whole Civis page) first; without it, the
-  frame can show "Cookie expired." when you click **Build test summary**.
-  On the Setup page, click **Build test summary**. Choose the scan
+  frame can show "Cookie expired." when you click **Support summary**.
+  On the Setup page, click **Support summary**. Choose the scan
   in the select list (the newest finished scan is chosen by default; a running
   scan can be chosen too, but has no `run_line` yet) and click **Build
   summary**. Read the text before you copy it. Click **Copy** (or select the
@@ -881,7 +881,7 @@ Step 1 is part of the retest and moves the first test's job and Service from
 
 ## Results to report back
 
-Copy this template, fill it in, and send it with the final test summary from
+Copy this template, fill it in, and send it with the final support summary from
 item 5.7 pasted below it. Counts and redacted error types only.
 
 ```
@@ -961,5 +961,5 @@ Phone width: Findings at 390 px scrolls sideways as a whole page: yes/no
 Error types seen (from the scanner's log only), with counts:
 Anything that did not match the README (general terms only):
 
-Test summary (item 5.7):
+Support summary (item 5.7):
 ```

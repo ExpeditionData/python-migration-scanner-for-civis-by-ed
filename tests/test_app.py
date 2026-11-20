@@ -1304,7 +1304,7 @@ def test_the_help_styles_live_in_app_css():
 
 
 def _shown_text(body: str) -> str:
-    """The text a person sees on the page: tags removed, and the test summary's text box left out, because its
+    """The text a person sees on the page: tags removed, and the support summary's text box left out, because its
     keys and fixed labels are values from an allow list (app/summary.py), not sentences."""
     body = re.sub(r"<textarea\b.*?</textarea>", " ", body, flags=re.S)
     return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", body)))
@@ -1593,3 +1593,30 @@ def test_scan_history_rows_match_rc13_in_every_preview_state(preview, monkeypatc
         reference = views.history(situation, _rc13_counts(findings, run_ids, pairs))
         counts = svc.results.history_counts(run_ids, pairs) if run_ids else {}
         assert views.history(situation, counts) == reference
+
+
+# --- The support summary (docs/PLAN.md 17.17, Part B) ----------------------------------------------
+
+
+def test_the_support_summary_page_names(preview, monkeypatch):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    body = make_app(preview).test_client().get("/setup/summary").get_data(as_text=True)
+    assert "<title>Support summary" in body
+    assert "<h1>Support summary</h1>" in body
+    assert '<label for="summary-text" class="sr-only">Support summary text</label>' in body
+    assert 'aria-live="polite">Select the text and copy it.</span>' in body
+
+
+@pytest.mark.parametrize("state", LOCAL_STATES)
+def test_no_page_shows_text_written_for_the_live_test(preview, monkeypatch, state):
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    client = make_app(preview, state).test_client()
+    for url in PAGES + ["/setup", "/setup/summary"]:
+        response = client.get(url)
+        assert response.status_code == 200, (state, url)
+        shown = _shown_text(response.get_data(as_text=True)).lower()
+        assert "test summary" not in shown and "into your message" not in shown, (state, url)
+    body = client.get("/setup/summary").get_data(as_text=True)
+    text = html.unescape(re.search(r"<textarea\b[^>]*>(.*?)</textarea>", body, flags=re.S).group(1))
+    assert text.startswith("Python Migration Scanner support summary"), state
+    assert "testing_4_8" not in text, state

@@ -45,6 +45,10 @@ WORKING = "Working. This can take up to a minute."
 # inside an element ("added"), how many elements it added there ("created"), whether the element has the busy
 # trigger class ("cues", 1 or 0), and the body's class. A "submit" step
 # can name its "submitter" button. The page's address is https://app.example.test plus "path".
+# For copy-summary.js: an element has "value", focus(), and select(); document.getElementById finds an element by its
+# id attribute; "clipboard" is "ok" (navigator.clipboard.writeText resolves and records the text), "rejects", or
+# "none" (no navigator.clipboard); "execCommand" is what document.execCommand("copy") returns (default false); and
+# the output's "copied" lists the text each clipboard write or execCommand copy got.
 HARNESS = r"""
 const fs = require("fs");
 const scenario = JSON.parse(process.argv[1]);
@@ -52,7 +56,8 @@ function element(spec) {
   const el = {
     attrs: Object.assign({}, spec.attrs || {}), hidden: !!spec.hidden, disabled: !!spec.disabled,
     textContent: spec.text || "", className: spec.className || "", listeners: {}, tag: spec.tag, children: [],
-    parentNode: null, created: !!spec.created,
+    parentNode: null, created: !!spec.created, value: spec.value || "",
+    focus() { focused = this; }, select() {},
     getAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attrs, name) ? this.attrs[name] : null; },
     hasAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attrs, name); },
     setAttribute(name, value) { this.attrs[name] = String(value); },
@@ -108,6 +113,8 @@ function element(spec) {
   };
   return el;
 }
+let focused = null;
+const copied = [];
 const els = {};
 for (const [name, spec] of Object.entries(scenario.elements)) els[name] = element(spec);
 for (const [name, spec] of Object.entries(scenario.elements)) {
@@ -175,8 +182,26 @@ global.document = {
   body,
   createElement(tag) { return element({ tag, created: true }); },
   querySelector(selector) { return Object.values(els).find((e) => e.matches(selector)) || null; },
+  getElementById(id) { return Object.values(els).find((e) => e.attrs.id === id) || null; },
+  readyState: "complete",
+  execCommand(command) {
+    const ok = command === "copy" && !!scenario.execCommand;
+    if (ok && focused) copied.push(focused.value);
+    return ok;
+  },
   addEventListener(type, fn) { (docListeners[type] = docListeners[type] || []).push(fn); },
 };
+const clipboardMode = scenario.clipboard || "none";
+const clipboard = {
+  writeText(text) {
+    if (clipboardMode === "rejects") return Promise.reject(new Error("NotAllowedError"));
+    copied.push(text);
+    return Promise.resolve();
+  },
+};
+Object.defineProperty(globalThis, "navigator", {
+  value: clipboardMode === "none" ? {} : { clipboard }, configurable: true, writable: true,
+});
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 function snapshot() {
   const out = {};
@@ -218,7 +243,7 @@ function snapshot() {
     for (let i = 0; i < 5; i++) await flush();
     shots.push(snapshot());  // After any answers the step's fetches got.
   }
-  console.log(JSON.stringify({ shots, fetches }));
+  console.log(JSON.stringify({ shots, fetches, copied }));
 })();
 """
 
@@ -281,7 +306,7 @@ def busy_page(**changes) -> dict:
         "storage": {"tag": "form", "attrs": {"method": "post", "action": "/setup/storage", "data-busy": ""},
                     "children": ["storage_button"]},
         "storage_button": {"tag": "button", "attrs": {"type": "submit"}, "text": "Set up results storage"},
-        "summary_link": {"tag": "a", "attrs": {"href": "/setup/summary", "data-busy": ""}, "text": "Build test summary"},
+        "summary_link": {"tag": "a", "attrs": {"href": "/setup/summary", "data-busy": ""}, "text": "Support summary"},
     }
     for name, spec in changes.items():
         page[name] = spec
@@ -713,7 +738,7 @@ def test_every_page_has_the_working_region_and_loads_busy_js(preview, monkeypatc
         assert '<a href="/setup"' in body and 'data-busy>Setup</a>' in body
         assert not re.search(r"<script(?![^>]*\bsrc=)", body) and ' style="' not in body
     setup = client.get("/setup").get_data(as_text=True)
-    assert 'href="/setup/summary" data-busy>Build test summary</a>' in setup
+    assert 'href="/setup/summary" data-busy>Support summary</a>' in setup
     summary = client.get("/setup/summary").get_data(as_text=True)
     assert 'class="filters" data-busy>' in summary and 'data-busy>Back to Setup</a>' in summary
     for path in ("js/busy.js", "js/run-scan.js", "js/status-requests.js", "js/scan-status.js"):
@@ -823,3 +848,39 @@ def test_the_start_answers_json_for_the_script_and_redirects_a_form_post(tmp_pat
     form_post = _start(app, "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
     assert form_post.status_code == 302 and form_post.headers["Location"].endswith("/scan?notice=busy")
     assert _start(app, "application/json", token=False).status_code == 400  # The CSRF check still applies.
+
+
+# --- copy-summary.js: the support summary's Copy button (docs/PLAN.md 17.17, Part B) -------------------------
+
+COPY_FAILED = "Copy did not work here. Select the text and press Ctrl+C (Cmd+C on a Mac)."
+
+
+def copy_page() -> dict:
+    return {
+        "body": {"tag": "body"},
+        "text": {"tag": "textarea", "attrs": {"id": "summary-text"}, "value": "Python Migration Scanner support summary"},
+        "button": {"tag": "button", "attrs": {"id": "copy-summary", "type": "button"}, "hidden": True, "text": "Copy"},
+        "status": {"tag": "span", "attrs": {"id": "copy-status"}, "text": "Select the text and copy it."},
+    }
+
+
+@pytest.mark.parametrize("page, copied, message", [
+    ({"clipboard": "ok"}, ["Python Migration Scanner support summary"], "Copied."),
+    ({"clipboard": "none", "execCommand": True}, ["Python Migration Scanner support summary"], "Copied."),
+    ({"clipboard": "rejects", "execCommand": True}, ["Python Migration Scanner support summary"], "Copied."),
+    ({"clipboard": "rejects"}, [], COPY_FAILED),
+    ({"clipboard": "none"}, [], COPY_FAILED),
+])
+def test_the_copy_button_says_copied_or_how_to_copy_by_hand(page, copied, message):
+    out = run("copy-summary.js", copy_page(), [{"do": "click", "target": "button"}], **page)
+    loaded, after = out["shots"][0], out["shots"][-1]
+    assert loaded["els"]["button"]["hidden"] is False and loaded["els"]["status"]["text"] == ""
+    assert after["els"]["status"]["text"] == message
+    assert out["copied"] == copied
+    assert "message" not in after["els"]["status"]["text"].lower()
+
+
+def test_the_copy_script_has_no_message_wording_left():
+    source = (JS / "copy-summary.js").read_text(encoding="utf-8")
+    assert '"Copied."' in source and "Paste it into your message" not in source and "test summary" not in source
+

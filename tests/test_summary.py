@@ -1,4 +1,4 @@
-"""The test summary (docs/PLAN.md 17.2, Part D): counts, fixed labels, and error types only.
+"""The support summary (docs/PLAN.md 17.2, Part D): counts, fixed labels, and error types only.
 
 Made-up objects, users, groups, schema, database and credential names, log
 lines, and error messages carry marker strings, and no marker may reach the
@@ -183,7 +183,7 @@ def test_4_8_counts_match_the_testing_query_on_the_same_data(tmp_path):
     from app.backends.base import normalize_row
 
     objects = [normalize_row("objects", dict(zip(names, r))) for r in rows.fetchall()]
-    assert from_sql and summary.testing_4_8(objects) == from_sql
+    assert from_sql and summary.git_backed_objects(objects) == from_sql
     assert sum(v["read_through_civis"] for v in from_sql.values()) > 0
     assert sum(v["civis_read_failed"] for v in from_sql.values()) > 0
     assert DRY_RUN_SCHEMA  # The dry run's own schema name is not used by the query.
@@ -303,8 +303,9 @@ def test_no_marker_reaches_the_summary(marked_app):
     assert "users_list: not_found" in text
     assert "python_script: scanned=0 partly_scanned=1 not_scanned=0" in text and "other: scanned=0" in text
     assert "findings: affected_objects=1 advisory_objects=1 total_findings=2" in text
-    assert "python_script: git_backed=1 read_through_civis=1 civis_read_failed=0" in text
-    assert "workflow: git_backed=1 read_through_civis=0 civis_read_failed=1" in text
+    assert ("  git_backed_objects:\n    python_script: git_backed=1 read_through_civis=1 civis_read_failed=0\n"
+            "    workflow: git_backed=1 read_through_civis=0 civis_read_failed=1\n") in text
+    assert "testing_4_8" not in text  # The field's name before docs/PLAN.md 17.17.
     assert "checklist_rows_by_people: 1" in text and "runs_in_scan_runs: 3" in text
     assert "sharing_job: users=2 groups=1" in text and "service_lookup: single_match" in text
     assert "database_parameter_shape: object" in text
@@ -330,7 +331,7 @@ def test_every_summary_line_is_built_from_the_allow_list(marked_app):
     app, _, _ = marked_app
     text = _summary_text(app.test_client().get("/setup/summary"))
     lines = text.splitlines()
-    assert lines[:2] == ["Python Migration Scanner test summary", "Counts, fixed labels, and error types only."]
+    assert lines[:2] == ["Python Migration Scanner support summary", "Counts, fixed labels, and error types only."]
     word = re.compile(r"\d+|run-\d{8}T\d{6}Z-[0-9a-f]{6}|v\d+(\.\d+)*(-rc\d+)?|[a-z][a-z0-9_]*|[A-Z][A-Za-z0-9_]*")
     for line in lines[2:]:
         for item in re.split(r"[\s=:]+", line.strip()):
@@ -360,7 +361,7 @@ def test_the_summary_is_a_read_only_get(marked_app):
 
 def test_the_setup_page_links_to_the_summary_and_the_copy_button_is_vendored(marked_app):
     app, _, _ = marked_app
-    assert 'href="/setup/summary" data-busy>Build test summary</a>' in app.test_client().get("/setup").get_data(as_text=True)
+    assert 'href="/setup/summary" data-busy>Support summary</a>' in app.test_client().get("/setup").get_data(as_text=True)
     body = app.test_client().get("/setup/summary").get_data(as_text=True)
     assert 'src="/static/js/copy-summary.js"' in body and 'id="copy-summary"' in body and " hidden>" in body
     assert app.test_client().get("/static/js/copy-summary.js").status_code == 200

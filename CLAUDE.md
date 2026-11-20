@@ -80,8 +80,9 @@ be made public at any time.
   `install/civis_install.py`, with `LOOKBACK_DAYS` 30. The retest's job and
   Service moved to `v0.1.0-rc12` for a scan with the GitHub token, and move
   to `v0.1.0-rc13` (scanner image 9.2.0) for the last scan with the token
-  and the test summary. Create a tag or a GitHub Release only when Rob's prompt
-  says to.
+  and the support summary. After the retest, the install was kept for real
+  use, and it moves to `v0.1.0-rc14`. Create a tag or a GitHub Release only
+  when Rob's prompt says to.
 - Commit after each completed step, with a clear message that says what changed
   and why.
 - Before every commit, review the staged files (`git diff --cached --name-only`
@@ -169,7 +170,7 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   then the five CREATE TABLE IF NOT EXISTS). Resuming a stopped scan needs no
   app write and no job edit: the scanner decides by itself (docs/PLAN.md
   17.13). A read-only Setup page runs ten
-  checks, and its "Build test summary" page gives counts, fixed labels, and
+  checks, and its "Support summary" page gives counts, fixed labels, and
   error types only, from an allow list (`app/summary.py`). Shared with Civis
   admins only.
 - **Two safety guards** (docs/PLAN.md 17.3). (1) Run scan starts only this
@@ -210,7 +211,7 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   scripts' and workflows' own files through Civis without a GitHub token, and
   marked objects with only a log read as partial (docs/PLAN.md section 17).
   On November 4, 2026, Phase 7 added results storage setup from the app, job
-  settings read from the scanner job, the Setup page, the test summary, and
+  settings read from the scanner job, the Setup page, the support summary, and
   the SQL scope test (docs/PLAN.md 17.2).
   On November 5, 2026, setup of `v0.1.0-rc4` in the live test found two
   bugs, fixed for `v0.1.0-rc5`: reads that return no rows, and the shape of
@@ -260,7 +261,10 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   (docs/PLAN.md 17.16) moves the scanner image to
   `datascience-python:9.2.0` (Python 3.14.10, civis 2.11.0, certifi
   2026.10.23) and adds CV3-CIVIS-TO-CSV-UNQUOTED; the retest finishes on it
-  ("Scanner image on v0.1.0-rc13" in TESTING.md).
+  ("Scanner image on v0.1.0-rc13" in TESTING.md). rc14 (docs/PLAN.md
+  17.17) reads Scan history's counts with two aggregate reads and renames
+  the test summary to the support summary; after the retest the install was
+  kept for real use and moves to `v0.1.0-rc14`.
   Implementation choices not in the approved plan are in docs/PLAN.md
   sections 10 to 17.
 - **App flow.** `app/__init__.create_app` -> `app/services.py` (Civis or local
@@ -294,7 +298,7 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   a resumed run's progress headline starts with "Resuming <label>.", and
   Scan history shows a resumed scan once with "Resumed <n> time(s)"
   (`ScanRun.civis_run_ids`). Setup line 4 is "review" while the job has a
-  `RUN_ID` (any value or none), and the test summary adds
+  `RUN_ID` (any value or none), and the support summary adds
   `resume: <decision> [reason=<reason>]` (docs/PLAN.md 17.13). Each scan is
   labeled "Civis run <ID>" by the Civis run that
   started it (`ScanRun.first_civis_run_id`, from the earliest `scan_runs` row
@@ -336,7 +340,7 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   finishes, right after a successful poll. Findings has a closed "How to read this page" section whose tag
   values come from `common/release.py` (`views.default_tag_help`). `app/job_settings.py` parses the
   job's parameters, `app/setup.py` gathers and evaluates the Setup checks,
-  `app/summary.py` builds the test summary, and `common/release.py` holds
+  `app/summary.py` builds the support summary, and `common/release.py` holds
   what the README sets (pinned images read from the requirements files) and
   the current default image tags (`CURRENT_DEFAULT_TAGS`).
   Styles in `app/static/css/app.css`, scripts in `app/static/js/`, fonts in
@@ -442,7 +446,7 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   type=<type> rows_read=N error=<type> [status=N]`, adds a coverage row with
   `row_kind` `list_failed` (rows read in `found_count`, a fixed note from
   `common/models.list_failed_note`; the Overview shows one warning per row,
-  and the test summary adds `list_failed:` lines), and the scan goes on
+  and the support summary adds `list_failed:` lines), and the scan goes on
   (docs/PLAN.md 17.12). `run_scan` tracks the step and
   logs `FATAL error=<type> [status=N] step=<step>` (steps in
   `scan_log.FATAL_STEPS`; a list step only when all seven lists failed, with
@@ -629,7 +633,7 @@ Run the full suite on both Python versions before every commit:
   601's container task.
 - `tests/test_list_failed.py` covers a list that fails on the first page or
   partway (rows kept, `LIST_FAILED`, the `list_failed` row and note, other
-  types scanned, status succeeded), the custom and workflow lists, the test
+  types scanned, status succeeded), the custom and workflow lists, the support
   summary lines, and no exception text in any output.
 - `tests/test_resume.py` covers the resume decision (docs/PLAN.md 17.13):
   every reason with made-up rows and times (the window edge, one and two
@@ -668,7 +672,7 @@ Run the full suite on both Python versions before every commit:
   `/endpoints`, a made-up host): every request carries the timeout, a
   caller's own is kept, a timeout raises, is counted, and releases civis's
   lock, a missing `open_session` installs nothing, a second call wraps
-  nothing twice, and the RUN line and test summary carry `request_timeouts`.
+  nothing twice, and the RUN line and support summary carry `request_timeouts`.
   It skips on civis 2.7.1.
 - Every rule needs a positive and a negative fixture in `tests/test_rules.py`.
   A test fails if a rule has none.
@@ -679,7 +683,7 @@ Run the full suite on both Python versions before every commit:
 - `tests/test_local_time.py` runs `app/static/js/local-time.js` under Node (skipped if Node is not installed) to check local times and the UTC fallback.
 - `tests/test_job_settings.py`, `tests/test_storage_setup.py`,
   `tests/test_setup_page.py`, and `tests/test_summary.py` cover the job
-  settings, the setup button, the Setup page, and the test summary (including
+  settings, the setup button, the Setup page, and the support summary (including
   the marker test and the TESTING 4.8 match). `tests/test_sql_scope.py` checks
   every SQL statement the tool sends. `tests/test_start_guard.py` and
   `tests/test_schema_guard.py` cover the two safety guards. `tests/civis_fakes.py` holds the made-up
@@ -737,8 +741,10 @@ Run the full suite on both Python versions before every commit:
   refused values, `history_counts_from_rows`, `CivisResults.history_counts`,
   and the `CachedResults` entry (one read for concurrent first loads, no
   expiry, 4 entries, cleared by `clear()`, kept by a checklist save).
-- `tests/test_scripts_js.py` runs `busy.js`, `run-scan.js`, and
-  `scan-status.js` (the last two after `status-requests.js`) under Node with
+- `tests/test_scripts_js.py` runs `busy.js`, `run-scan.js`,
+  `scan-status.js` (the last two after `status-requests.js`), and
+  `copy-summary.js` (its two Copy messages, with a working, failing, or
+  missing clipboard; docs/PLAN.md 17.17) under Node with
   a stand-in page (skipped if Node is not installed) and checks the markup
   and the JSON start. The stand-in page has `sessionStorage` (working,
   throwing, or missing, with a count of every use), a clock (`now`, the

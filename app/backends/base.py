@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 ACTIVE_STATES = frozenset({"queued", "running"})
 LOG_PAGE = 1000  # Log lines per read of a scanner run's log (Jobs.logs pages with last_id).
 _ERROR_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,99}$")
-# An error token as shown to people: an exception class name, maybe with an HTTP status. The test summary and
+# An error token as shown to people: an exception class name, maybe with an HTTP status. The support summary and
 # the "Set up results storage" redirect accept nothing else.
 ERROR_TOKEN = re.compile(r"^[A-Z][A-Za-z0-9_]{0,99}( status=\d{3})?$")
 

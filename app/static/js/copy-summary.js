@@ -1,4 +1,4 @@
-// Copy button for the test summary. Vendored, no inline script (the CSP allows 'self' only).
+// Copy button for the support summary. Vendored, no inline script (the CSP allows 'self' only).
 // Without JavaScript the button stays hidden and the text can be selected and copied by hand.
 (function () {
   "use strict";
@@ -15,7 +15,7 @@
 
     function done(copied) {
       status.textContent = copied
-        ? "Copied. Paste it into your message."
+        ? "Copied."
         : "Copy did not work here. Select the text and press Ctrl+C (Cmd+C on a Mac).";
     }
 

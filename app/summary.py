@@ -1,4 +1,4 @@
-"""The test summary: counts an admin can share with whoever supports the setup.
+"""The support summary: counts an admin can share with whoever supports the setup.
 
 Built from an allow list. Every value written into the summary is one of:
 
@@ -223,7 +223,7 @@ def _resume_value(match: re.Match | None) -> str:
 # --- Counts from the result tables ------------------------------------------------------------
 
 
-def testing_4_8(objects: list[dict]) -> dict[str, dict[str, int]]:
+def git_backed_objects(objects: list[dict]) -> dict[str, dict[str, int]]:
     """TESTING.md item 4.8, computed the same way as its SQL query, per object type."""
     counts: dict[str, dict[str, int]] = {}
     for row in objects:
@@ -294,7 +294,7 @@ def build(inputs: SummaryInputs) -> str:
     from app.setup import LINE_KEYS, RESULTS, SERVICE_METHODS, SHAPE_NOT_RECOGNIZED
 
     out = [
-        "Python Migration Scanner test summary",
+        "Python Migration Scanner support summary",
         "Counts, fixed labels, and error types only.",
         f"tool_version: {tool_version(inputs.tool_ref)}",
         "setup_lines:",
@@ -384,8 +384,8 @@ def _scan_lines(scan: ScanData | None) -> list[str]:
                            f"not_scanned={_n(c['not_scanned'])}")
         out.append(f"  findings: affected_objects={_n(counts['affected'])} advisory_objects={_n(counts['advisory'])} "
                    f"total_findings={_n(counts['findings'])}")
-        git = testing_4_8(scan.objects)
-        out.append("  testing_4_8:" + ("" if git else " none"))
+        git = git_backed_objects(scan.objects)
+        out.append("  git_backed_objects:" + ("" if git else " none"))
         for object_type in GIT_TYPES:
             if object_type in git:
                 g = git[object_type]

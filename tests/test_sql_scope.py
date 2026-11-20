@@ -5,7 +5,7 @@ Drives every code path that sends SQL, with a recording fake civis.io:
 - the scanner's result sink: create tables, appends, resume reads (the resume decision's scan_runs
   and summary-row reads too), and the RETENTION_DAYS deletes
 - the app's reads (every page, including Scan history's two count reads, docs/PLAN.md 17.17), the checklist
-  save, the "Set up results storage" button, the Setup page, and the test summary
+  save, the "Set up results storage" button, the Setup page, and the support summary
 
 Each statement must start with CREATE SCHEMA IF NOT EXISTS, CREATE TABLE IF NOT EXISTS, SELECT, INSERT, or
 DELETE; name only the results schema's five tables, or read pg_catalog.pg_namespace, pg_catalog.pg_tables, or

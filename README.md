@@ -396,7 +396,7 @@ answer:
    the new scanner job's runs: if the results schema was used by an earlier
    install, the Overview shows that install's last scan, while line 10 says
    "No scan has run yet." until the new scanner job's first scan.
-5. If you need help, click **Build test summary** on the Setup page, copy the
+5. If you need help, click **Support summary** on the Setup page, copy the
    text, and send it to whoever supports your setup. It holds counts, fixed
    labels, and error types only. Do not send the Setup page itself, which can
    list user and group names, and do not send the install script's output.

@@ -7,7 +7,7 @@ check, each with a result (pass, warning, fail, or review), a one-line reason,
 and the fix. It calls nothing.
 
 The page is for Civis admins only (like the whole app). It may show user and
-group names from sharing, escaped by the template. The test summary
+group names from sharing, escaped by the template. The support summary
 (app/summary.py) uses only each line's number, short ID, and result.
 Errors are kept as an exception class name and HTTP status only, and nothing
 here is logged.
@@ -565,7 +565,7 @@ NOT_DEDICATED_FIX = "Choose a new schema name in the scanner job's RESULTS_SCHEM
 
 
 def schema_dedicated(facts: SetupFacts) -> str:
-    """For the test summary: yes, no, or unknown (not checked, or the schema does not exist yet)."""
+    """For the support summary: yes, no, or unknown (not checked, or the schema does not exist yet)."""
     storage = facts.storage
     if storage is None or storage.error or not storage.schema_exists or storage.other_objects is None:
         return "unknown"

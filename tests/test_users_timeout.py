@@ -153,7 +153,7 @@ def test_no_exception_text_reaches_any_output(tmp_path, log_stream):
         assert "made-up" not in output and "ReadTimeoutError" not in output, where
 
 
-# --- scan_log and the test summary ----------------------------------------------------------------------
+# --- scan_log and the support summary ----------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("source, status, reason, line", [
