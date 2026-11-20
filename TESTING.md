@@ -879,7 +879,11 @@ Step 1 is part of the retest and moves the first test's job and Service from
 - **Expected:** The summary builds and holds only counts, fixed labels, run
   IDs, and error types. It names no object, user, group, database, schema, or
   credential. If the log has more than 50,000 lines, it says "log partly
-  read". Its setup lines match the Setup page.
+  read". Its setup lines match the Setup page. From v0.1.1, it also holds
+  `partly_scanned_reasons` and `not_scanned_reasons`: per object type, the
+  number of partly scanned and not scanned objects for each fixed reason
+  label (common/coverage_reasons.py), counts and fixed labels only, never
+  the note text.
 - **Record:** pass or fail for built, copied (with the button or by hand), and
   sent; yes or no: any value looked like a name or other content (if yes,
   "content withheld" and do not send that summary).

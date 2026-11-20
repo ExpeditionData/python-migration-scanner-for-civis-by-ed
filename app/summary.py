@@ -13,6 +13,11 @@ names, URLs, hosts, code, log text, or SQL error text. The Setup page's
 reasons and details are not used, only each line's number, short ID, and
 result.
 
+Partly scanned and not scanned objects are counted by object type and fixed
+reason label (``partly_scanned_reasons`` and ``not_scanned_reasons``). The
+labels come from each object's ``scan_note`` through
+common/coverage_reasons.py; the note text itself never reaches the summary.
+
 The scan's log is read with the same paging as the progress view
 (``Jobs.logs`` with ``last_id``), at most ``MAX_LOG_PAGES`` pages.
 """
@@ -28,6 +33,7 @@ from typing import Any
 
 from app.backends.base import ERROR_TOKEN, LOG_PAGE, LogLine
 from common import release
+from common.coverage_reasons import LABELS as COVERAGE_LABELS, reasons_for
 from common.models import ObjectType
 from common.resume import DECISIONS as RESUME_DECISIONS, REASONS as RESUME_REASONS
 
@@ -55,6 +61,8 @@ FINAL_STATUSES = ("succeeded", "tables_failed", "failed")  # The default scan is
 RESULTS_STATES = ("ok", "no_tables", "schema_missing", "not_configured", "job_unreadable", "error")
 OBJECT_TYPES = tuple(t.value for t in ObjectType)
 GIT_TYPES = ("python_script", "workflow")
+# Fixed reasons for partly scanned and not scanned objects, in order, then "other" (common/coverage_reasons.py).
+REASON_LABELS = COVERAGE_LABELS + (OTHER,)
 # The same texts as the TESTING.md item 4.8 query (LIKE '%...%').
 READ_THROUGH_CIVIS = "own file was checked, read through Civis"
 CIVIS_READ_FAILED = "could not be read through Civis"
@@ -238,6 +246,21 @@ def git_backed_objects(objects: list[dict]) -> dict[str, dict[str, int]]:
     return counts
 
 
+def reason_counts(objects: list[dict]) -> dict[str, dict[str, Counter]]:
+    """Partly scanned and not scanned objects by object type and fixed reason (common/coverage_reasons.py;
+    docs/PLAN.md 17.19, Part D). "partial" or "not_scanned" -> object type (or "other") -> label -> objects. An
+    object whose note has two reasons counts under both. A "pending" object counts as not scanned, as in
+    scan_counts. The note itself is only matched, never kept."""
+    counts: dict[str, dict[str, Counter]] = {"partial": {}, "not_scanned": {}}
+    for row in objects:
+        key = {"partial": "partial", "not_scanned": "not_scanned", "pending": "not_scanned"}.get(row.get("scan_status"))
+        labels = reasons_for(row.get("scan_note")) if key else []
+        if labels:
+            counter = counts[key].setdefault(_label(row.get("object_type"), OBJECT_TYPES), Counter())
+            counter.update(_label(label, REASON_LABELS) for label in labels)
+    return counts
+
+
 def scan_counts(objects: list[dict], findings: list[dict]) -> dict:
     by_type: dict[str, Counter] = {}
     for row in objects:
@@ -384,6 +407,14 @@ def _scan_lines(scan: ScanData | None) -> list[str]:
                 c = counts["by_type"][object_type]
                 out.append(f"    {object_type}: scanned={_n(c['scanned'])} partly_scanned={_n(c['partial'])} "
                            f"not_scanned={_n(c['not_scanned'])}")
+        reasons = reason_counts(scan.objects)
+        for key, section in (("partial", "partly_scanned_reasons"), ("not_scanned", "not_scanned_reasons")):
+            lines = [f"    {_label(object_type, OBJECT_TYPES)} {_label(label, REASON_LABELS)}: {_n(count)}"
+                     for object_type in OBJECT_TYPES + (OTHER,)
+                     for label in REASON_LABELS
+                     if (count := reasons[key].get(object_type, Counter())[label]) > 0]
+            out.append(f"  {section}:" + ("" if lines else " none"))
+            out += lines
         out.append(f"  findings: affected_objects={_n(counts['affected'])} advisory_objects={_n(counts['advisory'])} "
                    f"total_findings={_n(counts['findings'])}")
         git = git_backed_objects(scan.objects)

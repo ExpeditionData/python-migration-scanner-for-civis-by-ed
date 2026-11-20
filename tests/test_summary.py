@@ -189,6 +189,77 @@ def test_4_8_counts_match_the_testing_query_on_the_same_data(tmp_path):
     assert DRY_RUN_SCHEMA  # The dry run's own schema name is not used by the query.
 
 
+# --- Partly scanned and not scanned reasons (docs/PLAN.md 17.19, Part D) -----------------------
+
+
+def _object(object_type, status, note, object_id=1):
+    return {"object_type": object_type, "object_id": object_id, "scan_status": status, "scan_note": note,
+            "name": f"{MARK} object {object_id}"}
+
+
+def _reason_sections(objects) -> str:
+    text = "\n".join(summary._scan_lines(summary.ScanData(RUN_A, "succeeded", None, None, objects=objects,
+                                                          findings=[])))
+    return text[text.index("  partly_scanned_reasons:"): text.index("  findings:")]
+
+
+def test_partly_and_not_scanned_reasons():
+    from scanner.inventory.base import describe_error
+    from scanner.process import PARSE_NOTE, civis_file_note
+    from scanner.retrieval.github import NO_TOKEN, NOT_FOUND
+
+    class Forbidden(Exception):
+        status_code = 403
+
+    objects = [
+        _object("custom_script", "partial", f"{NO_TOKEN} {PARSE_NOTE}", 1),  # Two reasons: counted under both.
+        _object("custom_script", "partial", NO_TOKEN, 2),
+        _object("container_script", "partial", f"{MARK} a note the scanner never writes", 3),
+        _object("python_script", "partial", civis_file_note(NO_TOKEN), 4),
+        _object("python_script", "partial", civis_file_note(NOT_FOUND), 5),
+        _object("python_script", "scanned", NO_TOKEN, 6),  # Scanned: not counted, whatever its note.
+        _object("python_script", "partial", None, 7),  # No note: no reason.
+        _object("notebook", "not_scanned", describe_error(Forbidden()), 8),
+        _object("service", "pending", None, 9),  # Pending counts as not scanned; it has no note, so no line.
+        _object("dbt_script", "pending", f"The run log could not be read. {describe_error(Forbidden())}", 10),
+        _object(f"{MARK}_type", "not_scanned", f"{MARK}", 11),
+        _object("workflow", "not_scanned", "", 12),
+    ]
+    assert _reason_sections(objects) == (
+        "  partly_scanned_reasons:\n"
+        "    python_script no_github_token: 1\n"
+        "    python_script own_file_through_civis_only: 2\n"
+        "    python_script github_not_found: 1\n"
+        "    container_script other: 1\n"
+        "    custom_script no_github_token: 2\n"
+        "    custom_script parse_fallback: 1\n"
+        "  not_scanned_reasons:\n"
+        "    dbt_script run_log_unreadable: 1\n"
+        "    dbt_script object_unreadable: 1\n"
+        "    notebook object_unreadable: 1\n"
+        "    other other: 1\n"
+    )
+    assert MARK not in _reason_sections(objects)
+
+
+def test_reason_sections_say_none_when_empty():
+    assert _reason_sections([]) == "  partly_scanned_reasons: none\n  not_scanned_reasons: none\n"
+    only_scanned = [_object("python_script", "scanned", None), _object("notebook", "partial", None, 2)]
+    assert _reason_sections(only_scanned) == "  partly_scanned_reasons: none\n  not_scanned_reasons: none\n"
+
+
+def test_reason_lines_follow_the_object_type_and_label_order():
+    from common.coverage_reasons import LABELS, REASONS
+
+    every_reason = " ".join(reason.fragments[0] for reason in reversed(REASONS))
+    objects = [_object(t, "partial", every_reason, i) for i, t in enumerate(reversed(summary.OBJECT_TYPES))]
+    lines = _reason_sections(objects).splitlines()[1:]
+    lines = lines[: lines.index("  not_scanned_reasons: none")]
+    expected = [f"    {t} {label}: 1" for t in summary.OBJECT_TYPES for label in LABELS]
+    assert lines == expected
+    assert summary.REASON_LABELS == LABELS + ("other",)
+
+
 # --- The page, with marker strings everywhere --------------------------------------------------
 
 
@@ -303,6 +374,9 @@ def test_no_marker_reaches_the_summary(marked_app):
     assert "users_list: not_found" in text
     assert "python_script: scanned=0 partly_scanned=1 not_scanned=0" in text and "other: scanned=0" in text
     assert "findings: affected_objects=1 advisory_objects=1 total_findings=2" in text
+    # The marked notes: one fixed text with markers around it, one look-alike text, one marker only.
+    assert ("  partly_scanned_reasons:\n    python_script own_file_through_civis_only: 1\n    workflow other: 1\n"
+            "  not_scanned_reasons:\n    other other: 1\n") in text
     assert ("  git_backed_objects:\n    python_script: git_backed=1 read_through_civis=1 civis_read_failed=0\n"
             "    workflow: git_backed=1 read_through_civis=0 civis_read_failed=1\n") in text
     assert "testing_4_8" not in text  # The field's name before docs/PLAN.md 17.17.

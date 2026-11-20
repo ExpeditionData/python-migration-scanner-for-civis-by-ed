@@ -393,7 +393,13 @@ The approved design is in [docs/PLAN.md](docs/PLAN.md) (approved October 9,
   `location.replace`; otherwise the Overview stays and saves itself. Findings has a closed "How to read this page" section whose tag
   values come from `common/release.py` (`views.default_tag_help`). `app/job_settings.py` parses the
   job's parameters, `app/setup.py` gathers and evaluates the Setup checks,
-  `app/summary.py` builds the support summary, and `common/release.py` holds
+  `app/summary.py` builds the support summary (its `partly_scanned_reasons`
+  and `not_scanned_reasons` sections, right after `objects_by_type`, count
+  objects per object type and fixed reason label, from each stored
+  `scan_note` through `common/coverage_reasons.reasons_for`, which matches
+  fixed fragments of the scanner's note texts; "pending" counts as not
+  scanned, an object with two reasons counts under both, and no note text is
+  shown; docs/PLAN.md 17.19, Part D), and `common/release.py` holds
   what the README sets (pinned images read from the requirements files) and
   the current default image tags (`CURRENT_DEFAULT_TAGS`).
   Styles in `app/static/css/app.css`, scripts in `app/static/js/`, fonts in
@@ -730,6 +736,16 @@ Run the full suite on both Python versions before every commit:
 - `tests/test_readme_citations.py` parses every README section and numbered
   step that a string in `app/` cites (README "<section>", step N) and fails
   if one is missing or a citation leaves its section unquoted.
+- `tests/test_coverage_reasons.py` covers the partly scanned reasons
+  (docs/PLAN.md 17.19, Part D): every note the scanner can store, built from
+  its own constants and functions with made-up counts, IDs, statuses, and
+  exception classes, maps to its labels and never to "other", and every
+  label is reached; joined notes, a note cut at `MAX_NOTE_CHARS`, unknown and
+  empty notes, label format and uniqueness, no import from `scanner/` or
+  `app/`, a custom script on a git-backed container template without a token,
+  and the dry runs (with and without a token) and the preview with no note
+  that maps to "other". When the scanner gains or changes a note text, add
+  its fragment to `common/coverage_reasons.py`.
 - `tests/test_users_timeout.py` covers a timeout on the "all" users list
   (falls back to active, `reason=timeout`), on both lists, a timeout then a
   404, a 500 still FATAL, the summary's `users_list` values, and no

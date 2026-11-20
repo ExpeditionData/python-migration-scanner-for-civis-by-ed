@@ -163,7 +163,11 @@ You need:
    - the rest of each repository, such as other modules, `requirements.txt`,
      `pyproject.toml`, and `Dockerfile`
    - any repository code for git-backed container scripts, Services, and dbt
-     scripts
+     scripts, or for custom scripts whose template runs a git-backed container
+     script (the template's docker command is checked, but not its
+     repository). These objects are marked "partial" (or "not scanned" when
+     nothing else of theirs could be read), with the reason that the scanner
+     job has no GitHub token.
 
    An object whose code was not fully read is marked "partial" (for example,
    when only its run log was read) or "not scanned", with the reason, so you
@@ -174,7 +178,8 @@ You need:
    **If you add a token**, it adds the rest of each git-backed repository:
    the other Python files in the object's folder and its dependency files, and
    the repository code of git-backed container scripts, Services, and dbt
-   scripts. Workflows are read through Civis either way. The token is only for
+   scripts, and of custom scripts whose template runs a git-backed container
+   script. Workflows are read through Civis either way. The token is only for
    reading **your own** repositories that your Civis objects use. This tool's
    own code is public and needs no token. If you add one:
    - Create a **fine-grained** GitHub token with read-only **Contents**
@@ -396,8 +401,11 @@ answer:
    "No scan has run yet." until the new scanner job's first scan.
 5. If you need help, click **Support summary** on the Setup page, copy the
    text, and send it to whoever supports your setup. It holds counts, fixed
-   labels, and error types only. Do not send the Setup page itself, which can
-   list user and group names, and do not send the install script's output.
+   labels, and error types only. It counts partly scanned and not scanned
+   objects by type and fixed reason (for example, no GitHub token), worked out
+   from each object's note; the notes themselves are not in it. Do not send
+   the Setup page itself, which can list user and group names, and do not
+   send the install script's output.
 6. Archive the install script's Python script in Civis. For each update, you
    paste a new copy from the new tag.
 
